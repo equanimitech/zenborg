@@ -35,6 +35,7 @@ const ALLOWED_COLLECTIONS: &[&str] = &[
     "cyclePlans",
     "phaseConfigs",
     "metricLogs",
+    "dayNotes",
 ];
 
 fn validate_collection(name: &str) -> Result<(), String> {

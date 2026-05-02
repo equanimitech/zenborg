@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Area } from "@/domain/entities/Area";
 import type { Cycle } from "@/domain/entities/Cycle";
 import type { CyclePlan } from "@/domain/entities/CyclePlan";
+import type { DayNote } from "@/domain/entities/DayNote";
 import type { Habit } from "@/domain/entities/Habit";
 import type { MetricLog } from "@/domain/entities/MetricLog";
 import type { Moment } from "@/domain/entities/Moment";
@@ -108,6 +109,7 @@ describe("Export/Import System", () => {
   const sampleHabits: Record<string, Habit> = {};
   const sampleCyclePlans: Record<string, CyclePlan> = {};
   const sampleMetricLogs: Record<string, MetricLog> = {};
+  const sampleDayNotes: Record<string, DayNote> = {};
 
   describe("exportData", () => {
     it("should create a valid export structure", () => {
@@ -118,7 +120,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       expect(exported.version).toBe(EXPORT_SCHEMA_VERSION);
@@ -136,7 +139,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       expect(exported.data.moments).toEqual(sampleMoments);
@@ -155,7 +159,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       expect(exported.metadata.totalMoments).toBe(2);
@@ -168,7 +173,7 @@ describe("Export/Import System", () => {
     });
 
     it("should handle empty data", () => {
-      const exported = exportData({}, {}, {}, {}, {}, {}, {});
+      const exported = exportData({}, {}, {}, {}, {}, {}, {}, {});
 
       expect(exported.metadata.totalMoments).toBe(0);
       expect(exported.metadata.totalAreas).toBe(0);
@@ -189,7 +194,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       const validation = validateImportData(validData);
@@ -203,7 +209,7 @@ describe("Export/Import System", () => {
 
       expect(validation.valid).toBe(false);
       expect(validation.errors).toContain(
-        "Invalid data format: must be a JSON object"
+        "Invalid data format: must be a JSON object",
       );
     });
 
@@ -218,6 +224,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
       };
 
@@ -238,6 +245,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
       };
 
@@ -305,6 +313,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
       };
 
@@ -312,7 +321,7 @@ describe("Export/Import System", () => {
 
       expect(validation.valid).toBe(true);
       expect(validation.warnings).toContain(
-        `Schema version mismatch: expected ${EXPORT_SCHEMA_VERSION}, got 99.0.0`
+        `Schema version mismatch: expected ${EXPORT_SCHEMA_VERSION}, got 99.0.0`,
       );
     });
 
@@ -333,6 +342,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
         metadata: {
           totalMoments: 1,
@@ -342,6 +352,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 0,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -349,7 +360,7 @@ describe("Export/Import System", () => {
 
       expect(validation.valid).toBe(false);
       expect(validation.errors.some((e) => e.includes("mismatched ID"))).toBe(
-        true
+        true,
       );
     });
 
@@ -370,6 +381,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
         metadata: {
           totalMoments: 1,
@@ -379,6 +391,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 0,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -386,7 +399,7 @@ describe("Export/Import System", () => {
 
       expect(validation.valid).toBe(true);
       expect(
-        validation.warnings.some((w) => w.includes("non-existent area"))
+        validation.warnings.some((w) => w.includes("non-existent area")),
       ).toBe(true);
     });
   });
@@ -400,7 +413,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       const existingData = {
@@ -427,6 +441,7 @@ describe("Export/Import System", () => {
         cyclePlans: {} as Record<string, CyclePlan>,
         phaseConfigs: {} as Record<string, PhaseConfig>,
         metricLogs: {} as Record<string, MetricLog>,
+        dayNotes: {} as Record<string, DayNote>,
       };
 
       const { moments, areas, cycles, phaseConfigs, result } =
@@ -448,7 +463,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       const existingData = {
@@ -459,12 +475,13 @@ describe("Export/Import System", () => {
         cyclePlans: {},
         phaseConfigs: {},
         metricLogs: {},
+        dayNotes: {},
       };
 
       const { result } = importDataWithStrategy(
         exportedData,
         "replace",
-        existingData
+        existingData,
       );
 
       expect(result.imported.moments).toBe(2);
@@ -498,7 +515,8 @@ describe("Export/Import System", () => {
         {},
         {},
         {},
-        {}
+        {},
+        {},
       );
 
       const existingData = {
@@ -509,12 +527,13 @@ describe("Export/Import System", () => {
         cyclePlans: sampleCyclePlans,
         phaseConfigs: samplePhaseConfigs,
         metricLogs: sampleMetricLogs,
+        dayNotes: {},
       };
 
       const { moments, result } = importDataWithStrategy(
         exportedData,
         "merge",
-        existingData
+        existingData,
       );
 
       expect(result.success).toBe(true);
@@ -538,7 +557,8 @@ describe("Export/Import System", () => {
         {},
         {},
         {},
-        {}
+        {},
+        {},
       );
 
       const existingData = {
@@ -549,12 +569,13 @@ describe("Export/Import System", () => {
         cyclePlans: sampleCyclePlans,
         phaseConfigs: samplePhaseConfigs,
         metricLogs: sampleMetricLogs,
+        dayNotes: {},
       };
 
       const { moments, result } = importDataWithStrategy(
         exportedData,
         "merge",
-        existingData
+        existingData,
       );
 
       expect(result.success).toBe(true);
@@ -565,7 +586,7 @@ describe("Export/Import System", () => {
     });
 
     it("should preserve existing data when merging", () => {
-      const exportedData = exportData({}, {}, {}, {}, {}, {}, {});
+      const exportedData = exportData({}, {}, {}, {}, {}, {}, {}, {});
 
       const existingData = {
         moments: sampleMoments,
@@ -575,12 +596,13 @@ describe("Export/Import System", () => {
         cyclePlans: sampleCyclePlans,
         phaseConfigs: samplePhaseConfigs,
         metricLogs: sampleMetricLogs,
+        dayNotes: {},
       };
 
       const { moments, areas, cycles, phaseConfigs } = importDataWithStrategy(
         exportedData,
         "merge",
-        existingData
+        existingData,
       );
 
       expect(moments).toEqual(sampleMoments);
@@ -597,7 +619,8 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       const existingData = {
@@ -608,12 +631,13 @@ describe("Export/Import System", () => {
         cyclePlans: sampleCyclePlans,
         phaseConfigs: samplePhaseConfigs,
         metricLogs: sampleMetricLogs,
+        dayNotes: {},
       };
 
       const { result } = importDataWithStrategy(
         exportedData,
         "merge",
-        existingData
+        existingData,
       );
 
       expect(result.success).toBe(true);
@@ -654,6 +678,7 @@ describe("Export/Import System", () => {
           cyclePlans: {},
           phaseConfigs: {},
           metricLogs: {},
+          dayNotes: {},
         },
         metadata: {
           totalMoments: 1,
@@ -663,6 +688,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 0,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -672,8 +698,8 @@ describe("Export/Import System", () => {
       expect(validation.warnings.length).toBeGreaterThan(0);
       expect(
         validation.warnings.some((w) =>
-          w.includes("non-existent area non-existent-area")
-        )
+          w.includes("non-existent area non-existent-area"),
+        ),
       ).toBe(true);
     });
 
@@ -685,14 +711,15 @@ describe("Export/Import System", () => {
         sampleCycles,
         sampleCyclePlans,
         samplePhaseConfigs,
-        sampleMetricLogs
+        sampleMetricLogs,
+        sampleDayNotes,
       );
 
       const validation = validateImportData(exportedData);
 
       expect(validation.valid).toBe(true);
       expect(
-        validation.warnings.some((w) => w.includes("non-existent area"))
+        validation.warnings.some((w) => w.includes("non-existent area")),
       ).toBe(false);
     });
   });
@@ -718,6 +745,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 1,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -727,10 +755,10 @@ describe("Export/Import System", () => {
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
       expect(validation.warnings).toContain(
-        "Missing habits data - will import as empty"
+        "Missing habits data - will import as empty",
       );
       expect(validation.warnings).toContain(
-        "Missing metricLogs data - will import as empty"
+        "Missing metricLogs data - will import as empty",
       );
     });
 
@@ -754,6 +782,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 1,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -765,6 +794,7 @@ describe("Export/Import System", () => {
         cyclePlans: {},
         phaseConfigs: {},
         metricLogs: {},
+        dayNotes: {},
       };
 
       const {
@@ -834,6 +864,7 @@ describe("Export/Import System", () => {
           totalCyclePlans: 0,
           totalPhaseConfigs: 1,
           totalMetricLogs: 0,
+          totalDayNotes: 0,
         },
       };
 
@@ -843,7 +874,7 @@ describe("Export/Import System", () => {
       expect(validation.valid).toBe(true);
       expect(validation.errors).toHaveLength(0);
       expect(validation.warnings).toContain(
-        "Legacy field 'crystallizedRoutines' will be ignored (removed in schema 1.1.0)"
+        "Legacy field 'crystallizedRoutines' will be ignored (removed in schema 1.1.0)",
       );
 
       const existingData = {
@@ -854,12 +885,13 @@ describe("Export/Import System", () => {
         cyclePlans: {},
         phaseConfigs: {},
         metricLogs: {},
+        dayNotes: {},
       };
 
       const imported = importDataWithStrategy(
         legacyData as unknown as ZenborgExportData,
         "replace",
-        existingData
+        existingData,
       );
 
       // Core data lands, legacy field is nowhere in the result

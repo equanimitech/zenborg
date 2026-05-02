@@ -21,6 +21,7 @@ import { configureSynced, syncObservable } from "@legendapp/state/sync";
 import type { Area } from "@/domain/entities/Area";
 import type { Cycle } from "@/domain/entities/Cycle";
 import type { CyclePlan } from "@/domain/entities/CyclePlan";
+import type { DayNote } from "@/domain/entities/DayNote";
 import type { Habit } from "@/domain/entities/Habit";
 import type { MetricLog } from "@/domain/entities/MetricLog";
 import type { Moment } from "@/domain/entities/Moment";
@@ -33,6 +34,7 @@ import {
   areas$,
   cyclePlans$,
   cycles$,
+  dayNotes$,
   habits$,
   metricLogs$,
   moments$,
@@ -62,7 +64,7 @@ export function configurePersistence(): void {
 
     persistenceConfigured = true;
     console.log(
-      `[Zenborg] Persistence configured (${isTauri() ? "vault" : "idb-only"})`
+      `[Zenborg] Persistence configured (${isTauri() ? "vault" : "idb-only"})`,
     );
   } catch (error) {
     console.error("[Zenborg] Failed to configure persistence:", error);
@@ -81,9 +83,10 @@ function configureVaultSync(): void {
   syncObservable(cyclePlans$, syncedVaultCollection<CyclePlan>("cyclePlans"));
   syncObservable(
     phaseConfigs$,
-    syncedVaultCollection<PhaseConfig>("phaseConfigs")
+    syncedVaultCollection<PhaseConfig>("phaseConfigs"),
   );
   syncObservable(metricLogs$, syncedVaultCollection<MetricLog>("metricLogs"));
+  syncObservable(dayNotes$, syncedVaultCollection<DayNote>("dayNotes"));
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -95,7 +98,7 @@ function configureIdbOnly(): void {
     persist: {
       plugin: observablePersistIndexedDB({
         databaseName: "zenborg",
-        version: 7,
+        version: 8,
         tableNames: [
           "moments",
           "areas",
@@ -104,6 +107,7 @@ function configureIdbOnly(): void {
           "cyclePlans",
           "phaseConfigs",
           "metricLogs",
+          "dayNotes",
         ],
       }),
     },
@@ -111,31 +115,35 @@ function configureIdbOnly(): void {
 
   syncObservable(
     moments$,
-    persistIndexedDBOptions({ persist: { name: "moments" } })
+    persistIndexedDBOptions({ persist: { name: "moments" } }),
   );
   syncObservable(
     areas$,
-    persistIndexedDBOptions({ persist: { name: "areas" } })
+    persistIndexedDBOptions({ persist: { name: "areas" } }),
   );
   syncObservable(
     habits$,
-    persistIndexedDBOptions({ persist: { name: "habits" } })
+    persistIndexedDBOptions({ persist: { name: "habits" } }),
   );
   syncObservable(
     cycles$,
-    persistIndexedDBOptions({ persist: { name: "cycles" } })
+    persistIndexedDBOptions({ persist: { name: "cycles" } }),
   );
   syncObservable(
     cyclePlans$,
-    persistIndexedDBOptions({ persist: { name: "cyclePlans" } })
+    persistIndexedDBOptions({ persist: { name: "cyclePlans" } }),
   );
   syncObservable(
     phaseConfigs$,
-    persistIndexedDBOptions({ persist: { name: "phaseConfigs" } })
+    persistIndexedDBOptions({ persist: { name: "phaseConfigs" } }),
   );
   syncObservable(
     metricLogs$,
-    persistIndexedDBOptions({ persist: { name: "metricLogs" } })
+    persistIndexedDBOptions({ persist: { name: "metricLogs" } }),
+  );
+  syncObservable(
+    dayNotes$,
+    persistIndexedDBOptions({ persist: { name: "dayNotes" } }),
   );
 }
 
@@ -154,18 +162,18 @@ function configureUiPreferences(): void {
     activeCycleId$,
     persistLocalStorageOptions({
       persist: { name: "zenborg_activeCycleId" },
-    })
+    }),
   );
   syncObservable(
     lastUsedAreaId$,
     persistLocalStorageOptions({
       persist: { name: "zenborg_lastUsedAreaId" },
-    })
+    }),
   );
   syncObservable(
     trmnlSettings$,
     persistLocalStorageOptions({
       persist: { name: "zenborg_trmnlSettings" },
-    })
+    }),
   );
 }

@@ -18,6 +18,7 @@
 import type { Area } from "@/domain/entities/Area";
 import type { Cycle } from "@/domain/entities/Cycle";
 import type { CyclePlan } from "@/domain/entities/CyclePlan";
+import type { DayNote } from "@/domain/entities/DayNote";
 import type { Habit } from "@/domain/entities/Habit";
 import type { MetricLog } from "@/domain/entities/MetricLog";
 import type { Moment } from "@/domain/entities/Moment";
@@ -45,6 +46,7 @@ export interface ZenborgExportData {
     totalCyclePlans: number;
     totalPhaseConfigs: number;
     totalMetricLogs: number;
+    totalDayNotes: number;
   };
 }
 
@@ -73,7 +75,8 @@ export function exportData(
   cycles: Record<string, Cycle>,
   cyclePlans: Record<string, CyclePlan>,
   phaseConfigs: Record<string, PhaseConfig>,
-  metricLogs: Record<string, MetricLog>
+  metricLogs: Record<string, MetricLog>,
+  dayNotes: Record<string, DayNote>,
 ): ZenborgExportData {
   return {
     version: EXPORT_SCHEMA_VERSION,
@@ -86,6 +89,7 @@ export function exportData(
       cyclePlans,
       phaseConfigs,
       metricLogs,
+      dayNotes,
     },
     metadata: {
       totalMoments: Object.keys(moments).length,
@@ -95,6 +99,7 @@ export function exportData(
       totalCyclePlans: Object.keys(cyclePlans).length,
       totalPhaseConfigs: Object.keys(phaseConfigs).length,
       totalMetricLogs: Object.keys(metricLogs).length,
+      totalDayNotes: Object.keys(dayNotes).length,
     },
   };
 }
@@ -181,19 +186,27 @@ export function validateImportData(data: unknown): ImportValidationResult {
     warnings.push("Missing metricLogs data - will import as empty");
   }
 
+  if (
+    !exportData.data.dayNotes ||
+    typeof exportData.data.dayNotes !== "object"
+  ) {
+    warnings.push("Missing dayNotes data - will import as empty");
+  }
+
   // Legacy fields — dropped silently at import, warned here for transparency.
   if (
-    "crystallizedRoutines" in (exportData.data as unknown as Record<string, unknown>)
+    "crystallizedRoutines" in
+    (exportData.data as unknown as Record<string, unknown>)
   ) {
     warnings.push(
-      "Legacy field 'crystallizedRoutines' will be ignored (removed in schema 1.1.0)"
+      "Legacy field 'crystallizedRoutines' will be ignored (removed in schema 1.1.0)",
     );
   }
 
   // Check version compatibility
   if (exportData.version !== EXPORT_SCHEMA_VERSION) {
     warnings.push(
-      `Schema version mismatch: expected ${EXPORT_SCHEMA_VERSION}, got ${exportData.version}`
+      `Schema version mismatch: expected ${EXPORT_SCHEMA_VERSION}, got ${exportData.version}`,
     );
   }
 
@@ -205,7 +218,7 @@ export function validateImportData(data: unknown): ImportValidationResult {
       }
       if (moment.areaId && !areas[moment.areaId]) {
         warnings.push(
-          `Moment "${moment.name}" references non-existent area ${moment.areaId}`
+          `Moment "${moment.name}" references non-existent area ${moment.areaId}`,
         );
       }
     }
@@ -237,6 +250,7 @@ export interface ImportResult {
     cyclePlans: number;
     phaseConfigs: number;
     metricLogs: number;
+    dayNotes: number;
   };
   conflicts?: {
     moments: string[];
@@ -246,6 +260,7 @@ export interface ImportResult {
     cyclePlans: string[];
     phaseConfigs: string[];
     metricLogs: string[];
+    dayNotes: string[];
   };
 }
 
@@ -260,7 +275,7 @@ export interface ImportResult {
 export function importDataWithStrategy(
   importData: ZenborgExportData,
   strategy: ImportStrategy,
-  currentData: DomainModelRegistry
+  currentData: DomainModelRegistry,
 ): DomainModelRegistry & {
   result: ImportResult;
 } {
@@ -273,6 +288,7 @@ export function importDataWithStrategy(
     cyclePlans: importData.data.cyclePlans || {},
     phaseConfigs: importData.data.phaseConfigs || {},
     metricLogs: importData.data.metricLogs || {},
+    dayNotes: importData.data.dayNotes || {},
   };
 
   if (strategy === "replace") {
@@ -290,6 +306,7 @@ export function importDataWithStrategy(
           cyclePlans: Object.keys(safeImportData.cyclePlans).length,
           phaseConfigs: Object.keys(safeImportData.phaseConfigs).length,
           metricLogs: Object.keys(safeImportData.metricLogs).length,
+          dayNotes: Object.keys(safeImportData.dayNotes).length,
         },
       },
     };
@@ -304,6 +321,7 @@ export function importDataWithStrategy(
     cyclePlans: [] as string[],
     phaseConfigs: [] as string[],
     metricLogs: [] as string[],
+    dayNotes: [] as string[],
   };
 
   // Merge moments (imported overwrites existing on ID conflict)
@@ -369,6 +387,15 @@ export function importDataWithStrategy(
     mergedMetricLogs[id] = log;
   }
 
+  // Merge day notes (keyed by ISO date)
+  const mergedDayNotes = { ...currentData.dayNotes };
+  for (const [date, note] of Object.entries(safeImportData.dayNotes)) {
+    if (mergedDayNotes[date]) {
+      conflicts.dayNotes.push(date);
+    }
+    mergedDayNotes[date] = note;
+  }
+
   const totalConflicts =
     conflicts.moments.length +
     conflicts.areas.length +
@@ -376,7 +403,8 @@ export function importDataWithStrategy(
     conflicts.cycles.length +
     conflicts.cyclePlans.length +
     conflicts.phaseConfigs.length +
-    conflicts.metricLogs.length;
+    conflicts.metricLogs.length +
+    conflicts.dayNotes.length;
 
   return {
     moments: mergedMoments,
@@ -386,6 +414,7 @@ export function importDataWithStrategy(
     cyclePlans: mergedCyclePlans,
     phaseConfigs: mergedPhaseConfigs,
     metricLogs: mergedMetricLogs,
+    dayNotes: mergedDayNotes,
     result: {
       success: true,
       message:
@@ -400,6 +429,7 @@ export function importDataWithStrategy(
         cyclePlans: Object.keys(safeImportData.cyclePlans).length,
         phaseConfigs: Object.keys(safeImportData.phaseConfigs).length,
         metricLogs: Object.keys(safeImportData.metricLogs).length,
+        dayNotes: Object.keys(safeImportData.dayNotes).length,
       },
       conflicts: totalConflicts > 0 ? conflicts : undefined,
     },
@@ -414,7 +444,7 @@ export function importDataWithStrategy(
  */
 export function downloadExportFile(
   data: ZenborgExportData,
-  filename?: string
+  filename?: string,
 ): void {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
@@ -440,7 +470,7 @@ export function downloadExportFile(
  * @returns Promise with parsed data or error
  */
 export async function readImportFile(
-  file: File
+  file: File,
 ): Promise<ZenborgExportData | { error: string }> {
   return new Promise((resolve) => {
     const reader = new FileReader();

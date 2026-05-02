@@ -18,6 +18,7 @@ import {
 } from "@/lib/dates";
 import { columnWidth } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
+import { DayHeaderTitle } from "./DayHeaderTitle";
 import { TimelineCell } from "./TimelineCell";
 
 /**
@@ -60,16 +61,11 @@ const DayRow = forwardRef<HTMLDivElement, DayRowProps>(
       >
         {/* Day Title Section - Above Timeline */}
         <div className="flex flex-row items-baseline gap-2 px-1 py-0.5">
-          <h2
-            className={cn(
-              "font-mono font-bold text-2xl md:text-3xl",
-              isActiveDay
-                ? "text-stone-900 dark:text-stone-100"
-                : "text-stone-700 dark:text-stone-300",
-            )}
-          >
-            {label}
-          </h2>
+          <DayHeaderTitle
+            day={day}
+            fallbackLabel={label}
+            isActiveDay={isActiveDay}
+          />
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-stone-500 dark:text-stone-400 text-base md:text-lg">
               {dayOfWeek}
@@ -94,7 +90,9 @@ const DayRow = forwardRef<HTMLDivElement, DayRowProps>(
                     day={day}
                     phase={phaseConfig.phase}
                     isHighlighted={isActiveDay}
-                    isActivePhase={isActiveDay && phaseConfig.phase === currentPhase}
+                    isActivePhase={
+                      isActiveDay && phaseConfig.phase === currentPhase
+                    }
                     phaseIndex={index}
                   />
                 </div>
@@ -209,7 +207,8 @@ export function Timeline() {
       setDaysAfter((prev) => (prev > 1 ? 1 : prev));
       return;
     }
-    const ms = fromISODate(selectedDay).getTime() - fromISODate(today).getTime();
+    const ms =
+      fromISODate(selectedDay).getTime() - fromISODate(today).getTime();
     const dayDiff = Math.round(ms / 86_400_000);
     if (dayDiff < 0) {
       const need = -dayDiff;
@@ -238,7 +237,6 @@ export function Timeline() {
     }, 60_000);
     return () => clearInterval(interval);
   }, []);
-
 
   // Find active day's index to determine which days are past
   const activeDayIndex = timelineDays.findIndex((d) => d.isActiveDay);

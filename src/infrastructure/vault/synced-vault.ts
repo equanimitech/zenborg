@@ -28,7 +28,7 @@ import { isTauri } from "./is-tauri";
  */
 const IDB_CONFIG = {
   databaseName: "zenborg",
-  version: 7,
+  version: 8,
   tableNames: [
     "moments",
     "areas",
@@ -37,6 +37,7 @@ const IDB_CONFIG = {
     "cyclePlans",
     "phaseConfigs",
     "metricLogs",
+    "dayNotes",
   ],
 };
 
@@ -116,7 +117,9 @@ export function syncedVaultCollection<T>(collection: CollectionName) {
  * No-op on web (non-Tauri).
  */
 export async function seedVaultFromCacheIfNeeded(
-  observables: ReadonlyArray<[CollectionName, Observable<Record<string, unknown>>]>
+  observables: ReadonlyArray<
+    [CollectionName, Observable<Record<string, unknown>>]
+  >,
 ): Promise<void> {
   if (!isTauri()) return;
 
@@ -129,7 +132,7 @@ export async function seedVaultFromCacheIfNeeded(
       if (!current || Object.keys(current).length === 0) continue;
 
       console.log(
-        `[Zenborg] Seeding vault from cache: ${name} (${Object.keys(current).length} entries)`
+        `[Zenborg] Seeding vault from cache: ${name} (${Object.keys(current).length} entries)`,
       );
       await writeCollection(name, current);
     } catch (error) {

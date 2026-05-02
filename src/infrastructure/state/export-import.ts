@@ -15,7 +15,8 @@ import {
   cycles$,
   cyclePlans$,
   phaseConfigs$,
-  metricLogs$
+  metricLogs$,
+  dayNotes$,
 } from "./store";
 
 /**
@@ -35,6 +36,7 @@ export function exportGardenData(filename?: string): void {
   const cyclePlans = cyclePlans$.get();
   const phaseConfigs = phaseConfigs$.get();
   const metricLogs = metricLogs$.get();
+  const dayNotes = dayNotes$.get();
 
   const exportedData = exportData(
     moments,
@@ -43,7 +45,8 @@ export function exportGardenData(filename?: string): void {
     cycles,
     cyclePlans,
     phaseConfigs,
-    metricLogs
+    metricLogs,
+    dayNotes,
   );
 
   downloadExportFile(exportedData, filename);
@@ -63,7 +66,9 @@ export function exportGardenData(filename?: string): void {
     exportedData.metadata.totalPhaseConfigs,
     "phase configs,",
     exportedData.metadata.totalMetricLogs,
-    "metric logs"
+    "metric logs,",
+    exportedData.metadata.totalDayNotes,
+    "day notes",
   );
 }
 
@@ -76,7 +81,7 @@ export function exportGardenData(filename?: string): void {
  */
 export async function importGardenData(
   file: File,
-  strategy: ImportStrategy = "merge"
+  strategy: ImportStrategy = "merge",
 ): Promise<{ success: boolean; message: string; errors?: string[] }> {
   // Read file
   const fileData = await readImportFile(file);
@@ -114,6 +119,7 @@ export async function importGardenData(
     cyclePlans: cyclePlans$.get(),
     phaseConfigs: phaseConfigs$.get(),
     metricLogs: metricLogs$.get(),
+    dayNotes: dayNotes$.get(),
   };
 
   // Import with strategy
@@ -125,7 +131,8 @@ export async function importGardenData(
     cyclePlans,
     phaseConfigs,
     metricLogs,
-    result
+    dayNotes,
+    result,
   } = importDataWithStrategy(fileData, strategy, currentData);
 
   // Tauri: bypass Legend State entirely. A pending synced.get() from boot
@@ -139,6 +146,7 @@ export async function importGardenData(
     await writeCollection("cyclePlans", cyclePlans);
     await writeCollection("phaseConfigs", phaseConfigs);
     await writeCollection("metricLogs", metricLogs);
+    await writeCollection("dayNotes", dayNotes);
     console.log("[importGardenData] Vault written, reloading to rehydrate");
     if (typeof window !== "undefined") {
       window.location.reload();
@@ -154,6 +162,7 @@ export async function importGardenData(
   cyclePlans$.set(cyclePlans);
   phaseConfigs$.set(phaseConfigs);
   metricLogs$.set(metricLogs);
+  dayNotes$.set(dayNotes);
 
   console.log("[importGardenData] Import complete:", result);
 
@@ -174,7 +183,7 @@ export async function importGardenData(
  */
 export function triggerImportDialog(
   strategy: ImportStrategy = "merge",
-  onComplete?: (result: { success: boolean; message: string }) => void
+  onComplete?: (result: { success: boolean; message: string }) => void,
 ): void {
   const input = document.createElement("input");
   input.type = "file";

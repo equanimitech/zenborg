@@ -15,6 +15,7 @@
 import type { Area } from "./entities/Area";
 import type { Cycle } from "./entities/Cycle";
 import type { CyclePlan } from "./entities/CyclePlan";
+import type { DayNote } from "./entities/DayNote";
 import type { Habit } from "./entities/Habit";
 import type { MetricLog } from "./entities/MetricLog";
 import type { Moment } from "./entities/Moment";
@@ -38,6 +39,7 @@ export interface DomainModelRegistry {
   cyclePlans: Record<string, CyclePlan>;
   phaseConfigs: Record<string, PhaseConfig>;
   metricLogs: Record<string, MetricLog>;
+  dayNotes: Record<string, DayNote>;
 }
 
 /**
@@ -52,6 +54,7 @@ export const EXPORTABLE_MODELS = [
   "cyclePlans",
   "phaseConfigs",
   "metricLogs",
+  "dayNotes",
 ] as const;
 
 /**
@@ -112,5 +115,11 @@ export const COLLECTION_METADATA: Record<
     displayName: "Metric Logs",
     singularName: "Metric Log",
     description: "Performance tracking entries",
+  },
+  dayNotes: {
+    displayName: "Day Notes",
+    singularName: "Day Note",
+    description:
+      "Per-day metadata keyed by ISO date (currently a 1-3 word title)",
   },
 };

@@ -2,6 +2,7 @@ import { observable } from "@legendapp/state";
 import type { Area } from "@/domain/entities/Area";
 import type { Cycle } from "@/domain/entities/Cycle";
 import type { CyclePlan } from "@/domain/entities/CyclePlan";
+import type { DayNote } from "@/domain/entities/DayNote";
 import type { Habit } from "@/domain/entities/Habit";
 import type { MetricLog } from "@/domain/entities/MetricLog";
 import type { Moment } from "@/domain/entities/Moment";
@@ -84,6 +85,12 @@ export const phaseConfigs$ = observable<Record<string, PhaseConfig>>({});
  * Performance tracking entries for PUSHING attitude moments
  */
 export const metricLogs$ = observable<Record<string, MetricLog>>({});
+
+/**
+ * Day notes - keyed by ISO date (YYYY-MM-DD).
+ * Optional per-day metadata (title now, room for intention/mood later).
+ */
+export const dayNotes$ = observable<Record<string, DayNote>>({});
 
 // ============================================================================
 // History State
@@ -282,7 +289,7 @@ export const archivedAreas$ = observable(() => {
     .filter((area) => area.isArchived)
     .sort(
       (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
 });
 
@@ -308,7 +315,7 @@ export const archivedHabits$ = observable(() => {
     .filter((habit) => habit.isArchived)
     .sort(
       (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
 });
 
@@ -318,14 +325,17 @@ export const archivedHabits$ = observable(() => {
  */
 export const momentsByDay$ = observable(() => {
   const moments = allocatedMoments$.get();
-  return moments.reduce((acc, moment) => {
-    if (!moment.day) return acc;
-    if (!acc[moment.day]) {
-      acc[moment.day] = [];
-    }
-    acc[moment.day].push(moment);
-    return acc;
-  }, {} as Record<string, Moment[]>);
+  return moments.reduce(
+    (acc, moment) => {
+      if (!moment.day) return acc;
+      if (!acc[moment.day]) {
+        acc[moment.day] = [];
+      }
+      acc[moment.day].push(moment);
+      return acc;
+    },
+    {} as Record<string, Moment[]>,
+  );
 });
 
 /**
@@ -334,20 +344,23 @@ export const momentsByDay$ = observable(() => {
  */
 export const momentsByDayAndPhase$ = observable(() => {
   const moments = allocatedMoments$.get();
-  return moments.reduce((acc, moment) => {
-    if (!moment.day || !moment.phase) return acc;
+  return moments.reduce(
+    (acc, moment) => {
+      if (!moment.day || !moment.phase) return acc;
 
-    if (!acc[moment.day]) {
-      acc[moment.day] = {};
-    }
+      if (!acc[moment.day]) {
+        acc[moment.day] = {};
+      }
 
-    if (!acc[moment.day][moment.phase]) {
-      acc[moment.day][moment.phase] = [];
-    }
+      if (!acc[moment.day][moment.phase]) {
+        acc[moment.day][moment.phase] = [];
+      }
 
-    acc[moment.day][moment.phase].push(moment);
-    return acc;
-  }, {} as Record<string, Record<string, Moment[]>>);
+      acc[moment.day][moment.phase].push(moment);
+      return acc;
+    },
+    {} as Record<string, Record<string, Moment[]>>,
+  );
 });
 
 /**
@@ -505,7 +518,7 @@ export const metricLogsByMoment$ = observable(() => {
   // Sort logs by date (newest first) for each moment
   for (const momentId in byMoment) {
     byMoment[momentId].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
     );
   }
 
@@ -532,7 +545,7 @@ export const deckMoments$ = observable(() => {
       m.cycleId === cycle.id &&
       m.cyclePlanId !== null &&
       m.day === null &&
-      m.phase === null
+      m.phase === null,
   );
 });
 
@@ -546,7 +559,7 @@ export const allocatedMomentsInCycle$ = observable(() => {
   if (!cycle) return [];
 
   return Object.values(moments).filter(
-    (m) => m.cycleId === cycle.id && m.day !== null && m.phase !== null
+    (m) => m.cycleId === cycle.id && m.day !== null && m.phase !== null,
   );
 });
 
@@ -564,7 +577,7 @@ export const spontaneousMomentsInCycle$ = observable(() => {
       m.cycleId === cycle.id &&
       m.cyclePlanId === null &&
       m.day !== null &&
-      m.phase !== null
+      m.phase !== null,
   );
 });
 
@@ -644,9 +657,7 @@ export async function runBootReconciler(): Promise<void> {
   const meta = readMeta();
   if (meta.migrations.derivedDeck) return;
 
-  const { CycleService } = await import(
-    "@/application/services/CycleService"
-  );
+  const { CycleService } = await import("@/application/services/CycleService");
   const service = new CycleService();
   const { deleted } = service.reconcileLegacyDeckMoments();
   if (deleted > 0) {

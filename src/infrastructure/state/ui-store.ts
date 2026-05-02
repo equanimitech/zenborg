@@ -50,6 +50,26 @@ export const cycleDeckCollapsed$ = observable<boolean>(false);
  */
 export const cycleDeckEditMode$ = observable<boolean>(false);
 
+/**
+ * Day-note inline-edit state.
+ * `editingDay` is the ISO date currently being edited (null = no edit).
+ * `draft` is the in-flight title text. Ephemeral, not persisted.
+ */
+export const dayNoteEditState$ = observable<{
+  editingDay: string | null;
+  draft: string;
+}>({
+  editingDay: null,
+  draft: "",
+});
+
+export function openDayNoteEdit(date: string, currentTitle: string): void {
+  dayNoteEditState$.set({ editingDay: date, draft: currentTitle });
+}
+
+export function closeDayNoteEdit(): void {
+  dayNoteEditState$.set({ editingDay: null, draft: "" });
+}
 
 /**
  * Currently selected cycle ID for the CycleDeck pane
