@@ -72,6 +72,25 @@ export function closeDayNoteEdit(): void {
 }
 
 /**
+ * Brief highlight on a cycle whose neighbor blocked an in-flight resize.
+ * Auto-clears 300ms after being set. Read by `BandedHeatmapCycleBlock`.
+ */
+export const cycleClampHighlight$ = observable<{ cycleId: string } | null>(
+  null,
+);
+
+let clampClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function flashCycleClamp(cycleId: string): void {
+  cycleClampHighlight$.set({ cycleId });
+  if (clampClearTimer) clearTimeout(clampClearTimer);
+  clampClearTimer = setTimeout(() => {
+    cycleClampHighlight$.set(null);
+    clampClearTimer = null;
+  }, 300);
+}
+
+/**
  * Currently selected cycle ID for the CycleDeck pane
  * When null, defaults to the active cycle
  * Ephemeral - not persisted

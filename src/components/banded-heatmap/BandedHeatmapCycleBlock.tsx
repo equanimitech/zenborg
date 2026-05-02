@@ -1,10 +1,13 @@
+import { use$ } from "@legendapp/state/react";
 import type { Area } from "@/domain/entities/Area";
 import type { Phase } from "@/domain/value-objects/Phase";
 import type {
   HeatmapBand,
   HeatmapDay,
 } from "@/infrastructure/state/bandedHeatmapViewModel";
+import { cycleClampHighlight$ } from "@/infrastructure/state/ui-store";
 import { BandedHeatmapCell } from "./BandedHeatmapCell";
+import { CycleResizeHandle } from "./CycleResizeHandle";
 import {
   BRACKET_HEIGHT,
   CELL_GAP,
@@ -35,11 +38,14 @@ export function BandedHeatmapCycleBlock({
   const gridWidth = days.length * STRIDE - CELL_GAP;
   const blockWidth = gridWidth;
 
+  const clampHighlight = use$(cycleClampHighlight$);
+  const isClamping = clampHighlight?.cycleId === band.cycleId;
+
   const containerClass = isSelected
-    ? "relative flex flex-col rounded-md overflow-hidden bg-white dark:bg-stone-800 ring-2 ring-stone-700 dark:ring-stone-300 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.18)] transition-colors"
+    ? "group relative flex flex-col rounded-md overflow-hidden bg-white dark:bg-stone-800 ring-2 ring-stone-700 dark:ring-stone-300 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.18)] transition-colors"
     : (() => {
         const base =
-          "relative flex flex-col rounded-md overflow-hidden ring-1 transition-colors";
+          "group relative flex flex-col rounded-md overflow-hidden ring-1 transition-colors";
         switch (band.tense) {
           case "active":
             return `${base} bg-stone-50 dark:bg-stone-900/70 ring-stone-400 dark:ring-stone-500`;
@@ -49,6 +55,10 @@ export function BandedHeatmapCycleBlock({
             return `${base} bg-white dark:bg-stone-900/30 ring-stone-300 dark:ring-stone-600`;
         }
       })();
+
+  const clampClass = isClamping
+    ? " ring-2 ring-amber-500/80 dark:ring-amber-400/80"
+    : "";
 
   const bracketClass = (() => {
     if (isSelected) return "text-stone-900 dark:text-stone-100 font-semibold";
@@ -64,9 +74,11 @@ export function BandedHeatmapCycleBlock({
 
   return (
     <div
-      className={containerClass}
+      className={containerClass + clampClass}
       style={{ width: blockWidth, flexShrink: 0 }}
     >
+      <CycleResizeHandle cycleId={band.cycleId} edge="start" />
+      <CycleResizeHandle cycleId={band.cycleId} edge="end" />
       <button
         type="button"
         onClick={() => onSelect?.(band.cycleId)}
