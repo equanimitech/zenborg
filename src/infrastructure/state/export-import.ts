@@ -1,22 +1,22 @@
 import {
-  exportData,
-  importDataWithStrategy,
-  validateImportData,
   downloadExportFile,
-  readImportFile,
+  exportData,
   type ImportStrategy,
+  importDataWithStrategy,
+  readImportFile,
+  validateImportData,
 } from "@/application/use-cases/export-import";
 import { writeCollection } from "../vault/adapter";
 import { isTauri } from "../vault/is-tauri";
 import {
-  moments$,
   areas$,
-  habits$,
-  cycles$,
   cyclePlans$,
-  phaseConfigs$,
-  metricLogs$,
+  cycles$,
   dayNotes$,
+  habits$,
+  metricLogs$,
+  moments$,
+  phaseConfigs$,
 } from "./store";
 
 /**

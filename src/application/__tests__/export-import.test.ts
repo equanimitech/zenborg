@@ -773,7 +773,7 @@ describe("Export/Import System", () => {
           cycles: sampleCycles,
           phaseConfigs: samplePhaseConfigs,
           // These will be undefined in the actual import
-        } as any,
+        } as unknown as ZenborgExportData["data"],
         metadata: {
           totalMoments: 2,
           totalAreas: 2,

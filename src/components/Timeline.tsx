@@ -155,8 +155,6 @@ export function Timeline() {
     setDaysAfter((prev) => prev + 3);
   };
 
-  const isExpanded = daysBefore > 1 || daysAfter > 1;
-
   // Scroll to calendar today (not active day — active day can shift to
   // yesterday before morning starts, which would surprise users opening the
   // app early in the morning).
@@ -219,6 +217,9 @@ export function Timeline() {
   }, [selectedDay]);
 
   // Scroll the selected day into view once it's rendered.
+  // daysBefore/daysAfter are intentional deps: the previous effect may expand
+  // the range, and we need to re-scroll once the newly-rendered day exists.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: range deps trigger re-scroll after expansion
   useEffect(() => {
     if (!selectedDay) return;
     requestAnimationFrame(() => {
