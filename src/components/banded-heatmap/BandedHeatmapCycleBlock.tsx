@@ -42,10 +42,10 @@ export function BandedHeatmapCycleBlock({
   const isClamping = clampHighlight?.cycleId === band.cycleId;
 
   const containerClass = isSelected
-    ? "group relative flex flex-col rounded-md overflow-hidden bg-white dark:bg-stone-800 ring-2 ring-stone-700 dark:ring-stone-300 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.18)] transition-colors"
+    ? "group relative flex flex-col rounded-md overflow-visible bg-white dark:bg-stone-800 ring-2 ring-stone-700 dark:ring-stone-300 shadow-[0_2px_10px_-3px_rgba(0,0,0,0.18)] transition-colors"
     : (() => {
         const base =
-          "group relative flex flex-col rounded-md overflow-hidden ring-1 transition-colors";
+          "group relative flex flex-col rounded-md overflow-visible ring-1 transition-colors";
         switch (band.tense) {
           case "active":
             return `${base} bg-stone-50 dark:bg-stone-900/70 ring-stone-400 dark:ring-stone-500`;

@@ -6,7 +6,10 @@ interface BandedHeatmapCreatePopupProps {
   startDate: string;
   endDate: string;
   dayCount: number;
-  anchorX: number;
+  /** Viewport-space horizontal anchor (popup is portaled to document.body). */
+  viewportLeft: number;
+  /** Viewport-space top anchor (typically the bottom of the heatmap). */
+  viewportTop: number;
   onCommit: (props: { name: string; intention: string | null }) => void;
   onCancel: () => void;
 }
@@ -14,7 +17,10 @@ interface BandedHeatmapCreatePopupProps {
 function formatDateRange(start: string, end: string): string {
   const fmt = (iso: string) => {
     const d = new Date(`${iso}T00:00:00Z`);
-    const month = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    const month = d.toLocaleString("en-US", {
+      month: "short",
+      timeZone: "UTC",
+    });
     const day = d.getUTCDate();
     return `${month} ${day}`;
   };
@@ -25,7 +31,8 @@ export function BandedHeatmapCreatePopup({
   startDate,
   endDate,
   dayCount,
-  anchorX,
+  viewportLeft,
+  viewportTop,
   onCommit,
   onCancel,
 }: BandedHeatmapCreatePopupProps) {
@@ -70,12 +77,11 @@ export function BandedHeatmapCreatePopup({
       ref={ref}
       role="dialog"
       aria-label="Plant cycle"
-      className="absolute z-20 rounded-md bg-white dark:bg-stone-800 ring-1 ring-stone-300 dark:ring-stone-600 shadow-lg p-3 w-64 font-mono"
+      className="fixed z-50 rounded-md bg-white dark:bg-stone-800 ring-1 ring-stone-300 dark:ring-stone-600 shadow-lg p-3 w-64 font-mono"
       style={{
-        left: anchorX,
+        left: viewportLeft,
+        top: viewportTop,
         transform: "translateX(-50%)",
-        top: "100%",
-        marginTop: 6,
       }}
       onPointerDown={(e) => e.stopPropagation()}
     >

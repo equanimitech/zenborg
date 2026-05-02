@@ -1,5 +1,5 @@
-/** biome-ignore-all lint/a11y/noStaticElementInteractions: <explanation> */
-/** biome-ignore-all lint/a11y/noNoninteractiveTabindex: <explanation> */
+/** biome-ignore-all lint/a11y/noStaticElementInteractions: heatmap is a custom interactive surface (drag/pan/resize), not a standard control */
+/** biome-ignore-all lint/a11y/noNoninteractiveTabindex: scroll container needs tabIndex=0 to receive keyboard focus for arrow-key navigation */
 "use client";
 
 import {
@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import type { Area } from "@/domain/entities/Area";
 import type { CreateCycleProps, Cycle } from "@/domain/entities/Cycle";
 import type { Moment } from "@/domain/entities/Moment";
@@ -144,6 +145,10 @@ export function BandedHeatmap({
   type Draft = { startIdx: number; endIdx: number; valid: boolean };
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pendingCreate, setPendingCreate] = useState<Draft | null>(null);
+  const [popupAnchor, setPopupAnchor] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
 
   // Imperative scroll helper. Idempotent — only mutates DOM scrollLeft.
   const ensureVisible = useCallback(
@@ -317,6 +322,17 @@ export function BandedHeatmap({
       if (drag?.mode === "create") {
         if (draft?.valid) {
           setPendingCreate(draft);
+          // Capture viewport coords for the popup, anchored at the bottom of
+          // the heatmap and horizontally centered over the new cycle range.
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            const centerContentX =
+              (dayX[draft.startIdx] + dayX[draft.endIdx] + CELL_SIZE) / 2;
+            setPopupAnchor({
+              left: rect.left + centerContentX - el.scrollLeft + 8, // +8 for px-2 padding
+              top: rect.bottom + 6,
+            });
+          }
         } else {
           setDraft(null);
         }
@@ -335,7 +351,7 @@ export function BandedHeatmap({
         el.releasePointerCapture(e.pointerId);
       }
     },
-    [indexFromClientX, selectIndex, draft],
+    [indexFromClientX, selectIndex, draft, dayX],
   );
 
   const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
@@ -461,36 +477,37 @@ export function BandedHeatmap({
               />
             )}
           </div>
-
-          {pendingCreate && (
-            <BandedHeatmapCreatePopup
-              startDate={vm.days[pendingCreate.startIdx].date}
-              endDate={vm.days[pendingCreate.endIdx].date}
-              dayCount={pendingCreate.endIdx - pendingCreate.startIdx + 1}
-              anchorX={
-                (dayX[pendingCreate.startIdx] +
-                  dayX[pendingCreate.endIdx] +
-                  CELL_SIZE) /
-                2
-              }
-              onCommit={({ name, intention }) => {
-                onCycleCreate?.({
-                  name,
-                  startDate: vm.days[pendingCreate.startIdx].date,
-                  endDate: vm.days[pendingCreate.endIdx].date,
-                  intention,
-                });
-                setPendingCreate(null);
-                setDraft(null);
-              }}
-              onCancel={() => {
-                setPendingCreate(null);
-                setDraft(null);
-              }}
-            />
-          )}
         </div>
       </div>
+      {pendingCreate &&
+        popupAnchor &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <BandedHeatmapCreatePopup
+            startDate={vm.days[pendingCreate.startIdx].date}
+            endDate={vm.days[pendingCreate.endIdx].date}
+            dayCount={pendingCreate.endIdx - pendingCreate.startIdx + 1}
+            viewportLeft={popupAnchor.left}
+            viewportTop={popupAnchor.top}
+            onCommit={({ name, intention }) => {
+              onCycleCreate?.({
+                name,
+                startDate: vm.days[pendingCreate.startIdx].date,
+                endDate: vm.days[pendingCreate.endIdx].date,
+                intention,
+              });
+              setPendingCreate(null);
+              setPopupAnchor(null);
+              setDraft(null);
+            }}
+            onCancel={() => {
+              setPendingCreate(null);
+              setPopupAnchor(null);
+              setDraft(null);
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
