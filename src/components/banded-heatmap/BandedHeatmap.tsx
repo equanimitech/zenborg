@@ -2,6 +2,7 @@
 /** biome-ignore-all lint/a11y/noNoninteractiveTabindex: scroll container needs tabIndex=0 to receive keyboard focus for arrow-key navigation */
 "use client";
 
+import { use$ } from "@legendapp/state/react";
 import {
   useCallback,
   useEffect,
@@ -10,7 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import type { Area } from "@/domain/entities/Area";
 import type { CreateCycleProps, Cycle } from "@/domain/entities/Cycle";
 import type { Moment } from "@/domain/entities/Moment";
@@ -19,6 +19,7 @@ import {
   deriveBandedHeatmapViewModel,
   type HeatmapViewModel,
 } from "@/infrastructure/state/bandedHeatmapViewModel";
+import { cycleResizePreview$ } from "@/infrastructure/state/ui-store";
 import { phaseBackgrounds } from "@/lib/design-tokens";
 import { BandedHeatmapAxis } from "./BandedHeatmapAxis";
 import { BandedHeatmapCreateDraft } from "./BandedHeatmapCreateDraft";
@@ -124,6 +125,27 @@ export function BandedHeatmap({
     phaseBackgrounds[3],
   ];
 
+  // In-flight resize preview — drives a translucent overlay marking the
+  // candidate new range while the user drags an edge handle.
+  const resizePreview = use$(cycleResizePreview$);
+  const resizePreviewBox = useMemo(() => {
+    if (!resizePreview) return null;
+    const cycle = cycles.find((c) => c.id === resizePreview.cycleId);
+    if (!cycle) return null;
+    const newStart =
+      resizePreview.edge === "start" ? resizePreview.date : cycle.startDate;
+    const newEnd =
+      resizePreview.edge === "end"
+        ? resizePreview.date
+        : (cycle.endDate ?? cycle.startDate);
+    const startIdx = vm.days.findIndex((d) => d.date === newStart);
+    const endIdx = vm.days.findIndex((d) => d.date === newEnd);
+    if (startIdx < 0 || endIdx < 0) return null;
+    const left = dayX[startIdx];
+    const right = dayX[endIdx] + CELL_SIZE;
+    return { left, width: right - left };
+  }, [resizePreview, cycles, vm.days, dayX]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragRef = useRef<
@@ -145,10 +167,9 @@ export function BandedHeatmap({
   type Draft = { startIdx: number; endIdx: number; valid: boolean };
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pendingCreate, setPendingCreate] = useState<Draft | null>(null);
-  const [popupAnchor, setPopupAnchor] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
+  const [popupAnchorEl, setPopupAnchorEl] = useState<HTMLDivElement | null>(
+    null,
+  );
 
   // Imperative scroll helper. Idempotent — only mutates DOM scrollLeft.
   const ensureVisible = useCallback(
@@ -322,17 +343,6 @@ export function BandedHeatmap({
       if (drag?.mode === "create") {
         if (draft?.valid) {
           setPendingCreate(draft);
-          // Capture viewport coords for the popup, anchored at the bottom of
-          // the heatmap and horizontally centered over the new cycle range.
-          if (el) {
-            const rect = el.getBoundingClientRect();
-            const centerContentX =
-              (dayX[draft.startIdx] + dayX[draft.endIdx] + CELL_SIZE) / 2;
-            setPopupAnchor({
-              left: rect.left + centerContentX - el.scrollLeft + 8, // +8 for px-2 padding
-              top: rect.bottom + 6,
-            });
-          }
         } else {
           setDraft(null);
         }
@@ -351,7 +361,7 @@ export function BandedHeatmap({
         el.releasePointerCapture(e.pointerId);
       }
     },
-    [indexFromClientX, selectIndex, draft, dayX],
+    [indexFromClientX, selectIndex, draft],
   );
 
   const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
@@ -476,38 +486,61 @@ export function BandedHeatmap({
                 valid={draft.valid}
               />
             )}
+            {resizePreviewBox && (
+              <div
+                className="absolute top-0 bottom-0 rounded-md ring-2 ring-stone-700/80 dark:ring-stone-200/80 bg-stone-900/10 dark:bg-stone-100/10"
+                style={{
+                  left: resizePreviewBox.left,
+                  width: resizePreviewBox.width,
+                  transition: "left 100ms ease-out, width 100ms ease-out",
+                }}
+              />
+            )}
           </div>
+          {/* Invisible anchor for the create-cycle Popover. Positioned at the
+              horizontal centre of the new cycle so Radix Popover can attach. */}
+          {pendingCreate && (
+            <div
+              ref={setPopupAnchorEl}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                left:
+                  (dayX[pendingCreate.startIdx] +
+                    dayX[pendingCreate.endIdx] +
+                    CELL_SIZE) /
+                  2,
+                top: 0,
+                width: 1,
+                height: 1,
+                pointerEvents: "none",
+              }}
+            />
+          )}
         </div>
       </div>
-      {pendingCreate &&
-        popupAnchor &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <BandedHeatmapCreatePopup
-            startDate={vm.days[pendingCreate.startIdx].date}
-            endDate={vm.days[pendingCreate.endIdx].date}
-            dayCount={pendingCreate.endIdx - pendingCreate.startIdx + 1}
-            viewportLeft={popupAnchor.left}
-            viewportTop={popupAnchor.top}
-            onCommit={({ name, intention }) => {
-              onCycleCreate?.({
-                name,
-                startDate: vm.days[pendingCreate.startIdx].date,
-                endDate: vm.days[pendingCreate.endIdx].date,
-                intention,
-              });
-              setPendingCreate(null);
-              setPopupAnchor(null);
-              setDraft(null);
-            }}
-            onCancel={() => {
-              setPendingCreate(null);
-              setPopupAnchor(null);
-              setDraft(null);
-            }}
-          />,
-          document.body,
-        )}
+      {pendingCreate && (
+        <BandedHeatmapCreatePopup
+          startDate={vm.days[pendingCreate.startIdx].date}
+          endDate={vm.days[pendingCreate.endIdx].date}
+          dayCount={pendingCreate.endIdx - pendingCreate.startIdx + 1}
+          anchorElement={popupAnchorEl}
+          onCommit={({ name, intention }) => {
+            onCycleCreate?.({
+              name,
+              startDate: vm.days[pendingCreate.startIdx].date,
+              endDate: vm.days[pendingCreate.endIdx].date,
+              intention,
+            });
+            setPendingCreate(null);
+            setDraft(null);
+          }}
+          onCancel={() => {
+            setPendingCreate(null);
+            setDraft(null);
+          }}
+        />
+      )}
     </div>
   );
 }

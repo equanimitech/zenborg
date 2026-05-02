@@ -1,7 +1,7 @@
 "use client";
 
 import { useValue } from "@legendapp/state/react";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { CycleService } from "@/application/services/CycleService";
 import type { CreateCycleProps } from "@/domain/entities/Cycle";
 import {
@@ -27,13 +27,14 @@ export function CycleDeckHeatmap() {
   const selectedCycleId = useValue(cycleDeckSelectedCycleId$);
   const selectedDay = useValue(selectedDay$);
 
-  const cycles = useMemo(() => Object.values(allCycles), [allCycles]);
-  const moments = useMemo(() => Object.values(allMoments), [allMoments]);
-  const areas = useMemo(() => Object.values(allAreas), [allAreas]);
-  const phaseConfigs = useMemo(
-    () => Object.values(allPhaseConfigs),
-    [allPhaseConfigs],
-  );
+  // Re-derive arrays each render. Legend State may return a stable record
+  // reference across in-place child mutations (e.g. cycles$[id].set(...)),
+  // which would make `useMemo` cache stale arrays. Recomputing is cheap and
+  // guarantees the BandedHeatmap re-derives its viewmodel on every commit.
+  const cycles = Object.values(allCycles);
+  const moments = Object.values(allMoments);
+  const areas = Object.values(allAreas);
+  const phaseConfigs = Object.values(allPhaseConfigs);
 
   const today = getTodayISO();
 

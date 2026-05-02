@@ -72,6 +72,19 @@ export function closeDayNoteEdit(): void {
 }
 
 /**
+ * In-flight preview for a cycle resize drag.
+ * Set on pointerdown of a CycleResizeHandle, mutated on each move, cleared
+ * on release. Drives a translucent overlay rendered by BandedHeatmap so the
+ * user sees the candidate range update smoothly while dragging — without
+ * committing the new dates until release.
+ */
+export const cycleResizePreview$ = observable<{
+  cycleId: string;
+  edge: "start" | "end";
+  date: string;
+} | null>(null);
+
+/**
  * Brief highlight on a cycle whose neighbor blocked an in-flight resize.
  * Auto-clears 300ms after being set. Read by `BandedHeatmapCycleBlock`.
  */
