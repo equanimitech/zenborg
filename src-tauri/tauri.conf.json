@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "zenborg",
-  "version": "0.11.1",
-  "identifier": "org.rafaba.zenborg",
+  "version": "0.11.2",
+  "identifier": "tech.equanimi.zenborg",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -33,7 +33,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Rafael Toletti Ballestiero (BGCMNT55ZN)",
+      "providerShortName": "BGCMNT55ZN",
+      "minimumSystemVersion": "11.0"
+    }
   },
   "plugins": {
     "updater": {
