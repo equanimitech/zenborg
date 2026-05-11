@@ -1,3 +1,16 @@
+---
+gtd:
+  status: shipped
+shipped:
+  date: 2026-05-11
+  commits:
+    - 69d0b33  # refactor: drop manual activation; cycle dates are the only source
+    - 2fd6597  # feat(heatmap): drag cycle edges to resize
+    - cf545d7  # fix(heatmap): live drag, edge-straddle handles
+    - 5a3dc48  # fix(heatmap): preview-during-drag, portaled date label
+  note: "Shipped piecewise via heatmap commits. Cycle UX replaced; polish ideas (gradient/noise, globe-spin, dense variant) remain separate someday items."
+---
+
 # Replace cycle UX with banded heatmap
 
 Raw capture — 2026-04-29.

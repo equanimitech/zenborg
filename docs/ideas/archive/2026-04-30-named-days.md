@@ -1,3 +1,12 @@
+---
+gtd:
+  status: shipped
+shipped:
+  date: 2026-05-11
+  commit: 253a7e7
+  note: "feat(timeline): named days via DayNote entity"
+---
+
 # Named days
 
 Raw capture — 2026-04-30.

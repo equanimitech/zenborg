@@ -1,3 +1,13 @@
+---
+gtd:
+  status: shipped
+shipped:
+  date: 2026-05-11
+  commits:
+    - 2fd6597  # feat(heatmap): drag cycle edges to resize with collision clamping
+    - cf545d7  # fix(heatmap): live drag, edge-straddle handles, portaled create popup
+---
+
 # Cycle date shifting
 
 Raw capture — 2026-05-02.
