@@ -7,8 +7,7 @@
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm run dev",
-    "beforeBuildCommand": "pnpm run build:export",
-    "beforeBundleCommand": "bash src-tauri/scripts/build-sidecars.sh"
+    "beforeBuildCommand": "pnpm run build:export && bash src-tauri/scripts/build-sidecars.sh"
   },
   "app": {
     "windows": [
