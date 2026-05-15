@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx index.ts",
     "build": "tsc --outDir dist && echo '{\"type\":\"module\"}' > dist/package.json",
+    "build:compile": "bun build index.ts --compile --target=bun --outfile dist/zenborg-mcp",
     "typecheck": "tsc --noEmit",
     "smoke": "pnpm build && node smoke-test.mjs"
   },

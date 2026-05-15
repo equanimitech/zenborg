@@ -7,7 +7,8 @@
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "pnpm run dev",
-    "beforeBuildCommand": "pnpm run build:export"
+    "beforeBuildCommand": "pnpm run build:export",
+    "beforeBundleCommand": "bash src-tauri/scripts/build-sidecars.sh"
   },
   "app": {
     "windows": [
@@ -27,6 +28,9 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "externalBin": [
+      "binaries/zenborg-mcp"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
