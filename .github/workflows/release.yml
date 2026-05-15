@@ -65,6 +65,11 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
+      - name: Install Bun (build-time only - compiles the MCP sidecar)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install frontend dependencies
         run: pnpm install
 
