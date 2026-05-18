@@ -25,7 +25,7 @@ export function GhostHabitCard({ habitId, area, cycleId }: GhostHabitCardProps) 
   const allHabits = useValue(habits$);
   const habit = allHabits[habitId];
   const cycleService = new CycleService();
-  const health = useHabitHealth(habitId);
+  const { health } = useHabitHealth(habitId);
 
   if (!habit) return null;
 

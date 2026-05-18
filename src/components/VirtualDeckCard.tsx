@@ -37,7 +37,8 @@ export function VirtualDeckCard({
   slotIndex,
   asPresentational = false,
 }: VirtualDeckCardProps) {
-  const health = useHabitHealth(habit.id);
+  const { health, daysSinceLast } = useHabitHealth(habit.id);
+  const showDaysSinceLast = health === "wilting" && daysSinceLast !== null;
 
   const dragData: DraggableData = {
     type: "deck-card",
@@ -102,6 +103,17 @@ export function VirtualDeckCard({
       >
         {habit.name}
       </span>
+      {showDaysSinceLast && (
+        <span
+          className={cn(
+            "text-xs font-mono opacity-60 shrink-0",
+            textColors.primary,
+          )}
+          aria-label={`${daysSinceLast} days since last allocation`}
+        >
+          ·{daysSinceLast}d
+        </span>
+      )}
     </div>
   );
 }

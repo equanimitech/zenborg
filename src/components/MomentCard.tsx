@@ -57,7 +57,7 @@ export function MomentCard({
   const isSelected = isSelectedMoment(moment.id);
 
   // Health-based emoji treatment (opacity) — "unstated" when no habit link
-  const health = useHabitHealth(moment.habitId ?? "");
+  const { health } = useHabitHealth(moment.habitId ?? "");
 
   const handleClick = (e: React.MouseEvent) => {
     // Shift + click → Range selection (if contextMomentIds provided)
