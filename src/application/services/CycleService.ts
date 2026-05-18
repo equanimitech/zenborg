@@ -864,7 +864,7 @@ export class CycleService {
     now: Date
   ): number | null {
     const habitMoments = moments.filter((m) => m.habitId === habitId);
-    const latest = habitHealthService.latestAllocationDate(habitMoments);
+    const latest = habitHealthService.latestAllocationDate(habitMoments, now);
     if (latest === null) return null;
     const ms = now.getTime() - latest.getTime();
     return Math.floor(ms / (24 * 60 * 60 * 1000));

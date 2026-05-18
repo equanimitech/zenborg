@@ -38,7 +38,8 @@ export function VirtualDeckCard({
   asPresentational = false,
 }: VirtualDeckCardProps) {
   const { health, daysSinceLast } = useHabitHealth(habit.id);
-  const showDaysSinceLast = health === "wilting" && daysSinceLast !== null;
+  const showDaysSinceLast =
+    health === "wilting" && daysSinceLast !== null && daysSinceLast > 0;
 
   const dragData: DraggableData = {
     type: "deck-card",

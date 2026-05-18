@@ -63,7 +63,7 @@ export class HabitHealthService {
     if (!rhythm) return "unstated";
     const threshold = rhythmSilenceThresholdDays(rhythm);
 
-    const lastAllocation = this.latestAllocationDate(habitMoments);
+    const lastAllocation = this.latestAllocationDate(habitMoments, now);
     if (lastAllocation === null) return "wilting";
 
     const daysSince = (now.getTime() - lastAllocation.getTime()) / MS_PER_DAY;
@@ -89,7 +89,10 @@ export class HabitHealthService {
     const countInPeriod = habitMoments.filter((m) => {
       if (m.day === null) return false;
       const dayDate = new Date(m.day);
-      return dayDate.getTime() >= periodStart.getTime();
+      return (
+        dayDate.getTime() >= periodStart.getTime() &&
+        dayDate.getTime() <= now.getTime()
+      );
     }).length;
 
     const daysElapsed = Math.min(periodDays, daysSinceHabitUpdate);
@@ -99,11 +102,15 @@ export class HabitHealthService {
     return countInPeriod + tolerance >= expectedByNow ? "blooming" : "wilting";
   }
 
-  public latestAllocationDate(habitMoments: Moment[]): Date | null {
+  public latestAllocationDate(
+    habitMoments: Moment[],
+    now: Date | null = null
+  ): Date | null {
     let latest: Date | null = null;
     for (const m of habitMoments) {
       if (m.day === null) continue;
       const d = fromISODate(m.day);
+      if (now !== null && d > now) continue;
       if (latest === null || d > latest) latest = d;
     }
     return latest;

@@ -41,7 +41,7 @@ export function useHabitHealth(habitId: string): HabitHealthSnapshot {
   const health = habitHealthService.computeHealth(habit, plan, momentsList, now);
 
   const habitMoments = momentsList.filter((m) => m.habitId === habitId);
-  const latest = habitHealthService.latestAllocationDate(habitMoments);
+  const latest = habitHealthService.latestAllocationDate(habitMoments, now);
   const daysSinceLast =
     latest === null
       ? null
