@@ -78,6 +78,7 @@ Call `mcp__zenborg__list_moments` for today and tomorrow in parallel.
 
 Also fetch:
 - `mcp__zenborg__list_habits` with `{ "health": "wilting" }` for wilting habits
+- `mcp__zenborg__get_cycle_planning_proposals` with the running cycle's id, to know which habits have a budget
 
 #### 6. Render today and tomorrow
 
@@ -108,7 +109,9 @@ These are candidates, not prescriptions. The gardener picks.
 If today or tomorrow have empty phases and there are wilting candidates:
 **"Want to plant anything for today or tomorrow?"**
 
-If the user names moments, hand off to the tend workflow.
+If the user names moments, hand off to the tend workflow. When planting via
+`add_moment`, pass `fromPlan: true` for any habit whose `habitId` appears in
+the cycle planning proposals. This links the moment to the cycle budget.
 
 ## Rules
 
