@@ -1,122 +1,126 @@
 ---
 name: weather
 description: >-
-  Review and plan the week in Zenborg: look back at where attention landed and
-  look ahead at what to plant. This skill should be used when the user says
-  "review the week", "plan the week", "how was my week", "Monday planning",
-  "weekly review", "what did I do this week", or invokes "/weather".
-  Supersedes the weekly-moments-review skill with a unified review+plan ritual.
-  Do NOT trigger for moment capture (use tend), day rituals (use sunrise/sunset),
-  or cycle-level review (use season).
+  Catch up on recent unplanted days and look ahead at the next 48 hours.
+  Primarily surfaces yesterday (or whichever days since the last check haven't
+  been planted), lets the user correct or fill them in, then shows today and
+  tomorrow's board. Use when the user says "weather", "catch me up", "what did I
+  miss", "yesterday", "plan today and tomorrow", "what's coming up", or invokes
+  "/weather". Do NOT trigger for single-moment capture (tend), the morning
+  ritual (sunrise), day close (sunset), cycle-level review (season), or the
+  heavy evidence-based lookback (recap).
 ---
 
 # Weather
 
-The broader pattern. One skill, two halves: look back at the week that was, then look ahead at the week to come.
+Catch up and look ahead. Two beats: land what happened recently, then show
+what's coming.
 
 ## When to invoke
 
 Trigger phrases:
-- "/weather", "review the week", "plan the week"
-- "how was my week", "what did I do this week"
-- "Monday planning", "weekly review"
-- "where did my attention go this week"
+- "/weather", "catch me up", "what did I miss"
+- "what happened yesterday", "fill in yesterday"
+- "plan today and tomorrow", "what's coming up"
 
 Do NOT trigger for:
-- Single-day operations (tend, sunrise, sunset)
+- Single moment capture (tend)
+- Morning ritual (sunrise) or day close (sunset)
 - Cycle-level review or planning (season)
-- A specific moment to capture (tend)
+- Heavy evidence-based lookback with git/keel/garmin (recap)
 
 ## Workflow
 
-### Review half (look back)
+### Beat 1 — Look back (catch up)
 
-#### 1. Determine the window
+#### 1. Determine the lookback window
 
-Default: the most recent 7 days ending today (inclusive). If the user names a different window, honor it.
+Default: yesterday only. If today has zero moments, include today in the
+lookback too. If the user names a wider window ("last 3 days", "since Monday"),
+honor it. Never exceed 7 days — route to recap for longer.
 
-#### 2. Fetch moments day-by-day
+#### 2. Fetch the lookback days
 
-Call `mcp__zenborg__list_moments` with `{ "allocation": "allocated", "day": "YYYY-MM-DD" }` for each day in the window. Fire all 7 calls in parallel.
+Call `mcp__zenborg__list_moments` with `{ "allocation": "allocated", "day": "<YYYY-MM-DD>" }` for each day in the window. Fire all calls in parallel.
 
 In parallel, also fetch:
-- `mcp__zenborg__list_areas` to map areaId to name/emoji
-- `mcp__zenborg__list_habits` to map habitId to name/attitude/rhythm
-- `mcp__zenborg__list_wilting_habits` for the current wilting set
+- `mcp__zenborg__list_areas` to resolve areaId → name/emoji
 
-#### 3. Render the per-day breakdown
+#### 3. Render each lookback day
 
-For each day:
+For each day, one compact block:
+
 ```
-## Monday 2026-08-25 (4)
-  Morning:   Running, Coffee
-  Afternoon: Themia work, Meeting
+### Yesterday — Mon Sep 8 (3)
+  Morning:   🏃 recovery run · ☕️ specialty coffee
+  Afternoon: 🛠️ build
   Evening:   (empty)
 ```
 
-Group by phase. Show moment names with emoji. Empty days render as `(0)`.
+Empty days render as `(0)`. Group by phase. One line per phase.
 
-#### 4. Tally by area
+#### 4. Offer corrections
 
-Count moments per area across the window. Render a sorted table:
+After rendering, ask once: **"Anything to add or change?"**
+
+The user might say:
+- "I also went for a walk in the evening" → hand off to tend to plant it
+- "The build was actually equanimi.tech, not Themia" → update the moment
+- "Looks right" or silence → move on
+
+Do not prompt more than once. One question, then move to beat 2.
+
+### Beat 2 — Look ahead (next 48h)
+
+#### 5. Fetch today and tomorrow
+
+Call `mcp__zenborg__list_moments` for today and tomorrow in parallel.
+
+Also fetch:
+- `mcp__zenborg__list_habits` with `{ "health": "wilting" }` for wilting habits
+
+#### 6. Render today and tomorrow
+
+Same compact format as the lookback:
+
 ```
-| Area      | Count |
-|-----------|-------|
-| Themia    | 8     |
-| Fitness   | 5     |
-| Social    | 3     |
+### Today — Tue Sep 9 (2)
+  Morning:   (empty)
+  Afternoon: 🧾 free appointment (14:00) · 🤔 therapy (16:00)
+  Evening:   (empty)
+
+### Tomorrow — Wed Sep 10 (0)
+  (nothing planted)
 ```
 
-#### 5. Surface patterns
+#### 7. Surface wilting habits as candidates
 
-Pull 3-5 neutral observations:
-- Areas with zero moments (silence is data)
-- Spikes or drops vs. typical baseline
-- Habits allocated unusually often or not at all
-- Tag clusters worth noting
+If there are wilting habits, list the top 3-5 as one-liners:
 
-One line per observation. No value judgments.
+```
+Wilting: 🏃 recovery run (5d silent, weekly×2) · 💪 gym (8d, weekly×2) · 💧 mobility (6d, weekly×2)
+```
 
-#### 6. Surface wilting habits
+These are candidates, not prescriptions. The gardener picks.
 
-From `list_wilting_habits`, show the top 5-8 sorted by overdue ratio (not raw days). For each: emoji + name + days silent + rhythm + attitude.
+#### 8. Offer to plant
 
-### Plan half (look ahead)
+If today or tomorrow have empty phases and there are wilting candidates:
+**"Want to plant anything for today or tomorrow?"**
 
-#### 7. Transition to planning
-
-If the user wants to plan:
-- "Ready to look ahead?"
-- "Want to plant the coming week?"
-
-#### 8. Show the coming week's state
-
-For the next 7 days, check what is already planted:
-- Call `mcp__zenborg__list_moments` for each future day
-
-Show what is already on the board and where the gaps are.
-
-#### 9. Propose from wilting habits
-
-Suggest wilting habits as candidates for the coming week. Present them as options, not prescriptions:
-- "Running has been quiet for 8 days. Plant it somewhere this week?"
-- "Reading rhythm is weekly x3, last seen 5 days ago."
-
-#### 10. Plant on direction
-
-If the user names moments to plant, hand off to the tend workflow. Use the specified days and phases.
+If the user names moments, hand off to the tend workflow.
 
 ## Rules
 
 - Do NOT compute completion rates, streaks, or scores.
-- Do NOT moralize. "Family had 1 moment" is data; "you neglected family" is not.
-- Do NOT call `list_moments` without a `day` filter. The global list exceeds context budget.
-- Silence is data. Zero-moment days are rendered, not hidden.
-- Review and plan are distinct. Do not force planning after review. Offer it.
+- Do NOT moralize. Silence is data, not failure.
+- Do NOT call `list_moments` without a `day` filter.
+- Do NOT reconcile against git, keel, or garmin — that is recap's job.
+- One correction prompt in the lookback, one planting offer in the lookahead. No nagging.
 - The gardener decides what to tend. Surface context; never prescribe.
 
 ## Edge cases
 
-- **Window spans a cycle boundary:** still render per-day. Route to season for cycle-level review.
-- **No moments in the window:** render the empty structure, ask if the user wants to look further back.
-- **User asks for multi-week window:** walk one week at a time, render each, then a roll-up tally.
+- **User invokes on Monday morning with nothing planted over the weekend:** lookback covers Sat+Sun. Offer to fill them in.
+- **Yesterday was fully planted:** render it, skip the correction prompt, go straight to beat 2.
+- **Tomorrow has no moments and no wilting habits:** just show the empty board and close. Don't force a planting.
