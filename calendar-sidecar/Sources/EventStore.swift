@@ -667,9 +667,9 @@ private func colorFromHex(_ hex: String) -> CGColor? {
 }
 
 private func eventSnapshotFrom(_ ekEvent: EKEvent) -> EventSnapshot {
-    let tz = ekEvent.timeZone ?? Calendar.current.timeZone
-    var cal = Calendar.current
-    cal.timeZone = tz
+    // Always extract in the device's local timezone — moments store local
+    // display time, so the snapshot must match that frame.
+    let cal = Calendar.current
     let components = cal.dateComponents([.year, .month, .day, .hour, .minute], from: ekEvent.startDate)
     let day = String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
 
@@ -737,10 +737,10 @@ private func createOrUpdateEvent(
     components.year = parts[0]
     components.month = parts[1]
     components.day = parts[2]
-    if let tz = timezone { components.timeZone = tz }
-
-    var cal = Calendar.current
-    if let tz = timezone { cal.timeZone = tz }
+    // Moment startTime is local display time — interpret in the device's
+    // timezone so the absolute instant is correct. The event's timeZone
+    // (set above) is display metadata only.
+    let cal = Calendar.current
 
     if isAllDay {
         ekEvent.isAllDay = true

@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { scheduleLocalStartTime } from "../src/domain/value-objects/Schedule.ts";
 import {
   countMomentsInPhase,
   normalizeRefs,
@@ -120,8 +121,20 @@ export function resolveAddMoment(
 
     if (habit.schedule) {
       const timing = timingFromSchedule(habit.schedule);
-      if (effectiveStartTime === undefined)
-        effectiveStartTime = timing.startTime;
+      if (effectiveStartTime === undefined) {
+        if (habit.schedule.timezone) {
+          const viewerTz =
+            Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const day = input.day ?? new Date().toISOString().slice(0, 10);
+          effectiveStartTime = scheduleLocalStartTime(
+            habit.schedule as any,
+            viewerTz,
+            day,
+          );
+        } else {
+          effectiveStartTime = timing.startTime;
+        }
+      }
       if (effectiveDurationMin === undefined)
         effectiveDurationMin = timing.durationMin;
     }

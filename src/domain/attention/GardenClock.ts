@@ -89,7 +89,7 @@ export function boundariesIn(
   }
 
   for (const moment of moments) {
-    if (moment.day === null || moment.startTime === undefined) continue;
+    if (moment.day == null || moment.startTime == null) continue;
     const [h, m] = moment.startTime.split(":").map(Number);
     if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
     const [y, mo, d] = moment.day.split("-").map(Number);

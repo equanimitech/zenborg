@@ -36,7 +36,10 @@ import {
   type Rhythm,
   rhythmToCycleBudget,
 } from "@/domain/value-objects/Rhythm";
-import { timingFromSchedule } from "@/domain/value-objects/Schedule";
+import {
+  scheduleLocalStartTime,
+  timingFromSchedule,
+} from "@/domain/value-objects/Schedule";
 import {
   activeCycle$,
   activeCycleId$,
@@ -455,6 +458,25 @@ export class CycleService {
       (m) => m.day === day && m.phase === phase,
     );
 
+    const timing = habit.schedule
+      ? (() => {
+          const t = timingFromSchedule(habit.schedule);
+          if (habit.schedule.timezone) {
+            const viewerTz =
+              Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return {
+              ...t,
+              startTime: scheduleLocalStartTime(
+                habit.schedule,
+                viewerTz,
+                day,
+              ),
+            };
+          }
+          return t;
+        })()
+      : undefined;
+
     const created = createMoment({
       name: habit.name,
       areaId: habit.areaId,
@@ -464,7 +486,7 @@ export class CycleService {
       cyclePlanId: plan.id,
       tags: habit.tags || [],
       phase,
-      ...(habit.schedule ? timingFromSchedule(habit.schedule) : {}),
+      ...(timing ?? {}),
     });
     if ("error" in created) return created;
 
@@ -1058,6 +1080,25 @@ export class CycleService {
 
     const activeCycle = activeCycle$.get();
 
+    const timing = habit.schedule
+      ? (() => {
+          const t = timingFromSchedule(habit.schedule);
+          if (habit.schedule.timezone) {
+            const viewerTz =
+              Intl.DateTimeFormat().resolvedOptions().timeZone;
+            return {
+              ...t,
+              startTime: scheduleLocalStartTime(
+                habit.schedule,
+                viewerTz,
+                day,
+              ),
+            };
+          }
+          return t;
+        })()
+      : undefined;
+
     const result = createMoment({
       name: habit.name,
       areaId: habit.areaId,
@@ -1067,7 +1108,7 @@ export class CycleService {
       cyclePlanId: null,
       phase: null,
       tags: habit.tags || [],
-      ...(habit.schedule ? timingFromSchedule(habit.schedule) : {}),
+      ...(timing ?? {}),
     });
 
     if ("error" in result) {
