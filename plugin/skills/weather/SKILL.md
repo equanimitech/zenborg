@@ -113,6 +113,50 @@ If the user names moments, hand off to the tend workflow. When planting via
 `add_moment`, pass `fromPlan: true` for any habit whose `habitId` appears in
 the cycle planning proposals. This links the moment to the cycle budget.
 
+### Beat 3 — Things3 backlog scan (when planning extends beyond 48h)
+
+When the session naturally extends into weekly planning (the user asks "what else
+should we think about", "what's left", "route the inbox", or you've planted 3+
+days ahead), scan Things3 as a GTD health check.
+
+#### 9. Fetch Things3 state
+
+Fire in parallel:
+- `mcp__things-mcp__get_today` — flag items started > 3 days ago as stale
+- `mcp__things-mcp__get_inbox` — count + oldest age = processing debt
+- `mcp__things-mcp__get_areas` — map Things areas to zenborg areas
+- `mcp__things-mcp__get_upcoming` — deadlines in the next 14 days
+
+#### 10. Diagnose, don't list
+
+Surface pressure signals only:
+- **Inbox:** count + oldest. > 20 items or > 7 days old = debt.
+- **Stale Today:** tasks sitting in Today for > 3 days. Check Linear — if done there, clear.
+- **Deadlines:** anything due in the next 14 days.
+- **Mis-routes:** recurring practices sitting as tasks (→ zenborg habit), product ideas (→ repo).
+
+Render one compact table:
+
+```
+| Things area     | Anytime | Deadlines soon | Notes           |
+|-----------------|---------|----------------|-----------------|
+| 🏡 Home          | 6       | —              | 4 are shopping  |
+| 🤦‍♂️ Admin        | 3       | passport Jun 27| —               |
+```
+
+#### 11. Offer to process
+
+If inbox > 0: **"Want me to route the inbox items?"**
+
+Route by shape:
+- **Recurring practice** → zenborg habit
+- **One-off action** → Things area/project
+- **Product/work idea** → repo docs/ideas/
+- **Reference material** → zenborg habit guidance or complete
+- **Vent/no context** → cancel
+
+Optionally scan Someday if the user wants to go deeper.
+
 ## Rules
 
 - Do NOT compute completion rates, streaks, or scores.
