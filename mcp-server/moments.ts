@@ -67,17 +67,22 @@ function fail(error: string): AddMomentFailure {
   return { ok: false, error };
 }
 
+function parseLocalDate(s: string): number {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
 function coveringCycle(
   day: string,
   cycles: Record<string, Cycle>,
 ): Cycle | null {
-  const dayMs = Date.parse(day);
+  const dayMs = parseLocalDate(day);
   let best: Cycle | null = null;
   for (const c of Object.values(cycles)) {
-    const startMs = Date.parse(c.startDate);
+    const startMs = parseLocalDate(c.startDate);
     if (Number.isNaN(startMs) || dayMs < startMs) continue;
     if (c.endDate !== null) {
-      const endMs = Date.parse(c.endDate);
+      const endMs = parseLocalDate(c.endDate);
       if (Number.isNaN(endMs) || dayMs > endMs) continue;
     }
     if (!best || c.startDate > best.startDate) best = c;

@@ -128,7 +128,9 @@ function circleSize(dwellMs: number, maxDwell: number): number {
   return Math.round(min + ratio * (max - min));
 }
 
-function groupByPhase(moments: readonly TodayMoment[]): Map<string, readonly TodayMoment[]> {
+const PHASE_ORDER: Record<string, number> = { MORNING: 0, AFTERNOON: 1, EVENING: 2, NIGHT: 3 };
+
+function groupByPhase(moments: readonly TodayMoment[]): [string, readonly TodayMoment[]][] {
   const groups = new Map<string, TodayMoment[]>();
   for (const m of moments) {
     const phase = m.phase || "OTHER";
@@ -136,7 +138,7 @@ function groupByPhase(moments: readonly TodayMoment[]): Map<string, readonly Tod
     list.push(m);
     groups.set(phase, list);
   }
-  return groups;
+  return [...groups.entries()].sort(([a], [b]) => (PHASE_ORDER[a] ?? 99) - (PHASE_ORDER[b] ?? 99));
 }
 
 function phaseLabel(phase: string): string {
@@ -228,7 +230,7 @@ export function NewTab() {
         {/* Today's moments by phase */}
         {board.moments.length > 0 && (
           <section className="newtab-moments">
-            {[...phaseGroups.entries()].map(([phase, moments]) => (
+            {phaseGroups.map(([phase, moments]) => (
               <div key={phase} className="newtab-phase-group">
                 <p className={`newtab-phase-label ${phase === board.currentPhase ? "newtab-phase-current" : ""}`}>
                   {phaseLabel(phase)}

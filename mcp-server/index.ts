@@ -2065,11 +2065,18 @@ defineTool(server, {
 // CYCLES
 // ────────────────────────────────────────────────────────────────────────
 
+// Date.parse("YYYY-MM-DD") returns UTC midnight, but todayMs is local midnight.
+// In any timezone east of UTC the cycle "hasn't started yet" for up to 14h.
+function parseLocalDate(s: string): number {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
 function isCycleActive(cycle: Cycle, todayMs: number): boolean {
-  const startMs = Date.parse(cycle.startDate);
+  const startMs = parseLocalDate(cycle.startDate);
   if (Number.isNaN(startMs) || startMs > todayMs) return false;
   if (cycle.endDate === null) return true;
-  const endMs = Date.parse(cycle.endDate);
+  const endMs = parseLocalDate(cycle.endDate);
   return !Number.isNaN(endMs) && endMs >= todayMs;
 }
 
@@ -2141,7 +2148,7 @@ defineTool(server, {
           case "current":
             return isCycleActive(c, todayMs);
           case "upcoming": {
-            const start = Date.parse(c.startDate);
+            const start = parseLocalDate(c.startDate);
             return !Number.isNaN(start) && start > todayMs;
           }
           default:
@@ -2423,13 +2430,13 @@ defineTool(server, {
     }
 
     const cycle = active[0];
-    const startMs = Date.parse(cycle.startDate);
+    const startMs = parseLocalDate(cycle.startDate);
     const daysElapsed = Math.floor((todayMs - startMs) / 86_400_000);
     const daysRemaining =
       cycle.endDate !== null
         ? Math.max(
             0,
-            Math.floor((Date.parse(cycle.endDate) - todayMs) / 86_400_000),
+            Math.floor((parseLocalDate(cycle.endDate) - todayMs) / 86_400_000),
           )
         : null;
 
@@ -2970,11 +2977,11 @@ defineTool(server, {
           updates.order ??
           countMomentsInPhase(allMoments, updates.day, next.phase, id);
         const cycles = readCollection(VAULT_ROOT, "cycles");
-        const dayMs = Date.parse(updates.day);
+        const dayMs = parseLocalDate(updates.day);
         let covCycleId: string | null = null;
         for (const c of Object.values(cycles)) {
-          const startMs = Date.parse(c.startDate);
-          const endMs = c.endDate ? Date.parse(c.endDate) : Infinity;
+          const startMs = parseLocalDate(c.startDate);
+          const endMs = c.endDate ? parseLocalDate(c.endDate) : Infinity;
           if (!Number.isNaN(startMs) && dayMs >= startMs && dayMs <= endMs) {
             if (
               !covCycleId ||
