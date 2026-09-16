@@ -188,6 +188,48 @@ describe("bouts — the binge signal", () => {
   });
 });
 
+describe("bouts — audible dwell", () => {
+  it("credits background-audible time separately from foreground dwell", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "zoom.us"),
+      ev(1 * MIN, "audible_start", "zoom.us"),
+      ev(2 * MIN, "focus_end"),
+      ev(20 * MIN, "focus_start"),
+      ev(21 * MIN, "audible_end", "zoom.us"),
+      ev(22 * MIN, "tab_closed", "zoom.us"),
+    ]);
+    // 2 min foreground before focus_end, 2 min after focus_start
+    expect(toMinutes(bout.dwellMs)).toBe(4);
+    // 18 min background while audible (focus_end at 2 → focus_start at 20)
+    expect(toMinutes(bout.audibleDwellMs)).toBe(18);
+  });
+
+  it("does not double-count foreground+audible time", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "zoom.us"),
+      ev(0, "audible_start", "zoom.us"),
+      ev(10 * MIN, "audible_end", "zoom.us"),
+      ev(10 * MIN, "tab_closed", "zoom.us"),
+    ]);
+    // All foreground — audible but attending, so it goes to dwellMs
+    expect(toMinutes(bout.dwellMs)).toBe(10);
+    expect(toMinutes(bout.audibleDwellMs)).toBe(0);
+  });
+
+  it("does not credit audible time for a non-audible domain", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "chess.com"),
+      ev(0, "audible_start", "zoom.us"),
+      ev(1 * MIN, "focus_end"),
+      ev(20 * MIN, "focus_start"),
+      ev(21 * MIN, "tab_closed", "chess.com"),
+    ]);
+    // chess.com is in flight but not audible — background time is void
+    expect(toMinutes(bout.dwellMs)).toBe(2);
+    expect(toMinutes(bout.audibleDwellMs)).toBe(0);
+  });
+});
+
 describe("bouts — edges", () => {
   it("returns nothing for an empty stream", () => {
     expect(bouts([])).toEqual([]);

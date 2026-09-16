@@ -11,7 +11,7 @@
 
 import { bouts, createDomain } from "../../domain";
 import { startOfLocalDay } from "@/modules/activity/events";
-import { readEventsSince } from "@/modules/activity/log";
+import { queryEvents } from "@/modules/relay/client";
 import { storage } from "wxt/storage";
 import { nextFiredAt, shouldGate, type GateReading } from "./state";
 
@@ -94,13 +94,20 @@ function dayKey(now: number): string {
   return String(startOfLocalDay(now));
 }
 
-/** Attended ms today across `domains`, via the shared bout derivation. */
+/** Attended ms today across `domains`, via the shared bout derivation.
+ *
+ * Reads from the native host (the store) rather than the local IndexedDB
+ * outbox: the relay deletes events on ack, so after a flush the outbox
+ * holds at most a few minutes of events — never enough for a multi-minute
+ * gate threshold. The host holds the full day. When the host is unreachable,
+ * queryEvents returns [] — but then no events have been flushed either, so
+ * the outbox would be equally empty. */
 export async function dwellTodayFor(
   domains: readonly string[],
   now: number = Date.now()
 ): Promise<number> {
   const wanted = new Set(domains.map((d) => createDomain(d)));
-  const events = await readEventsSince(startOfLocalDay(now));
+  const events = await queryEvents(startOfLocalDay(now));
   let total = 0;
   for (const bout of bouts(events)) {
     for (const [domain, ms] of bout.byDomain) {

@@ -15,6 +15,7 @@
 import { storage } from "wxt/storage";
 import {
   IDLE_DETECTION_SECONDS,
+  audibleTransition,
   buildBrowserEvent,
   domainFromUrl,
   excessEventCount,
@@ -167,6 +168,34 @@ export function startActivityWriter(): void {
     }
   });
 
+  // ── Audible span (tab producing audio — calls, media) ─────────
+  const audibleSince = new Map<number, number>();
+
+  browser.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+    if (changeInfo.audible !== undefined) {
+      try {
+        const tab = await browser.tabs.get(tabId);
+        const domain = tab.url === undefined ? null : domainFromUrl(tab.url);
+        if (domain === null) return;
+        const map = await tabMapItem.getValue();
+        const { uuid, map: next } = tabUuid(map, tabId, () => crypto.randomUUID());
+        if (next !== map) await tabMapItem.setValue(next);
+        const now = Date.now();
+        const t = audibleTransition(audibleSince.get(tabId) ?? null, changeInfo.audible, now);
+        if (t.spanStart !== null) {
+          audibleSince.set(tabId, t.spanStart);
+        } else {
+          audibleSince.delete(tabId);
+        }
+        if (t.kind !== null) {
+          write(t.kind, { domain, tab: uuid }, t.durationMs);
+        }
+      } catch {
+        // tab vanished — fail-open
+      }
+    }
+  });
+
   // ── Navigation (domain changes only, never per-SPA-path) ──────
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     if (changeInfo.url === undefined) return;
@@ -215,6 +244,7 @@ export function startActivityWriter(): void {
       write("tab_closed", { domain, tab: uuid });
     }
     lastDomainByTab.delete(tabId);
+    audibleSince.delete(tabId);
   });
 
   // ── Focus span (browser holds OS focus) ───────────────────────

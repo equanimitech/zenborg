@@ -10,6 +10,7 @@ function run(startTs: number, minutes: number, domain = "youtube.com"): Run {
     startTs,
     endTs: startTs + minutes * MIN,
     dwellMs: createDuration(minutes * MIN),
+    audibleDwellMs: createDuration(0),
   };
 }
 

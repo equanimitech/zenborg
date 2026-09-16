@@ -10,6 +10,7 @@ import { startOfLocalDay } from "@/modules/activity/events";
 interface DomainStats {
   readonly domain: string;
   readonly dwellMs: number;
+  readonly audibleDwellMs: number;
   readonly areaId?: string;
   readonly videos: number;
   readonly posts: number;
@@ -52,19 +53,20 @@ function computeStats(
   events: readonly { kind?: string; payload?: { domain?: string } }[],
   areaMap: Record<string, string>,
 ): readonly DomainStats[] {
-  const byDomain = new Map<string, { dwellMs: number; videos: number; posts: number; games: number }>();
+  const byDomain = new Map<string, { dwellMs: number; audibleDwellMs: number; videos: number; posts: number; games: number }>();
 
   for (const run of domainRuns) {
     const d = run.domain as string;
-    const existing = byDomain.get(d) ?? { dwellMs: 0, videos: 0, posts: 0, games: 0 };
+    const existing = byDomain.get(d) ?? { dwellMs: 0, audibleDwellMs: 0, videos: 0, posts: 0, games: 0 };
     existing.dwellMs += run.dwellMs as number;
+    existing.audibleDwellMs += run.audibleDwellMs as number;
     byDomain.set(d, existing);
   }
 
   for (const e of events) {
     const d = (e.payload?.domain as string) ?? "";
     if (!d) { continue; }
-    const existing = byDomain.get(d) ?? { dwellMs: 0, videos: 0, posts: 0, games: 0 };
+    const existing = byDomain.get(d) ?? { dwellMs: 0, audibleDwellMs: 0, videos: 0, posts: 0, games: 0 };
     if (e.kind === "video_ended") { existing.videos += 1; }
     if (e.kind === "post_seen") { existing.posts += 1; }
     if (e.kind === "game_finished") { existing.games += 1; }
@@ -73,12 +75,14 @@ function computeStats(
 
   const result: DomainStats[] = [];
   for (const [domain, stats] of byDomain) {
-    if (stats.dwellMs < 60_000 && stats.videos === 0 && stats.posts === 0 && stats.games === 0) {
+    const totalDwell = stats.dwellMs + stats.audibleDwellMs;
+    if (totalDwell < 60_000 && stats.videos === 0 && stats.posts === 0 && stats.games === 0) {
       continue;
     }
     result.push({
       domain,
       dwellMs: stats.dwellMs,
+      audibleDwellMs: stats.audibleDwellMs,
       areaId: areaMap[domain],
       videos: stats.videos,
       posts: stats.posts,
@@ -86,7 +90,7 @@ function computeStats(
     });
   }
 
-  return result.sort((a, b) => b.dwellMs - a.dwellMs);
+  return result.sort((a, b) => (b.dwellMs + b.audibleDwellMs) - (a.dwellMs + a.audibleDwellMs));
 }
 
 function groupByArea(stats: readonly DomainStats[], allAreas: readonly AreaInfo[]): readonly AreaGroup[] {
@@ -102,7 +106,7 @@ function groupByArea(stats: readonly DomainStats[], allAreas: readonly AreaInfo[
   const result: AreaGroup[] = [];
   for (const [areaId, domains] of groups) {
     const area = areaId === "__uncategorized__" ? null : allAreas.find((a) => a.id === areaId) ?? null;
-    const totalDwell = domains.reduce((sum, d) => sum + d.dwellMs, 0);
+    const totalDwell = domains.reduce((sum, d) => sum + d.dwellMs + d.audibleDwellMs, 0);
     result.push({ area, areaId, domains, totalDwell });
   }
 
@@ -128,7 +132,9 @@ function circleSize(dwellMs: number, maxDwell: number): number {
   return Math.round(min + ratio * (max - min));
 }
 
-function groupByPhase(moments: readonly TodayMoment[]): Map<string, readonly TodayMoment[]> {
+const PHASE_ORDER: Record<string, number> = { MORNING: 0, AFTERNOON: 1, EVENING: 2, NIGHT: 3 };
+
+function groupByPhase(moments: readonly TodayMoment[]): [string, readonly TodayMoment[]][] {
   const groups = new Map<string, TodayMoment[]>();
   for (const m of moments) {
     const phase = m.phase || "OTHER";
@@ -136,7 +142,7 @@ function groupByPhase(moments: readonly TodayMoment[]): Map<string, readonly Tod
     list.push(m);
     groups.set(phase, list);
   }
-  return groups;
+  return [...groups.entries()].sort(([a], [b]) => (PHASE_ORDER[a] ?? 99) - (PHASE_ORDER[b] ?? 99));
 }
 
 function phaseLabel(phase: string): string {
@@ -200,7 +206,7 @@ export function NewTab() {
     await setArea(domain, areaId);
   };
 
-  const maxDwell = stats.length > 0 ? stats[0].dwellMs : 1;
+  const maxDwell = stats.length > 0 ? stats[0].dwellMs + stats[0].audibleDwellMs : 1;
   const areaGroups = groupByArea(stats, allAreas);
   const phaseGroups = groupByPhase(board.moments);
 
@@ -228,7 +234,7 @@ export function NewTab() {
         {/* Today's moments by phase */}
         {board.moments.length > 0 && (
           <section className="newtab-moments">
-            {[...phaseGroups.entries()].map(([phase, moments]) => (
+            {phaseGroups.map(([phase, moments]) => (
               <div key={phase} className="newtab-phase-group">
                 <p className={`newtab-phase-label ${phase === board.currentPhase ? "newtab-phase-current" : ""}`}>
                   {phaseLabel(phase)}
@@ -268,9 +274,11 @@ export function NewTab() {
                 </div>
                 <div className="newtab-circles">
                   {group.domains.map((s) => {
-                    const size = circleSize(s.dwellMs, maxDwell);
+                    const totalDwell = s.dwellMs + s.audibleDwellMs;
+                    const size = circleSize(totalDwell, maxDwell);
                     const actions = actionSummary(s);
                     const isAssigning = assigningDomain === s.domain;
+                    const audibleNote = s.audibleDwellMs > 0 ? ` (${formatDwell(s.audibleDwellMs)} audible)` : "";
                     return (
                       <div key={s.domain} className="newtab-circle-wrap">
                         <button
@@ -281,7 +289,7 @@ export function NewTab() {
                             backgroundColor: group.area?.color ?? "var(--quiet)",
                           }}
                           onClick={() => setAssigningDomain(isAssigning ? null : s.domain)}
-                          title={`${s.domain} — ${formatDwell(s.dwellMs)}${actions ? ` — ${actions}` : ""}`}
+                          title={`${s.domain} — ${formatDwell(totalDwell)}${audibleNote}${actions ? ` — ${actions}` : ""}`}
                         >
                           <img
                             src={`chrome-extension://${browser.runtime.id}/_favicon/?pageUrl=https://${s.domain}&size=16`}
@@ -291,7 +299,7 @@ export function NewTab() {
                           />
                         </button>
                         <span className="newtab-circle-label">{s.domain.replace(/\.com$|\.org$|\.io$|\.tv$|\.net$/, "")}</span>
-                        <span className="newtab-circle-dwell">{formatDwell(s.dwellMs)}</span>
+                        <span className="newtab-circle-dwell">{formatDwell(totalDwell)}</span>
                         {actions && <span className="newtab-circle-actions">{actions}</span>}
 
                         {/* Area assignment dropdown */}

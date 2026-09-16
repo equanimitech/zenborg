@@ -192,6 +192,31 @@ export function idleTransition(
     : { kind: "idle_end", durationMs: now - spanStart, spanStart: null };
 }
 
+// ── Audible span (tab producing audio while backgrounded) ────
+
+/**
+ * Audible span — a tab starts or stops producing audio.
+ *
+ * Same start/end + durationMs pattern as focus and idle spans.
+ * The browser fires `chrome.tabs.onUpdated` with `changeInfo.audible`
+ * when a tab starts or stops producing audio — no extra permission
+ * beyond `tabs` (already granted).
+ */
+export function audibleTransition(
+  spanStart: number | null,
+  isAudible: boolean,
+  now: number
+): SpanTransition {
+  if (isAudible) {
+    return spanStart === null
+      ? { kind: "audible_start", spanStart: now }
+      : { kind: null, spanStart };
+  }
+  return spanStart === null
+    ? { kind: null, spanStart: null }
+    : { kind: "audible_end", durationMs: now - spanStart, spanStart: null };
+}
+
 // ── Retention ─────────────────────────────────────────────────────
 
 /** How many oldest events to delete so the store fits under `max`. */

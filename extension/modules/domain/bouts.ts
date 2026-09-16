@@ -37,6 +37,9 @@ export interface Bout {
   readonly endTs: number;
   /** Focus/idle-gated, segment-capped attended time. */
   readonly dwellMs: Duration;
+  /** Background-but-audible time (calls, media). Separate from dwellMs —
+   * foreground dwell and audible dwell never overlap. */
+  readonly audibleDwellMs: Duration;
   /**
    * Moves between domains that each held attention past `SWITCH_FLOOR_MS` —
    * the fragmentation signal. Glances below the floor cost nothing, so a
@@ -69,6 +72,8 @@ export interface Run {
   readonly endTs: number;
   /** Focus/idle-gated, segment-capped attended time. */
   readonly dwellMs: Duration;
+  /** Background-but-audible time (calls, media). Separate from dwellMs. */
+  readonly audibleDwellMs: Duration;
 }
 
 /**
@@ -123,6 +128,10 @@ export const SWITCH_FLOOR_MS = 15 * 1000;
 const ATTENTION_OFF = new Set(["focus_end", "idle_start"]);
 const ATTENTION_ON = new Set(["focus_start", "idle_end"]);
 
+/** Kinds that mark a tab starting or stopping audio. */
+const AUDIBLE_ON = new Set(["audible_start"]);
+const AUDIBLE_OFF = new Set(["audible_end"]);
+
 /** Pull a domain off an event payload, if it carries one. */
 function domainOf(event: ActivityEvent): Domain | null {
   const raw = event.payload["domain"];
@@ -145,6 +154,7 @@ interface Draft {
   startTs: number;
   endTs: number;
   dwellMs: number;
+  audibleDwellMs: number;
   switches: number;
   byDomain: Map<Domain, number>;
   runDomain: Domain | null;
@@ -152,6 +162,9 @@ interface Draft {
   longestRunMs: number;
   /** Last domain that held attention past `SWITCH_FLOOR_MS`. */
   lastSubstantial: Domain | null;
+  /** Domains currently audible (by domain, not tab — multiple tabs on the
+   * same domain don't double-count). */
+  audibleDomains: Set<Domain>;
 }
 
 function newDraft(ts: number): Draft {
@@ -159,12 +172,14 @@ function newDraft(ts: number): Draft {
     startTs: ts,
     endTs: ts,
     dwellMs: 0,
+    audibleDwellMs: 0,
     switches: 0,
     byDomain: new Map(),
     runDomain: null,
     runMs: 0,
     longestRunMs: 0,
     lastSubstantial: null,
+    audibleDomains: new Set(),
   };
 }
 
@@ -186,6 +201,7 @@ function seal(draft: Draft): Bout {
     startTs: draft.startTs,
     endTs: draft.endTs,
     dwellMs: createDuration(draft.dwellMs),
+    audibleDwellMs: createDuration(draft.audibleDwellMs),
     switches: draft.switches,
     byDomain,
     dominant,
@@ -218,27 +234,29 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
       current = null;
     }
 
-    // Credit the elapsed gap to whatever was in flight, if we were attending.
-    if (draft !== null && current !== null && attending) {
+    // Credit the elapsed gap to whatever was in flight.
+    // Foreground + attending → dwellMs. Background but audible → audibleDwellMs.
+    if (draft !== null && current !== null) {
       const elapsed = Math.min(event.ts - draft.endTs, SEGMENT_CAP_MS);
       if (elapsed > 0) {
-        draft.dwellMs += elapsed;
-        draft.byDomain.set(current, (draft.byDomain.get(current) ?? 0) + elapsed);
-        if (draft.runDomain === current) {
-          draft.runMs += elapsed;
-        }
-        // A domain becomes substantial the moment it crosses the floor, and
-        // moving between substantial domains is what fragmentation counts.
-        // Fires once per run: after it, `lastSubstantial` already matches.
-        if (
-          draft.runDomain !== null &&
-          draft.runMs >= SWITCH_FLOOR_MS &&
-          draft.runDomain !== draft.lastSubstantial
-        ) {
-          if (draft.lastSubstantial !== null) {
-            draft.switches += 1;
+        if (attending) {
+          draft.dwellMs += elapsed;
+          draft.byDomain.set(current, (draft.byDomain.get(current) ?? 0) + elapsed);
+          if (draft.runDomain === current) {
+            draft.runMs += elapsed;
           }
-          draft.lastSubstantial = draft.runDomain;
+          if (
+            draft.runDomain !== null &&
+            draft.runMs >= SWITCH_FLOOR_MS &&
+            draft.runDomain !== draft.lastSubstantial
+          ) {
+            if (draft.lastSubstantial !== null) {
+              draft.switches += 1;
+            }
+            draft.lastSubstantial = draft.runDomain;
+          }
+        } else if (draft.audibleDomains.has(current)) {
+          draft.audibleDwellMs += elapsed;
         }
       }
     }
@@ -249,17 +267,34 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
       attending = true;
     }
 
-    const domain = domainOf(event);
-    if (domain !== null) {
-      if (draft === null) {
-        draft = newDraft(event.ts);
+    // Track which domains are currently audible.
+    if (AUDIBLE_ON.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null && draft !== null) {
+        draft.audibleDomains.add(d);
       }
-      if (draft.runDomain !== domain) {
-        draft.longestRunMs = Math.max(draft.longestRunMs, draft.runMs);
-        draft.runDomain = domain;
-        draft.runMs = 0;
+    } else if (AUDIBLE_OFF.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null && draft !== null) {
+        draft.audibleDomains.delete(d);
       }
-      current = domain;
+    }
+
+    // Audible events carry a domain for identification but do not represent
+    // a tab switch — they must not change `current` or `runDomain`.
+    if (!AUDIBLE_ON.has(kind) && !AUDIBLE_OFF.has(kind)) {
+      const domain = domainOf(event);
+      if (domain !== null) {
+        if (draft === null) {
+          draft = newDraft(event.ts);
+        }
+        if (draft.runDomain !== domain) {
+          draft.longestRunMs = Math.max(draft.longestRunMs, draft.runMs);
+          draft.runDomain = domain;
+          draft.runMs = 0;
+        }
+        current = domain;
+      }
     }
 
     if (draft !== null) {
@@ -298,17 +333,14 @@ export function runs(
   let startTs = 0;
   let endTs = 0;
   let dwellMs = 0;
+  let audibleDwellMs = 0;
   let attending = true;
+  const audibleDomains = new Set<Domain>();
   let prevTs = 0;
-  // A run that opens after a long absence is a new sitting and must never be
-  // merged back into the previous one, however small the apparent gap looks
-  // once the segment cap has clipped it.
   let newSitting = false;
 
   const flush = (): void => {
-    if (current === null || dwellMs < minRunMs) {
-      // Too small to be an entry, and by the same rule too small to have
-      // interrupted anything — so it silently makes way for a merge.
+    if (current === null || (dwellMs + audibleDwellMs) < minRunMs) {
       return;
     }
     const last = out[out.length - 1];
@@ -319,10 +351,11 @@ export function runs(
         startTs: last.startTs,
         endTs,
         dwellMs: createDuration(last.dwellMs + dwellMs),
+        audibleDwellMs: createDuration(last.audibleDwellMs + audibleDwellMs),
       };
       return;
     }
-    out.push({ domain: current, startTs, endTs, dwellMs: createDuration(dwellMs) });
+    out.push({ domain: current, startTs, endTs, dwellMs: createDuration(dwellMs), audibleDwellMs: createDuration(audibleDwellMs) });
   };
 
   for (const event of ordered) {
@@ -330,13 +363,16 @@ export function runs(
 
     if (current !== null) {
       const idle = event.ts - prevTs;
-      // Credit BEFORE deciding to split. Silence on a page is time spent there;
-      // discarding it because the gap was long would lose exactly the quiet
-      // stretches that make up a long read.
       if (attending) {
         const elapsed = Math.min(idle, SEGMENT_CAP_MS);
         if (elapsed > 0) {
           dwellMs += elapsed;
+          endTs = prevTs + elapsed;
+        }
+      } else if (audibleDomains.has(current)) {
+        const elapsed = Math.min(idle, SEGMENT_CAP_MS);
+        if (elapsed > 0) {
+          audibleDwellMs += elapsed;
           endTs = prevTs + elapsed;
         }
       }
@@ -344,6 +380,7 @@ export function runs(
         flush();
         current = null;
         dwellMs = 0;
+        audibleDwellMs = 0;
         newSitting = true;
       }
     }
@@ -354,17 +391,27 @@ export function runs(
       attending = true;
     }
 
-    const domain = domainOf(event);
-    if (domain !== null && domain !== current) {
-      flush();
-      if (current !== null) {
-        // A same-sitting domain change; only a real absence starts a sitting.
-        newSitting = false;
+    if (AUDIBLE_ON.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null) audibleDomains.add(d);
+    } else if (AUDIBLE_OFF.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null) audibleDomains.delete(d);
+    }
+
+    if (!AUDIBLE_ON.has(kind) && !AUDIBLE_OFF.has(kind)) {
+      const domain = domainOf(event);
+      if (domain !== null && domain !== current) {
+        flush();
+        if (current !== null) {
+          newSitting = false;
+        }
+        current = domain;
+        startTs = event.ts;
+        endTs = event.ts;
+        dwellMs = 0;
+        audibleDwellMs = 0;
       }
-      current = domain;
-      startTs = event.ts;
-      endTs = event.ts;
-      dwellMs = 0;
     }
     prevTs = event.ts;
   }
