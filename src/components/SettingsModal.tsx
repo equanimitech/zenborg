@@ -2,7 +2,6 @@
 
 import { observer } from "@legendapp/state/react";
 import {
-  ChevronRight,
   Download,
   Info,
   Loader2,
@@ -13,9 +12,8 @@ import {
   Settings2,
   Smartphone,
   Sun,
-  Tv,
   Upload,
-  User,
+  Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
@@ -26,23 +24,24 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import type { PhaseConfig } from "@/domain/value-objects/Phase";
 import { useUpdater } from "@/hooks/useUpdater";
 import {
   exportGardenData,
   importGardenData,
 } from "@/infrastructure/state/export-import";
 import { resetStore } from "@/infrastructure/state/initialize";
+import { phaseConfigs$ } from "@/infrastructure/state/store";
 import { getPWAInstructions, isPWA } from "@/lib/pwa-utils";
 import { isTauri } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
+import { CircularPhaseSlider } from "./CircularPhaseSlider";
 import { ConfirmableAction } from "./ConfirmableAction";
-import { PeoplePlacesSection } from "./PeoplePlacesSection";
-import { TrmnlSettingsSection } from "./TrmnlSettingsSection";
+import { OracleSettingsSection } from "./OracleSettingsSection";
 import { VaultStatusSection } from "./VaultStatusSection";
 
 type SettingsPane =
   | "phases"
-  | "people-places"
   | "data"
   | "integrations"
   | "appearance"
@@ -54,9 +53,8 @@ const navigationItems: readonly {
   icon: typeof Settings2;
 }[] = [
   { id: "phases", label: "Phases", icon: Settings2 },
-  { id: "people-places", label: "People & Places", icon: User },
   { id: "data", label: "Data", icon: Download },
-  { id: "integrations", label: "E-Ink Display", icon: Tv },
+  { id: "integrations", label: "Integrations", icon: Zap },
   { id: "appearance", label: "Appearance", icon: Sun },
   { id: "about", label: "About", icon: Info },
 ];
@@ -64,13 +62,11 @@ const navigationItems: readonly {
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
-  onOpenPhaseSettings: () => void;
 }
 
 export const SettingsModal = observer(function SettingsModal({
   open,
   onClose,
-  onOpenPhaseSettings,
 }: SettingsModalProps) {
   const [activePane, setActivePane] = useState<SettingsPane>("appearance");
   const [importMessage, setImportMessage] = useState<{
@@ -80,6 +76,45 @@ export const SettingsModal = observer(function SettingsModal({
   const [isImporting, setIsImporting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // Phase editing state
+  const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
+  const [phaseFormData, setPhaseFormData] = useState({ label: "", emoji: "" });
+
+  const phaseConfigs = Object.values(phaseConfigs$.get() || {}).sort(
+    (a, b) => a.order - b.order,
+  );
+
+  const handleStartPhaseEdit = (config: PhaseConfig) => {
+    setPhaseFormData({ label: config.label, emoji: config.emoji });
+    setEditingPhaseId(config.id);
+  };
+
+  const handleSavePhaseEdit = () => {
+    if (!editingPhaseId || !phaseFormData.label.trim()) return;
+    phaseConfigs$[editingPhaseId].set((prev) => ({
+      ...prev,
+      label: phaseFormData.label.trim(),
+      emoji: phaseFormData.emoji,
+      updatedAt: new Date().toISOString(),
+    }));
+    setEditingPhaseId(null);
+  };
+
+  const handlePhaseVisibilityToggle = (configId: string) => {
+    phaseConfigs$[configId].set((prev) => ({
+      ...prev,
+      isVisible: !prev.isVisible,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const formatHour = (hour: number) => {
+    if (hour === 0) return "12 AM";
+    if (hour === 12) return "12 PM";
+    if (hour < 12) return `${hour} AM`;
+    return `${hour - 12} PM`;
+  };
 
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -194,23 +229,16 @@ export const SettingsModal = observer(function SettingsModal({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => {
-                  if (item.id === "phases") {
-                    onOpenPhaseSettings();
-                  } else {
-                    setActivePane(item.id);
-                  }
-                }}
+                onClick={() => setActivePane(item.id)}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 text-sm transition-colors text-left w-full",
-                  activePane === item.id && item.id !== "phases"
+                  activePane === item.id
                     ? "bg-stone-200/80 dark:bg-stone-700/80 text-stone-900 dark:text-stone-100"
                     : "text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-stone-200/40 dark:hover:bg-stone-700/40",
                 )}
               >
                 <item.icon className="w-4 h-4 shrink-0" />
                 <span>{item.label}</span>
-                {item.id === "phases" && <ChevronRight className="w-3 h-3 ml-auto opacity-50" />}
               </button>
             ))}
 
@@ -231,7 +259,112 @@ export const SettingsModal = observer(function SettingsModal({
 
           {/* Content pane */}
           <main className="flex-1 overflow-y-auto p-6">
-            {activePane === "people-places" && <PeoplePlacesSection />}
+            {activePane === "phases" && (
+              <div className="space-y-6">
+                <CircularPhaseSlider
+                  phaseConfigs={phaseConfigs}
+                  onUpdatePhase={(phaseId, updates) => {
+                    phaseConfigs$[phaseId].set((prev) => ({
+                      ...prev,
+                      ...updates,
+                      updatedAt: new Date().toISOString(),
+                    }));
+                  }}
+                />
+
+                <div className="space-y-2">
+                  {phaseConfigs.map((config) => (
+                    <div
+                      key={config.id}
+                      className={cn(
+                        "p-3 rounded border transition-all",
+                        editingPhaseId === config.id
+                          ? "border-stone-400 dark:border-stone-500 bg-stone-100 dark:bg-stone-800"
+                          : "border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        {editingPhaseId === config.id ? (
+                          <div className="flex-1 flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={phaseFormData.emoji}
+                              onChange={(e) => setPhaseFormData({ ...phaseFormData, emoji: e.target.value })}
+                              className="w-12 px-2 py-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded text-center text-lg focus:outline-none focus:ring-1 focus:ring-stone-400"
+                              maxLength={2}
+                            />
+                            <input
+                              type="text"
+                              value={phaseFormData.label}
+                              onChange={(e) => setPhaseFormData({ ...phaseFormData, label: e.target.value })}
+                              className="flex-1 px-2 py-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-stone-400"
+                              autoFocus
+                            />
+                            <button
+                              onClick={handleSavePhaseEdit}
+                              disabled={!phaseFormData.label.trim()}
+                              className="px-2 py-1 text-xs bg-stone-700 dark:bg-stone-300 text-stone-50 dark:text-stone-900 rounded hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors disabled:opacity-50"
+                              type="button"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingPhaseId(null)}
+                              className="px-2 py-1 text-xs text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 transition-colors"
+                              type="button"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3 flex-1">
+                              <span className="text-lg">{config.emoji}</span>
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                                  {config.label}
+                                </div>
+                                <div className="text-xs text-stone-500 dark:text-stone-400 font-mono">
+                                  {formatHour(config.startHour)} - {formatHour(config.endHour)}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleStartPhaseEdit(config)}
+                                className="px-2 py-1 text-xs rounded hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors text-stone-600 dark:text-stone-400"
+                                type="button"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={config.isVisible}
+                                onClick={() => handlePhaseVisibilityToggle(config.id)}
+                                className={cn(
+                                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                                  config.isVisible
+                                    ? "bg-stone-700 dark:bg-stone-300"
+                                    : "bg-stone-300 dark:bg-stone-700",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "inline-block h-3 w-3 transform rounded-full bg-stone-50 dark:bg-stone-900 transition-transform",
+                                    config.isVisible ? "translate-x-5" : "translate-x-1",
+                                  )}
+                                />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {activePane === "data" && (
               <div className="space-y-3">
@@ -344,7 +477,7 @@ export const SettingsModal = observer(function SettingsModal({
               </div>
             )}
 
-            {activePane === "integrations" && <TrmnlSettingsSection />}
+            {activePane === "integrations" && <OracleSettingsSection />}
 
             {activePane === "appearance" && (
               <div className="space-y-2">

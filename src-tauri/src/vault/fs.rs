@@ -44,7 +44,7 @@ const VAULT_DIR_ENVS: &[&str] = &["ZENBORG_HOME", "KAIROS_HOME"];
 /// change events for it, so the app follows a pointer the MCP server wrote.
 /// It is deliberately absent from `DomainModelRegistry` on the TS side, where
 /// the record-of-UUID shape does matter.
-const ALLOWED_COLLECTIONS: &[&str] = &[
+pub const ALLOWED_COLLECTIONS: &[&str] = &[
     "moments",
     "areas",
     "habits",

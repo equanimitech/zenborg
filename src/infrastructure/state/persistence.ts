@@ -11,7 +11,7 @@
  *   Web browser   →  IDB-only: same layout as before the vault migration.
  *                    No vault. IndexedDB is both cache and truth.
  *
- * UI preferences (activeCycleId, lastUsedAreaId, trmnlSettings) always go
+ * UI preferences (activeCycleId, lastUsedAreaId) always go
  * to localStorage regardless of runtime — they're per-device, not per-vault.
  */
 
@@ -32,7 +32,6 @@ import type { Routine } from "@/domain/entities/Routine";
 import type { PhaseConfig } from "@/domain/value-objects/Phase";
 import { isTauri } from "../vault/is-tauri.ts";
 import { syncedVaultCollection } from "../vault/synced-vault.ts";
-import { trmnlSettings$ } from "./integration-store.ts";
 import {
   activeCycleId$,
   areas$,
@@ -203,12 +202,6 @@ function configureUiPreferences(): void {
     lastUsedAreaId$,
     persistLocalStorageOptions({
       persist: { name: "zenborg_lastUsedAreaId" },
-    }),
-  );
-  syncObservable(
-    trmnlSettings$,
-    persistLocalStorageOptions({
-      persist: { name: "zenborg_trmnlSettings" },
     }),
   );
 }

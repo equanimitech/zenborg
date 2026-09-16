@@ -1,11 +1,10 @@
 "use client";
 
 import { use$, useSelector } from "@legendapp/state/react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { HamburgerMenuButton } from "@/components/HamburgerMenuButton";
 import { ModeSelector } from "@/components/ModeSelector";
-import { PhaseSettingsModal } from "@/components/PhaseSettingsModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { TodayButton } from "@/components/TodayButton";
 import { UpdateNotification } from "@/components/UpdateNotification";
@@ -51,8 +50,6 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
       });
     }
   }, []);
-
-  const [isPhaseSettingsOpen, setIsPhaseSettingsOpen] = useState(false);
 
   const isSettingsOpen = useSelector(() => isSettingsOpen$.get());
   const deleteAreaState = use$(deleteAreaDialogState$);
@@ -111,16 +108,6 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
       <SettingsModal
         open={isSettingsOpen}
         onClose={() => isSettingsOpen$.set(false)}
-        onOpenPhaseSettings={() => {
-          setIsPhaseSettingsOpen(true);
-          isSettingsOpen$.set(false);
-        }}
-      />
-
-      {/* Phase Settings Modal - Opened from Settings Drawer */}
-      <PhaseSettingsModal
-        open={isPhaseSettingsOpen}
-        onClose={() => setIsPhaseSettingsOpen(false)}
       />
 
       {/* Delete Area Confirmation */}
