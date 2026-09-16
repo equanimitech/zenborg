@@ -19,7 +19,7 @@ pub mod write_tracker;
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use self::fs::{read_collection, vault_root, write_collection};
 use self::write_tracker::SelfWriteTracker;
@@ -64,6 +64,28 @@ pub fn vault_write_collection(
 #[tauri::command]
 pub fn vault_root_path() -> Result<String, String> {
     vault_root().map(|p| p.to_string_lossy().to_string())
+}
+
+/// Force-emit `vault:collection-changed` for every collection file that exists.
+/// Used by the "Sync now" button when the FSEvents watcher has gone silent.
+#[tauri::command]
+pub fn vault_nudge(app: AppHandle) -> Result<u32, String> {
+    let root = vault_root()?;
+    let mut count = 0u32;
+    for name in fs::ALLOWED_COLLECTIONS {
+        let path = root.join(format!("{}.json", name));
+        if path.exists() {
+            let _ = app.emit(
+                "vault:collection-changed",
+                watcher::VaultChangeEvent {
+                    collection: name.to_string(),
+                    change_type: "modified".to_string(),
+                },
+            );
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 // ────────────────────────────────────────────────────────────────────────

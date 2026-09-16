@@ -3,7 +3,7 @@
 import { observer, use$ } from "@legendapp/state/react";
 import { getAllSyncStates } from "@legendapp/state/sync";
 import { useEffect, useState } from "react";
-import { vaultRootPath } from "@/infrastructure/vault/adapter";
+import { nudgeVault, vaultRootPath } from "@/infrastructure/vault/adapter";
 import { isTauri } from "@/infrastructure/vault/is-tauri";
 
 type Status = "synced" | "syncing" | "pending" | "error";
@@ -141,6 +141,15 @@ export const VaultStatusSection = observer(function VaultStatusSection() {
           {errorMessage}
         </div>
       )}
+
+      {/* Sync now */}
+      <button
+        type="button"
+        onClick={() => nudgeVault()}
+        className="w-full px-3 py-1.5 text-xs font-medium rounded border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
+      >
+        Sync now
+      </button>
 
       {/* Path row */}
       <div className="px-3 py-2 rounded-lg bg-stone-100 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
