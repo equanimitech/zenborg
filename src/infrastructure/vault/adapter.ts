@@ -58,6 +58,14 @@ export async function vaultRootPath(): Promise<string> {
   return invoke<string>("vault_root_path");
 }
 
+/**
+ * Force the Rust watcher to re-emit change events for every collection.
+ * Returns the number of collections nudged.
+ */
+export async function nudgeVault(): Promise<number> {
+  return invoke<number>("vault_nudge");
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // External-change subscription
 // ────────────────────────────────────────────────────────────────────────
