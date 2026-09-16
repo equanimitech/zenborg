@@ -4,14 +4,20 @@
 //! connection. Reads from stdin, writes to stdout, both framed with Chrome's
 //! native messaging protocol (uint32 LE length prefix + UTF-8 JSON, 1MB max).
 //!
-//! Not a daemon — Chrome manages the lifecycle.
+//! The host stays alive as long as the extension keeps the port open. A file
+//! watcher on `fences.json` pushes changes immediately rather than waiting for
+//! the extension to poll.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chrono::{Local, Timelike, TimeZone};
+use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::{json, Value};
 
 use observer_core::writer;
@@ -429,6 +435,56 @@ fn handle_request_events(msg: &Value, vault: &Path) {
     }
 }
 
+// ── File watcher ────────────────────────────────────────────────────────
+
+fn start_fence_watcher(vault: PathBuf) {
+    thread::spawn(move || {
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = match RecommendedWatcher::new(tx, Config::default()) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("[zenborg-native-host] fence watcher failed: {e}");
+                return;
+            }
+        };
+        if watcher.watch(&vault, RecursiveMode::NonRecursive).is_err() {
+            return;
+        }
+
+        let fences_name = std::ffi::OsStr::new("fences.json");
+        let debounce = Duration::from_millis(200);
+        let mut last_push = Instant::now() - debounce;
+
+        for result in rx {
+            let event = match result {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let dominated = matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_));
+            if !dominated {
+                continue;
+            }
+            let touches_fences = event.paths.iter().any(|p| {
+                p.file_name() == Some(fences_name)
+            });
+            if !touches_fences {
+                continue;
+            }
+            if last_push.elapsed() < debounce {
+                continue;
+            }
+            last_push = Instant::now();
+
+            // Push all three: fences, observe domains, and policy (transforms).
+            // The extension handlers are idempotent, so a redundant push is free.
+            handle_request_fences(&vault);
+            handle_request_observe(&vault);
+            handle_request_policy(&vault);
+            eprintln!("[zenborg-native-host] fences.json changed, pushed to extension");
+        }
+    });
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -439,6 +495,8 @@ fn main() {
         vault.display(),
         std::process::id()
     );
+
+    start_fence_watcher(vault.clone());
 
     loop {
         let msg = match read_message() {

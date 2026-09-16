@@ -258,59 +258,69 @@ export async function queryTodayMoments(): Promise<TodayBoard> {
   });
 }
 
-/** Connect once, ship the outbox (ack-prune), pull observe + policy. */
-export async function flushToHost(): Promise<void> {
-  let port: ReturnType<typeof browser.runtime.connectNative>;
+// ── Persistent port ─────────────────────────────────────────────────────
+//
+// The native host watches fences.json and pushes changes immediately. For
+// that push to arrive, the port must stay open. The connection is created
+// on first flush and kept alive; if the host dies or the service worker
+// restarts, the next flushToHost() reconnects.
+
+let persistentPort: ReturnType<typeof browser.runtime.connectNative> | null = null;
+
+function handleHostMessage(raw: unknown): void {
+  const msg = raw as {
+    type?: string;
+    ids?: string[];
+    domains?: string[];
+    standing?: string[];
+    armable?: string[];
+    momentFriction?: { allow: string[]; deny: string[] } | null;
+    fences?: unknown;
+  };
+  if (msg.type === "ack" && msg.ids) void deleteEventsByIds(msg.ids);
+  else if (msg.type === "observe" && msg.domains) void replaceObserveDomains(msg.domains);
+  else if (msg.type === "policy") void replacePolicy(msg);
+  else if (msg.type === "fences") {
+    void replaceFences(msg.fences).then((result) => {
+      if (!result.applied) {
+        console.warn("[zenborg fence] malformed push — keeping the previous cache");
+        return;
+      }
+      for (const refusal of result.refused) {
+        console.error(
+          `[zenborg fence] refused "${refusal.id}": ${refusal.reason}` +
+            (refusal.reason === "no_exit"
+              ? " — invariant 6: a block with no visible exit is a bug, not a stricter shield"
+              : "")
+        );
+      }
+    });
+  } else if (msg.type === "area_set") void flushToHost();
+}
+
+function ensurePort(): ReturnType<typeof browser.runtime.connectNative> | null {
+  if (persistentPort) return persistentPort;
   try {
-    port = browser.runtime.connectNative(HOST_NAME);
-  } catch (e) {
-    console.warn("[zenborg relay] connectNative threw:", e); // host not installed — stay on the export stopgap
-    return;
-  }
-  try {
-    // Surface a failed handshake instead of failing silently. connectNative
-    // returns a port even when the host is unreachable; the failure only shows
-    // up here as lastError on disconnect.
+    const port = browser.runtime.connectNative(HOST_NAME);
     port.onDisconnect.addListener(() => {
       const err = browser.runtime.lastError;
       if (err) console.warn("[zenborg relay] native host disconnected:", err.message);
+      persistentPort = null;
     });
-    port.onMessage.addListener((raw: unknown) => {
-      const msg = raw as {
-        type?: string;
-        ids?: string[];
-        domains?: string[];
-        standing?: string[];
-        armable?: string[];
-        momentFriction?: { allow: string[]; deny: string[] } | null;
-        fences?: unknown;
-      };
-      // Delete on ack: the outbox has done its job once the store has the
-      // event. Keeping a second copy here is what produced a page that
-      // reported minutes of buffer as if it were history.
-      if (msg.type === "ack" && msg.ids) void deleteEventsByIds(msg.ids);
-      else if (msg.type === "observe" && msg.domains) void replaceObserveDomains(msg.domains);
-      else if (msg.type === "policy") void replacePolicy(msg);
-      // The fence record. `msg.fences` is passed through untouched — validation
-      // (including invariant 6) belongs at the cache door, not on the wire, so
-      // there is exactly one place that decides what stands.
-      else if (msg.type === "fences") {
-        void replaceFences(msg.fences).then((result) => {
-          if (!result.applied) {
-            console.warn("[zenborg fence] malformed push — keeping the previous cache");
-            return;
-          }
-          for (const refusal of result.refused) {
-            console.error(
-              `[zenborg fence] refused "${refusal.id}": ${refusal.reason}` +
-                (refusal.reason === "no_exit"
-                  ? " — invariant 6: a block with no visible exit is a bug, not a stricter shield"
-                  : "")
-            );
-          }
-        });
-      } else if (msg.type === "area_set") void flushToHost(); // re-pull so every surface agrees
-    });
+    port.onMessage.addListener(handleHostMessage);
+    persistentPort = port;
+    return port;
+  } catch (e) {
+    console.warn("[zenborg relay] connectNative threw:", e);
+    return null;
+  }
+}
+
+/** Ship the outbox (ack-prune), pull observe + policy + fences. */
+export async function flushToHost(): Promise<void> {
+  const port = ensurePort();
+  if (!port) return;
+  try {
     const events = await readAllEvents();
     console.debug("[zenborg relay] flushing", events.length, "buffered events to", HOST_NAME);
     for (const batch of chunkEvents(events, MAX_BATCH)) {
@@ -318,13 +328,9 @@ export async function flushToHost(): Promise<void> {
     }
     port.postMessage({ type: "request_observe" });
     port.postMessage({ type: "request_policy" });
-    // Rides the same connection as the policy pull rather than opening its own.
-    // The push is what keeps the hot path local: actuation never asks, it reads
-    // the cache this reply refreshes.
     port.postMessage({ type: "request_fences" });
   } catch {
     // host crashed mid-flush — buffered events stay in IndexedDB for the next flush
-  } finally {
-    setTimeout(() => port.disconnect(), 2000); // allow acks to arrive
+    persistentPort = null;
   }
 }
