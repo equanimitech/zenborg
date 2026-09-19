@@ -25,6 +25,7 @@ import {
   fenceReport,
   seedHostBlocks,
 } from "../src/application/use-cases/fences.ts";
+import { syncResolverFences } from "./adapters/adguard.js";
 import {
   crossingTally,
   expandHome,
@@ -3765,6 +3766,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await declareHostBlock(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT));
     return ok({ declared: result.declared, standing: result.standing });
   },
 });
@@ -3882,6 +3884,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await seedHostBlocks(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT));
     return ok({
       declared: result.declared.map((r) => ({
         id: r.id,
@@ -3965,6 +3968,7 @@ defineTool(server, {
       },
     });
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT));
     return ok({
       declared: result.declared.map((r) => ({
         id: r.id,
@@ -3999,6 +4003,7 @@ defineTool(server, {
         : { id: id as string };
     const result = await clearFences(fenceDeps, target);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT));
     return ok({
       cleared: result.cleared.map((f) => ({ id: f.id, label: f.name })),
     });
