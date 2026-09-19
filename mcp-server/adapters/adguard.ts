@@ -38,24 +38,6 @@ export function filterRuleToHost(rule: string): string | null {
 }
 
 /**
- * True when a line is a zenborg-managed rule or its tag comment.
- */
-export function isZenborgRule(line: string): boolean {
-  return line === FENCE_TAG || line.startsWith("||") && isTaggedAt(line);
-}
-
-/**
- * Check if a line is the filter rule immediately after a tag.
- * This is a helper -- the real grouping is done by `parseTaggedRules`.
- */
-function isTaggedAt(_line: string): boolean {
-  // Individual lines can't tell; grouping is context-dependent.
-  // This exists only to satisfy the union in `isZenborgRule` for the common
-  // single-line check. Real identification uses `parseTaggedRules`.
-  return false;
-}
-
-/**
  * Parse the full user_rules array and return:
  * - `userRules`: lines NOT managed by zenborg (preserved verbatim)
  * - `zenborgHosts`: set of hosts currently blocked by zenborg
