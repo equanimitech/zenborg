@@ -10,7 +10,9 @@
  * Base URL: ADGUARD_URL env var, defaults to http://piaf.local.
  */
 
-import type { CooldownSpec } from "../../src/domain/intervention/Primitive.ts";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { CooldownSpec, Primitive, ScheduleSpec } from "../../src/domain/intervention/Primitive.ts";
 import type { RuleSpec, RuleScope } from "../../src/domain/intervention/RuleSpec.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -114,7 +116,23 @@ export function syncRules(
 // ── Fence-to-host extraction ──────────────────────────────────────────
 
 /**
- * Walk all fences and collect hosts from resolver-enforced cooldown primitives.
+ * Whether a primitive (or a schedule wrapping one) contains a standing or
+ * long cooldown — the kind that should fan out to the resolver. Unwraps
+ * through `schedule` the same way `carriesExit` does (Primitive.ts:237-247).
+ */
+function hasBlockingCooldown(p: Primitive): boolean {
+  if (p.kind === "schedule") return hasBlockingCooldown((p as ScheduleSpec).wraps);
+  if (p.kind !== "cooldown") return false;
+  const cd = p as CooldownSpec;
+  return cd.duration.type === "standing";
+}
+
+/**
+ * Walk all fences and collect hosts from browser-scoped rules carrying a
+ * standing cooldown. Any such fence should be enforced at the resolver too —
+ * "one rule, one enforcement point" is about delivery attribution, not about
+ * limiting which surfaces hold the block.
+ *
  * Returns the set of domains that should be blocked at the resolver level.
  */
 export function collectResolverHosts(
@@ -126,13 +144,7 @@ export function collectResolverHosts(
     if (rule.scope.surface !== "browser") continue;
     const scope = rule.scope as Extract<RuleScope, { surface: "browser" }>;
 
-    const hasResolverCooldown = rule.primitives.some(
-      (p) =>
-        p.kind === "cooldown" &&
-        (p as CooldownSpec).enforcement?.at === "resolver",
-    );
-
-    if (!hasResolverCooldown) continue;
+    if (!rule.primitives.some(hasBlockingCooldown)) continue;
 
     const domains = Array.isArray(scope.domain)
       ? scope.domain
@@ -215,6 +227,37 @@ export function createAdapter(): AdGuardAdapter {
   };
 }
 
+// ── Resolver health record ────────────────────────────────────────────
+
+export interface ResolverHealth {
+  readonly reachable: boolean;
+  readonly at: string; // ISO-8601
+  readonly error?: string;
+}
+
+const HEALTH_FILE = path.join("plugin", "resolver-health.json");
+
+function healthPath(vaultRoot: string): string {
+  return path.join(vaultRoot, HEALTH_FILE);
+}
+
+function writeHealth(vaultRoot: string, health: ResolverHealth): void {
+  const dir = path.dirname(healthPath(vaultRoot));
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(healthPath(vaultRoot), JSON.stringify(health, null, 2), "utf8");
+}
+
+/** Read the last resolver sync outcome. Fail-soft: missing/garbled = null. */
+export function readResolverHealth(vaultRoot: string): ResolverHealth | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(healthPath(vaultRoot), "utf8"));
+    if (typeof raw?.reachable !== "boolean" || typeof raw?.at !== "string") return null;
+    return raw as ResolverHealth;
+  } catch {
+    return null;
+  }
+}
+
 // ── Sync entry point ──────────────────────────────────────────────────
 
 // ponytail: global lock via module-level state, per-account locks if throughput matters
@@ -222,12 +265,15 @@ let syncing = false;
 
 /**
  * Sync resolver fences to AdGuard Home. Best-effort: logs a warning on
- * failure, never throws.
+ * failure, never throws. Records the outcome to resolver-health.json so
+ * `get_fence` can report enforcement reach.
  *
  * @param readAllFences - callback that returns all standing fences
+ * @param vaultRoot - vault root for writing the health record
  */
 export async function syncResolverFences(
   readAllFences: () => Record<string, RuleSpec>,
+  vaultRoot?: string,
 ): Promise<void> {
   if (syncing) return;
   syncing = true;
@@ -237,6 +283,7 @@ export async function syncResolverFences(
     const reachable = await adapter.checkReachable();
     if (!reachable) {
       console.error("[adguard] resolver unreachable, skipping fence sync");
+      if (vaultRoot) writeHealth(vaultRoot, { reachable: false, at: new Date().toISOString() });
       return;
     }
 
@@ -247,8 +294,11 @@ export async function syncResolverFences(
     const newRules = syncRules(existing, desiredHosts);
 
     await setUserRules(newRules);
+    if (vaultRoot) writeHealth(vaultRoot, { reachable: true, at: new Date().toISOString() });
   } catch (e) {
-    console.error("[adguard] fence sync failed:", (e as Error).message);
+    const msg = (e as Error).message;
+    console.error("[adguard] fence sync failed:", msg);
+    if (vaultRoot) writeHealth(vaultRoot, { reachable: false, at: new Date().toISOString(), error: msg });
   } finally {
     syncing = false;
   }
