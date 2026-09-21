@@ -23,12 +23,10 @@
  *
  * ── What it will not do ─────────────────────────────────────────────────
  *
- * Never `deny`. Every rung the domain can express carries a `proceedAffordance`
- * because invariant 6 makes it a required field, and `ask` is how that exit
- * reaches a person: Claude cannot answer it, and the principal can. A rung that
- * denied would be a wall this rule has no standing to build — its key is a
- * command in the same session, and a wall holds only when the key is out of the
- * room.
+ * Always `deny`. The principal asked for a wall, and `ask` was a rubber stamp:
+ * 35 crossings, 0 declines. A prompt the person never refuses is not friction,
+ * it is noise. `deny` blocks the tool call and shows the reason, which is the
+ * whole point of declaring a fence.
  *
  * Never act on a derivation. Only `fences` is read. Nothing here opens
  * `discrepancy.json`, which is the guard the 2026-08-20 decision rests on:
@@ -338,7 +336,7 @@ const main = async (): Promise<void> => {
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "ask",
+        permissionDecision: "deny",
         permissionDecisionReason: reason(fence, effective, path),
       },
     }),
