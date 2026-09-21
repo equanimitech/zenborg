@@ -280,6 +280,13 @@ export function parseFences(raw: unknown): ParsedFences | null {
       continue;
     }
 
+    // Vault entries carry `defaultEnabled`; false means the gardener turned it
+    // off. Enforcing a disabled fence is the exact error the flag exists to
+    // prevent, so skip it before any further parsing.
+    if (value.defaultEnabled === false) {
+      continue;
+    }
+
     // Try the flat format first (test fixtures, legacy), then the vault format.
     let enforcement = readEnforcement(value.enforcement);
     let proceed = readProceed(value.proceed);

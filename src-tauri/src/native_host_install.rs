@@ -1,34 +1,40 @@
-//! Register the Chrome native messaging manifest on app launch.
+//! Register the native messaging manifest for Chromium browsers on app launch.
 //!
-//! Chrome requires a JSON manifest at a well-known path that names the
-//! host binary and the extension origins allowed to connect. We write it
-//! on every launch (200 bytes, idempotent) so moves and updates just work.
+//! Each Chromium browser looks for manifests in its own well-known directory.
+//! We write to Chrome and Brave on every launch (200 bytes each, idempotent)
+//! so moves and updates just work.
 
 use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
-const HOST_NAME: &str = "tech.equanimi.kairos";
+const HOST_NAME: &str = "tech.equanimi.zenborg";
 
 /// Derived from the pinned public key in `extension/wxt.config.ts`.
 /// Stable across dev reloads because the key is committed.
 const EXTENSION_ID: &str = "nhgfgpkpdcfmlcodnebehcljdnlfpamo";
 
-fn manifest_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| {
-        h.join("Library/Application Support/Google/Chrome/NativeMessagingHosts")
-    })
+fn manifest_dirs() -> Vec<PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return vec![];
+    };
+    vec![
+        home.join("Library/Application Support/Google/Chrome/NativeMessagingHosts"),
+        home.join("Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"),
+    ]
 }
 
-/// Write the Chrome native messaging manifest pointing at the bundled sidecar.
+/// Write the native messaging manifest pointing at the bundled sidecar.
 ///
-/// Called from the Tauri setup hook. Fails soft — a missing manifest means
-/// the extension buffers events in IndexedDB until the next successful install.
+/// Called from the Tauri setup hook. Installs to every known Chromium browser
+/// directory. Fails soft — a missing manifest means the extension buffers
+/// events in IndexedDB until the next successful install.
 pub fn install(sidecar_path: &std::path::Path) -> Result<()> {
-    let dir = manifest_dir().context("could not resolve home directory")?;
-    fs::create_dir_all(&dir)
-        .with_context(|| format!("could not create {}", dir.display()))?;
+    let dirs = manifest_dirs();
+    if dirs.is_empty() {
+        anyhow::bail!("could not resolve home directory");
+    }
 
     let manifest = serde_json::json!({
         "name": HOST_NAME,
@@ -39,15 +45,24 @@ pub fn install(sidecar_path: &std::path::Path) -> Result<()> {
             format!("chrome-extension://{EXTENSION_ID}/"),
         ]
     });
+    let body = serde_json::to_string_pretty(&manifest)?;
+    let filename = format!("{HOST_NAME}.json");
 
-    let file = dir.join(format!("{HOST_NAME}.json"));
-    fs::write(&file, serde_json::to_string_pretty(&manifest)?)
-        .with_context(|| format!("could not write {}", file.display()))?;
+    for dir in &dirs {
+        if let Err(e) = fs::create_dir_all(dir) {
+            log::warn!("[native-host] skipping {}: {e}", dir.display());
+            continue;
+        }
+        let file = dir.join(&filename);
+        match fs::write(&file, &body) {
+            Ok(()) => log::info!(
+                "[native-host] manifest installed: {} → {}",
+                file.display(),
+                sidecar_path.display()
+            ),
+            Err(e) => log::warn!("[native-host] failed to write {}: {e}", file.display()),
+        }
+    }
 
-    log::info!(
-        "[native-host] manifest installed: {} → {}",
-        file.display(),
-        sidecar_path.display()
-    );
     Ok(())
 }

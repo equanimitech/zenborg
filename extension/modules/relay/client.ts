@@ -34,7 +34,7 @@ import { chunkEvents } from "./batch";
 
 export { chunkEvents, unacked } from "./batch";
 
-const HOST_NAME = "tech.equanimi.kairos";
+const HOST_NAME = "tech.equanimi.zenborg";
 const MAX_BATCH = 1000;
 /** A query streams in frames; give the host room to finish before hanging up. */
 const QUERY_TIMEOUT_MS = 15_000;
@@ -300,6 +300,9 @@ export async function flushToHost(): Promise<void> {
             console.warn("[zenborg fence] malformed push — keeping the previous cache");
             return;
           }
+          console.info(
+            `[zenborg fence] ${result.accepted} fence(s) cached, ${result.refused.length} refused`
+          );
           for (const refusal of result.refused) {
             console.error(
               `[zenborg fence] refused "${refusal.id}": ${refusal.reason}` +
@@ -322,9 +325,9 @@ export async function flushToHost(): Promise<void> {
     // The push is what keeps the hot path local: actuation never asks, it reads
     // the cache this reply refreshes.
     port.postMessage({ type: "request_fences" });
-  } catch {
-    // host crashed mid-flush — buffered events stay in IndexedDB for the next flush
+  } catch (e) {
+    console.warn("[zenborg relay] flush failed:", e);
   } finally {
-    setTimeout(() => port.disconnect(), 2000); // allow acks to arrive
+    setTimeout(() => port.disconnect(), 5000); // allow acks + fence/policy responses to arrive
   }
 }
