@@ -28,6 +28,7 @@ import { PlaceFormDialog } from "@/components/PlaceFormDialog";
 import { PlacesMapView } from "@/components/PlacesMapView";
 import { PlacesTreeView } from "@/components/PlacesTreeView";
 import { PlantToolbar } from "@/components/PlantToolbar";
+import { WelcomeState } from "@/components/plant/WelcomeState";
 import { slugify } from "@/domain/entities/Moment";
 import { createPlace, normalizeAliases } from "@/domain/entities/Place";
 import {
@@ -35,6 +36,7 @@ import {
   activeHabits$,
   areas$,
   places$,
+  storeHydrated$,
 } from "@/infrastructure/state/store";
 import type { HabitGroupBy, PeopleGroupBy } from "@/infrastructure/state/ui-store";
 import {
@@ -49,6 +51,8 @@ const PlantPage = observer(() => {
   const areas = use$(activeAreas$);
   const habits = use$(activeHabits$);
   const config = use$(plantViewConfig$);
+  const allAreas = use$(areas$);
+  const hydrated = use$(storeHydrated$);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showEmpty, setShowEmpty] = useState(true);
@@ -324,6 +328,33 @@ const PlantPage = observer(() => {
       />
     );
   };
+
+  // Welcome state — zero areas and store is ready
+  if (hydrated && Object.keys(allAreas).length === 0) {
+    return (
+      <>
+        <LandscapePrompt />
+        <div className="h-full bg-background transition-colors flex flex-col">
+          <div className="flex-1 overflow-hidden">
+            <WelcomeState
+              onCreateArea={(name, emoji, color) => {
+                const currentCount = Object.keys(allAreas).length;
+                const result = areaService.createArea({
+                  name,
+                  emoji,
+                  color,
+                  order: currentCount,
+                });
+                if ("error" in result) {
+                  alert(`Failed to create area: ${result.error}`);
+                }
+              }}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

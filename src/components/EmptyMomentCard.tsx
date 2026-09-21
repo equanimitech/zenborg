@@ -1,6 +1,8 @@
 "use client";
 
+import { use$ } from "@legendapp/state/react";
 import { Plus } from "lucide-react";
+import { moments$ } from "@/infrastructure/state/store";
 import { momentCard } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
 
@@ -25,8 +27,14 @@ interface EmptyMomentCardProps {
  */
 export function EmptyMomentCard({
   onClick,
-  label = "add moment",
+  label,
 }: EmptyMomentCardProps) {
+  const allMoments = use$(moments$);
+  const defaultLabel =
+    Object.keys(allMoments).length === 0
+      ? "what will you give your attention to?"
+      : "add moment";
+  const displayLabel = label ?? defaultLabel;
   return (
     <button
       type="button"
@@ -53,7 +61,7 @@ export function EmptyMomentCard({
         paddingBottom: momentCard.paddingY,
       }}
       onClick={onClick}
-      aria-label={label}
+      aria-label={displayLabel}
       tabIndex={0}
     >
       <div className="flex items-center justify-center h-full gap-2">
@@ -62,7 +70,7 @@ export function EmptyMomentCard({
           aria-hidden="true"
         />
         <p className="text-sm font-mono text-stone-400 dark:text-stone-600">
-          {label}
+          {displayLabel}
         </p>
       </div>
     </button>

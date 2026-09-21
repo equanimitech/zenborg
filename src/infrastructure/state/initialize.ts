@@ -93,7 +93,7 @@ export async function initializeStore(): Promise<void> {
   if (!hasCycles) {
     const today = new Date().toISOString().split("T")[0];
     const firstCycle = createCycle({
-      name: "First Cycle",
+      name: "First Season",
       startDate: today,
       endDate: null,
     });

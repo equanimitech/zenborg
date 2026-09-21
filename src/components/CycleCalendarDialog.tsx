@@ -166,7 +166,7 @@ export function CycleCalendarDialog({
     if (!promptRange) return;
     const trimmed = nameDraft.trim();
     if (!trimmed) {
-      setFormError("Name the cycle to create it");
+      setFormError("Name the season to create it");
       return;
     }
 
@@ -206,7 +206,7 @@ export function CycleCalendarDialog({
       <DialogContent className="max-w-3xl p-0 gap-0 h-[85vh] flex flex-col">
         <DialogHeader className="px-6 py-4 border-b border-stone-200 dark:border-stone-700">
           <DialogTitle className="text-sm font-mono font-medium text-stone-700 dark:text-stone-300">
-            Plan a cycle — drag across days to paint a range
+            Plan a season — drag across days to paint a range
           </DialogTitle>
           {formError && (
             <p
@@ -278,14 +278,14 @@ export function CycleCalendarDialog({
                 }}
                 placeholder="Name this chapter (e.g. Paris, Vipassana, Focus week)"
                 className="flex-1 px-3 py-2 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-sm font-mono text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-stone-400"
-                aria-label="Cycle name"
+                aria-label="Season name"
               />
               <button
                 type="button"
                 onClick={handleCreate}
                 className="px-4 py-2 rounded-md bg-stone-800 dark:bg-stone-100 text-stone-50 dark:text-stone-900 text-sm font-mono font-medium hover:opacity-90 active:scale-95 transition-all"
               >
-                Create cycle
+                Create season
               </button>
             </div>
           </div>
