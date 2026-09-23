@@ -1,12 +1,13 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { GardenGlyph } from "@/components/GardenGlyph";
 import { cn } from "@/lib/utils";
 
 const modes = [
-  { name: "Plant", path: "/plant" },
-  { name: "Cultivate", path: "/cultivate" },
-  { name: "Harvest", path: "/harvest" },
+  { name: "Plant", path: "/plant", glyph: "plant" },
+  { name: "Cultivate", path: "/cultivate", glyph: "cultivate" },
+  { name: "Harvest", path: "/harvest", glyph: "harvest" },
 ] as const;
 
 /**
@@ -46,12 +47,17 @@ export function ModeSelector() {
             aria-selected={isActive}
             onClick={() => router.push(mode.path)}
             className={cn(
-              "px-3.5 py-1 rounded-md text-sm font-medium transition-all duration-150",
+              "inline-flex items-center gap-1.5 px-3.5 py-1 rounded-md text-sm font-medium transition-all duration-150",
               isActive
                 ? "bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 shadow-sm"
                 : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300",
             )}
           >
+            <GardenGlyph
+              name={mode.glyph}
+              size={14}
+              className={isActive ? undefined : "opacity-70"}
+            />
             {mode.name}
           </button>
         );

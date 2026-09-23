@@ -9,6 +9,7 @@ import { AreaService } from "@/application/services/AreaService";
 import { HabitService } from "@/application/services/HabitService";
 import { AreaBoardColumn } from "@/components/AreaBoardColumn";
 import { EmptyAreaColumn } from "@/components/EmptyAreaColumn";
+import { GardenGlyph } from "@/components/GardenGlyph";
 import { HabitFormDialog } from "@/components/HabitFormDialog";
 import type { Area, UpdateAreaProps } from "@/domain/entities/Area";
 import type {
@@ -185,17 +186,17 @@ export const AreaBoardBuilder = observer(() => {
 
 const GESTURES = [
   [
-    "🌱",
+    "plant",
     "Plant",
     "habits, people, places. What you grow, with whom, and where.",
   ],
   [
-    "🪴",
+    "cultivate",
     "Cultivate",
     "tend and fence. Every day, tend what matters and fence out the weeds.",
   ],
   [
-    "🌾",
+    "harvest",
     "Harvest",
     "reflect and tune. What it taught you; retune for the next season.",
   ],
@@ -223,9 +224,10 @@ function FirstRun({
         <ul className="space-y-1">
           {GESTURES.map(([glyph, name, what]) => (
             <li key={name}>
-              <span aria-hidden="true" className="inline-block w-6">
-                {glyph}
-              </span>
+              <GardenGlyph
+                name={glyph}
+                className="inline-block mr-2 -mt-0.5 align-middle"
+              />
               <span className="font-mono text-stone-900 dark:text-stone-100">
                 {name}
               </span>{" "}
