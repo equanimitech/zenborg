@@ -388,7 +388,7 @@ export function getDayTrace(
   const resolver = (e: Parameters<typeof resolveArea>[1]) => resolveArea(surfaceIndex, e);
   const spans = deriveSpans(events, resolver, { idleGapMs, boundaries });
 
-  const cov = coverage(events, traceSurfaces).map((c) => ({
+  const cov = coverage(events, surfaces).map((c) => ({
     surface: c.surface,
     ...(c.first !== undefined ? { first: timeStr(c.first) } : {}),
     ...(c.last !== undefined ? { last: timeStr(c.last) } : {}),
