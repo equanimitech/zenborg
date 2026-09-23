@@ -23,16 +23,16 @@
   "meaning": {
     "plant": "a sprout: two leaves off a young stem",
     "cultivate": "a leaf, with its midrib",
-    "harvest": "an ear of grain",
+    "harvest": "an ear of grain, leaning, heavy with kernels",
     "fence-standing": "a picket fence, closed: a standing fence",
-    "fence": "a picket fence with a gap in its rail: a timed fence, the gate opens",
+    "fence": "two pickets with the rail running on into the gap: a timed fence, the gate opens",
     "fence-gate": "a gate swung open: a pause gate you pass through",
-    "phase-morning": "a flower through its day: the sprout",
-    "phase-afternoon": "a flower through its day: the open bloom",
-    "phase-evening": "a flower through its day: the closing tulip",
-    "phase-night": "a flower through its day: the drooping bud"
+    "phase-morning": "the sun rising over the horizon, with rays",
+    "phase-afternoon": "the sun high, with rays",
+    "phase-evening": "the sun setting: a low cap over the horizon",
+    "phase-night": "a crescent moon"
   },
-  "rule": "Stroke-only, no filled marks. The phases are one flower across its day.",
+  "rule": "Stroke-only, no filled marks. Garden marks are plants and fences; phases are the sky over the garden: sun rising, sun high, sun setting, moon.",
   "defaultsOnly": "Phase glyphs are the default only when a phase has no user emoji. Phase emoji are user-owned (Settings) and stay.",
   "archive": "phi-archive/ holds the geometric φ-grammar set that was tried first and rejected as not organic enough.",
   "generated": "2026-09-23"
