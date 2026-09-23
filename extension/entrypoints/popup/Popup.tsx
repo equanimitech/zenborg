@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { normalizeDomain } from "@/modules/domains";
+import { FenceBadge, FenceGlyph } from "@/modules/fence/glyph";
 import { exitLine, fencesFor } from "@/modules/fence/parse";
 import { fenceCache } from "@/modules/fence/store";
-import type { Fence, Fences } from "@/modules/fence/types";
+import type { Fences } from "@/modules/fence/types";
 import { armBreak, type BreakTarget } from "@/modules/friction/cooldown/arm";
 import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
 import {
@@ -66,17 +67,6 @@ async function currentDomain(): Promise<string | null> {
     return url.hostname.replace(/^www\./, "").toLowerCase();
   } catch {
     return null;
-  }
-}
-
-function fenceTypeBadge(fence: Fence): string {
-  switch (fence.enforcement.kind) {
-    case "block":
-      return fence.enforcement.standing ? "\u{1F512}" : "⏳";
-    case "gate":
-      return "⏱";
-    default:
-      return "\u{1F6E1}";
   }
 }
 
@@ -173,14 +163,18 @@ export function Popup() {
           <ul className="popup-fence-list">
             {hereFences.map((f) => (
               <li key={f.id} className="popup-fence-item">
-                <span className="popup-fence-badge">{fenceTypeBadge(f)}</span>
+                <span className="popup-fence-badge">
+                  <FenceBadge fence={f} />
+                </span>
                 <span className="popup-fence-name">{f.label}</span>
                 <span className="popup-fence-exit">{exitLine(f)}</span>
               </li>
             ))}
             {hereTransforms.map((t) => (
               <li key={t.ruleId} className="popup-fence-item">
-                <span className="popup-fence-badge">{"\u{1F6E1}"}</span>
+                <span className="popup-fence-badge">
+                  <FenceGlyph name="fence" label="transform" />
+                </span>
                 <span className="popup-fence-name">{t.ruleId}</span>
                 <span className="popup-fence-exit">{transformLabel(t)}</span>
               </li>

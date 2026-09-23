@@ -2,6 +2,7 @@
 
 import { useValue } from "@legendapp/state/react";
 import { CycleService } from "@/application/services/CycleService";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import type { Area } from "@/domain/entities/Area";
 import { habits$ } from "@/infrastructure/state/store";
 import type { VirtualDeckCard as VirtualDeckCardData } from "@/infrastructure/state/virtualDeckCards";
@@ -68,7 +69,7 @@ export function CycleDeckColumn({
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-base" aria-hidden="true">
-            {area.emoji}
+            {area.emoji || <AreaSwatch color={area.color} />}
           </span>
           <h3 className="text-sm font-mono font-medium text-stone-700 dark:text-stone-300">
             {area.name}

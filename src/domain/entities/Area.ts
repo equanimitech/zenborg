@@ -20,6 +20,7 @@ export interface Area {
   attitude: Attitude | null;
   tags: string[];
   color: string;
+  /** User-owned. Empty means none chosen; the area colour stands in. */
   emoji: string;
   isDefault: boolean;
   surfaces?: AreaSurfaces;
@@ -138,10 +139,6 @@ export function createArea(props: CreateAreaProps): AreaResult {
     return { error: "Color must be a valid hex code (e.g., #10b981)" };
   }
 
-  if (!emoji.trim()) {
-    return { error: "Emoji cannot be empty" };
-  }
-
   if (order < 0) {
     return { error: "Order must be non-negative" };
   }
@@ -154,7 +151,7 @@ export function createArea(props: CreateAreaProps): AreaResult {
     attitude,
     tags: normalizeTags(tags),
     color: color.toLowerCase(),
-    emoji: emoji?.trim(),
+    emoji: emoji.trim(),
     isDefault: false,
     order,
     createdAt: now,
@@ -187,12 +184,6 @@ export function updateArea(area: Area, updates: UpdateAreaProps): AreaResult {
     }
   }
 
-  if (updates.emoji !== undefined) {
-    if (!updates.emoji.trim()) {
-      return { error: "Emoji cannot be empty" };
-    }
-  }
-
   if (updates.order !== undefined) {
     if (updates.order < 0) {
       return { error: "Order must be non-negative" };
@@ -204,7 +195,7 @@ export function updateArea(area: Area, updates: UpdateAreaProps): AreaResult {
     ...updates,
     name: updates.name ? updates.name.trim() : area.name,
     color: updates.color ? updates.color.toLowerCase() : area.color,
-    emoji: updates.emoji ? updates.emoji.trim() : area.emoji,
+    emoji: updates.emoji !== undefined ? updates.emoji.trim() : area.emoji,
     tags: updates.tags ? normalizeTags(updates.tags) : area.tags,
     updatedAt: new Date().toISOString(),
   };

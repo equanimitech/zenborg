@@ -3,6 +3,7 @@
 import { observer, use$ } from "@legendapp/state/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
+import { InitialMark } from "@/components/InitialMark";
 import type { Place } from "@/domain/entities/Place";
 import { activeHabits$, places$ } from "@/infrastructure/state/store";
 import { openPlaceFormEdit } from "@/infrastructure/state/ui-store";
@@ -109,7 +110,7 @@ function PlaceNode({
         </button>
 
         <span className="w-5 text-center text-sm leading-none">
-          {node.place.emoji ?? (depth === 0 ? "🌍" : depth === 1 ? "📍" : "·")}
+          {node.place.emoji || <InitialMark name={node.place.name} />}
         </span>
 
         <span

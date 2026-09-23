@@ -92,7 +92,7 @@ export function AreaSelector({
       -1,
     );
 
-    const emoji = suggestEmojiForAreaName(trimmedName) || "🔵";
+    const emoji = suggestEmojiForAreaName(trimmedName) || "";
     const color = getRandomColor();
 
     const result = createArea({
@@ -192,8 +192,8 @@ export function AreaSelector({
                         style={{ backgroundColor: area.color }}
                       />
 
-                      {/* Emoji */}
-                      <span className="text-lg flex-shrink-0">
+                      {/* Emoji: fixed slot keeps names aligned when none is chosen; the dot is the swatch */}
+                      <span className="text-lg flex-shrink-0 w-6 text-center">
                         {area.emoji}
                       </span>
 

@@ -37,6 +37,7 @@ import { isTauri } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import { CircularPhaseSlider } from "./CircularPhaseSlider";
 import { ConfirmableAction } from "./ConfirmableAction";
+import { GardenGlyph, type GardenGlyphName } from "./GardenGlyph";
 import { OracleSettingsSection } from "./OracleSettingsSection";
 import { VaultStatusSection } from "./VaultStatusSection";
 
@@ -302,6 +303,7 @@ export const SettingsModal = observer(function SettingsModal({
                               }
                               className="w-12 px-2 py-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded text-center text-lg focus:outline-none focus:ring-1 focus:ring-stone-400"
                               maxLength={2}
+                              aria-label="Phase emoji (optional)"
                             />
                             <input
                               type="text"
@@ -334,7 +336,16 @@ export const SettingsModal = observer(function SettingsModal({
                         ) : (
                           <>
                             <div className="flex items-center gap-3 flex-1">
-                              <span className="text-lg">{config.emoji}</span>
+                              <span className="text-lg w-6 flex justify-center text-stone-500 dark:text-stone-400">
+                                {config.emoji || (
+                                  <GardenGlyph
+                                    name={
+                                      `phase-${config.phase.toLowerCase()}` as GardenGlyphName
+                                    }
+                                    size={18}
+                                  />
+                                )}
+                              </span>
                               <div className="flex-1">
                                 <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
                                   {config.label}

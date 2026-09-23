@@ -23,6 +23,7 @@ export interface PhaseConfig {
   readonly id: string;
   phase: Phase;
   label: string;
+  /** User-owned. Empty (the default) renders the phase glyph instead. */
   emoji: string;
   startHour: number; // 0-23
   endHour: number; // 0-23 (can wrap for night: 22-6 means 22-23, 0-6)
@@ -42,7 +43,7 @@ export const DEFAULT_PHASE_CONFIGS: Omit<
   {
     phase: Phase.MORNING,
     label: "Morning",
-    emoji: "☕",
+    emoji: "",
     startHour: 6,
     endHour: 12,
     isVisible: true,
@@ -51,7 +52,7 @@ export const DEFAULT_PHASE_CONFIGS: Omit<
   {
     phase: Phase.AFTERNOON,
     label: "Afternoon",
-    emoji: "☀️",
+    emoji: "",
     startHour: 12,
     endHour: 18,
     isVisible: true,
@@ -60,7 +61,7 @@ export const DEFAULT_PHASE_CONFIGS: Omit<
   {
     phase: Phase.EVENING,
     label: "Evening",
-    emoji: "🌙",
+    emoji: "",
     startHour: 18,
     endHour: 22,
     isVisible: true,
@@ -69,7 +70,7 @@ export const DEFAULT_PHASE_CONFIGS: Omit<
   {
     phase: Phase.NIGHT,
     label: "Night",
-    emoji: "✨",
+    emoji: "",
     startHour: 22,
     endHour: 6,
     isVisible: false, // Hidden by default

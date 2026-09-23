@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { observer, use$ } from "@legendapp/state/react";
 import { Plus, User } from "lucide-react";
 import { useMemo, useState } from "react";
+import { InitialMark } from "@/components/InitialMark";
 import { PersonFormDialog } from "@/components/PersonFormDialog";
 import { slugify } from "@/domain/entities/Moment";
 import type { Person } from "@/domain/entities/Person";
@@ -228,7 +229,9 @@ function DraggablePersonCard({
         className="flex-1 text-left min-w-0"
       >
         <div className="flex items-center text-sm font-mono gap-2 text-stone-800 dark:text-stone-200">
-          <span className="text-lg flex-shrink-0">{person.emoji || "👤"}</span>
+          <span className="text-lg flex-shrink-0 w-6 text-center">
+            {person.emoji || <InitialMark name={displayName(person)} />}
+          </span>
           <span className="text-lg font-semibold truncate flex-1 min-w-0">
             {displayName(person)}
           </span>
@@ -569,7 +572,11 @@ export const PeopleBoardBuilder = observer(
                 className="flex items-center gap-2 px-3 py-3 rounded-md bg-stone-100 dark:bg-stone-800 border border-stone-300 dark:border-stone-600 opacity-90"
                 style={{ width: "22.5rem" }}
               >
-                <span className="text-lg">{activePerson.emoji || "👤"}</span>
+                <span className="text-lg w-6 text-center">
+                  {activePerson.emoji || (
+                    <InitialMark name={displayName(activePerson)} />
+                  )}
+                </span>
                 <span className="text-sm font-mono font-semibold text-stone-800 dark:text-stone-200 truncate">
                   {displayName(activePerson)}
                 </span>

@@ -27,16 +27,16 @@ describe("Phase", () => {
       ]);
     });
 
-    it("should have correct labels and emojis", () => {
+    it("should have correct labels and no default emoji", () => {
       const configs = getDefaultPhaseConfigs();
       expect(configs[0].label).toBe("Morning");
-      expect(configs[0].emoji).toBe("☕");
+      expect(configs[0].emoji).toBe("");
       expect(configs[1].label).toBe("Afternoon");
-      expect(configs[1].emoji).toBe("☀️");
+      expect(configs[1].emoji).toBe("");
       expect(configs[2].label).toBe("Evening");
-      expect(configs[2].emoji).toBe("🌙");
+      expect(configs[2].emoji).toBe("");
       expect(configs[3].label).toBe("Night");
-      expect(configs[3].emoji).toBe("✨");
+      expect(configs[3].emoji).toBe("");
     });
 
     it("should have correct time boundaries", () => {

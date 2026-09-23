@@ -169,7 +169,7 @@ describe("Area", () => {
       }
     });
 
-    it("should reject empty emoji", () => {
+    it("should allow an empty emoji (none chosen)", () => {
       const result = createArea({
         name: "Learning",
         color: "#9333ea",
@@ -177,9 +177,9 @@ describe("Area", () => {
         order: 0,
       });
 
-      expect(isAreaError(result)).toBe(true);
-      if (isAreaError(result)) {
-        expect(result.error).toBe("Emoji cannot be empty");
+      expect(isAreaError(result)).toBe(false);
+      if (!isAreaError(result)) {
+        expect(result.emoji).toBe("");
       }
     });
 
@@ -372,7 +372,7 @@ describe("Area", () => {
       }
     });
 
-    it("should reject empty emoji update", () => {
+    it("should clear the emoji on an empty update", () => {
       const result = createArea({
         name: "Learning",
         color: "#9333ea",
@@ -384,9 +384,9 @@ describe("Area", () => {
       if (!isAreaError(result)) {
         const updated = updateArea(result, { emoji: "" });
 
-        expect(isAreaError(updated)).toBe(true);
-        if (isAreaError(updated)) {
-          expect(updated.error).toBe("Emoji cannot be empty");
+        expect(isAreaError(updated)).toBe(false);
+        if (!isAreaError(updated)) {
+          expect(updated.emoji).toBe("");
         }
       }
     });

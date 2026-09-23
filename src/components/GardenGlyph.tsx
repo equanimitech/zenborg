@@ -2,7 +2,17 @@
  * The φ-grammar system glyphs, copied verbatim from docs/design/glyphs/*.svg.
  * Emoji are for things the gardener picks; system marks are these.
  */
-export type GardenGlyphName = "plant" | "cultivate" | "harvest" | "fence";
+export type GardenGlyphName =
+  | "plant"
+  | "cultivate"
+  | "harvest"
+  | "fence"
+  | "fence-standing"
+  | "fence-gate"
+  | "phase-morning"
+  | "phase-afternoon"
+  | "phase-evening"
+  | "phase-night";
 
 const SHAPES: Record<GardenGlyphName, React.ReactNode> = {
   plant: (
@@ -27,6 +37,42 @@ const SHAPES: Record<GardenGlyphName, React.ReactNode> = {
     <>
       <path d="M18 10V6H6v12h12v-4" />
       <circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "fence-standing": (
+    <>
+      <path d="M6 6h12v12H6z" />
+      <circle cx="12" cy="12" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "fence-gate": (
+    <>
+      <path d="M18 8.5V6H6v12h12v-2.5" />
+      <circle cx="18" cy="12" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "phase-morning": (
+    <>
+      <path d="M5 14.5h14" />
+      <circle cx="6.5" cy="10" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "phase-afternoon": (
+    <>
+      <path d="M5 14.5h14" />
+      <circle cx="12" cy="6" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "phase-evening": (
+    <>
+      <path d="M5 14.5h14" />
+      <circle cx="17.5" cy="10" r="1.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  "phase-night": (
+    <>
+      <path d="M5 14.5h14" />
+      <circle cx="12" cy="19" r="1.9" fill="currentColor" stroke="none" />
     </>
   ),
 };

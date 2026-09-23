@@ -2,12 +2,13 @@
 
 import { use$ } from "@legendapp/state/react";
 import { AtSign, Clock, Layers, Plus, Timer, Trash2, X } from "lucide-react";
-import { RelationshipTagger } from "@/components/RelationshipTagger";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AreaSelector } from "@/components/AreaSelector";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { AttitudeSelector } from "@/components/AttitudeSelector";
 import { PhaseSelector } from "@/components/PhaseSelector";
+import { RelationshipTagger } from "@/components/RelationshipTagger";
 import {
   RhythmSelector,
   rhythmIcon,
@@ -42,7 +43,7 @@ import {
 } from "@/domain/value-objects/Attitude";
 import { PhaseIcon } from "@/domain/value-objects/phaseStyles";
 import { useTaggedNameField } from "@/hooks/useTaggedNameField";
-import { areas$, phaseConfigs$ } from "@/infrastructure/state/store";
+import { areas$, habits$, phaseConfigs$ } from "@/infrastructure/state/store";
 import {
   closeHabitForm,
   habitFormState$,
@@ -50,7 +51,6 @@ import {
   openHabitFormCreate,
   openHabitFormEdit,
 } from "@/infrastructure/state/ui-store";
-import { habits$ } from "@/infrastructure/state/store";
 import {
   extractLeadingEmoji,
   suggestEmojiForAreaName,
@@ -215,7 +215,7 @@ export function HabitFormDialog({ onSave, onDelete }: HabitFormDialogProps) {
     onSave({
       name: cleanName,
       areaId,
-      emoji: emoji || "⭐",
+      emoji: emoji || null,
       attitude,
       phase,
       tags: finalTags,
@@ -309,7 +309,16 @@ export function HabitFormDialog({ onSave, onDelete }: HabitFormDialogProps) {
                     className="text-4xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-14 h-14 flex items-center justify-center transition-colors mt-1"
                     aria-label="Change emoji"
                   >
-                    {emoji}
+                    {emoji ||
+                      (selectedArea?.emoji ? (
+                        <span className="opacity-30">
+                          {selectedArea?.emoji}
+                        </span>
+                      ) : (
+                        selectedArea && (
+                          <AreaSwatch color={selectedArea.color} />
+                        )
+                      ))}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-fit p-0" align="start">

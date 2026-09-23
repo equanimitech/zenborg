@@ -4,6 +4,7 @@ import { use$ } from "@legendapp/state/react";
 import { AtSign, Timer, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { InitialMark } from "@/components/InitialMark";
 import {
   RelationshipTagger,
   useRelationshipFromMention,
@@ -213,7 +214,7 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
                     className="text-4xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-14 h-14 flex items-center justify-center transition-colors mt-1"
                     aria-label="Change emoji"
                   >
-                    {emoji || "👤"}
+                    {emoji || <InitialMark name={name} />}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-fit p-0" align="start">

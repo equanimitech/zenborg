@@ -4,6 +4,7 @@
 import { Archive, MoreVertical, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { AttitudeChip } from "@/components/AttitudeChip";
 import { AttitudeSelector } from "@/components/AttitudeSelector";
 import { ColorPicker } from "@/components/ColorPicker";
@@ -173,7 +174,7 @@ export function PlanAreaCard({
                     className="text-2xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-10 h-10 flex items-center justify-center transition-colors"
                     aria-label="Change emoji"
                   >
-                    {area.emoji}
+                    {area.emoji || <AreaSwatch color={area.color} />}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-fit p-0" align="start">

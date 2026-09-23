@@ -3,6 +3,7 @@
 
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { columnWidth } from "@/lib/design-tokens";
 import {
   extractLeadingEmoji,
@@ -40,13 +41,13 @@ export function EmptyAreaColumn({
 }: EmptyAreaColumnProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("⭐");
+  const [emoji, setEmoji] = useState("");
   const [color, setColor] = useState(pickRandomColor);
 
   const handleCancel = () => {
     setIsCreating(false);
     setName("");
-    setEmoji("⭐");
+    setEmoji("");
     setColor(pickRandomColor());
   };
 
@@ -99,7 +100,7 @@ export function EmptyAreaColumn({
         <div className="px-4 py-3">
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-xl flex-shrink-0 w-8 h-8 flex items-center justify-center">
-              {emoji}
+              {emoji || <AreaSwatch color={color} />}
             </span>
             <input
               type="text"

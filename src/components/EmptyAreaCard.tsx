@@ -3,6 +3,7 @@
 
 import { Plus } from "lucide-react";
 import { useState } from "react";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { ColorPicker } from "@/components/ColorPicker";
 import {
   EmojiPicker,
@@ -34,7 +35,7 @@ interface EmptyAreaCardProps {
 export function EmptyAreaCard({ onCreateArea }: EmptyAreaCardProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("⭐");
+  const [emoji, setEmoji] = useState("");
   const [color, setColor] = useState("#3b82f6");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
@@ -45,7 +46,7 @@ export function EmptyAreaCard({ onCreateArea }: EmptyAreaCardProps) {
   const handleCancel = () => {
     setIsCreating(false);
     setName("");
-    setEmoji("⭐");
+    setEmoji("");
     setColor("#3b82f6");
   };
 
@@ -120,7 +121,7 @@ export function EmptyAreaCard({ onCreateArea }: EmptyAreaCardProps) {
                   className="text-lg flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-8 h-8 flex items-center justify-center transition-colors"
                   aria-label="Change emoji"
                 >
-                  {emoji}
+                  {emoji || <AreaSwatch color={color} />}
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-fit p-0" align="start">

@@ -17,6 +17,7 @@
 import { useEffect, useState } from "react";
 import { exportFileName, toJsonl } from "@/modules/activity/events";
 import { readAllEvents } from "@/modules/activity/log";
+import { FenceBadge, FenceGlyph } from "@/modules/fence/glyph";
 import { exitLine } from "@/modules/fence/parse";
 import { fenceCache, fenceRefusals } from "@/modules/fence/store";
 import type { Fence, Fences, Refusal } from "@/modules/fence/types";
@@ -39,17 +40,6 @@ function fenceTypeLabel(fence: Fence): string {
     return fence.enforcement.standing ? "standing block" : "timed block";
   }
   return fence.enforcement.kind;
-}
-
-function fenceTypeBadge(fence: Fence): string {
-  switch (fence.enforcement.kind) {
-    case "block":
-      return fence.enforcement.standing ? "🔒" : "⏳";
-    case "gate":
-      return "⏱";
-    default:
-      return "🛡";
-  }
 }
 
 function formatUntil(ts: number): string {
@@ -153,7 +143,9 @@ export function Manage() {
             <tbody>
               {fenceList.map((f) => (
                 <tr key={f.id}>
-                  <td>{fenceTypeBadge(f)}</td>
+                  <td>
+                    <FenceBadge fence={f} />
+                  </td>
                   <td>{f.label}</td>
                   <td className="manage-type">{fenceTypeLabel(f)}</td>
                   <td className="manage-domains">{f.domains.join(", ")}</td>
@@ -192,7 +184,9 @@ export function Manage() {
               <tbody>
                 {transforms.map((t) => (
                   <tr key={t.ruleId}>
-                    <td>🛡</td>
+                    <td>
+                      <FenceGlyph name="fence" label="transform" />
+                    </td>
                     <td>{t.ruleId}</td>
                     <td className="manage-domains">{t.domains.join(", ")}</td>
                     <td className="manage-exit" title={t.targets.primary}>

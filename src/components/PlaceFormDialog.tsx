@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { InitialMark } from "@/components/InitialMark";
 import {
   RelationshipTagger,
   useRelationshipFromMention,
@@ -208,7 +209,7 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     className="text-4xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-14 h-14 flex items-center justify-center transition-colors mt-1"
                     aria-label="Change emoji"
                   >
-                    {emoji || "📍"}
+                    {emoji || <InitialMark name={name} />}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-fit p-0" align="start">

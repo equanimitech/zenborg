@@ -6,6 +6,7 @@ import { Clock, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AreaSelector } from "@/components/AreaSelector";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { PhaseSelector } from "@/components/PhaseSelector";
 import {
   Dialog,
@@ -436,7 +437,9 @@ export function MomentFormDialog({ onSave, onDelete }: MomentFormDialogProps) {
           <div className="px-6 pt-3 flex items-center gap-1.5 text-stone-400 dark:text-stone-500">
             <span className="text-[11px] font-mono leading-none">↻</span>
             {linkedHabit.name !== name.trim() && (
-              <span className="text-[11px] font-mono leading-none">{linkedHabit.name}</span>
+              <span className="text-[11px] font-mono leading-none">
+                {linkedHabit.name}
+              </span>
             )}
             <button
               type="button"
@@ -453,7 +456,9 @@ export function MomentFormDialog({ onSave, onDelete }: MomentFormDialogProps) {
             className="px-6 pt-3 flex items-center gap-1 text-stone-300 dark:text-stone-600 hover:text-stone-400 dark:hover:text-stone-500 transition-colors"
           >
             <span className="text-[11px] font-mono leading-none">↻</span>
-            <span className="text-[11px] font-mono leading-none">link habit</span>
+            <span className="text-[11px] font-mono leading-none">
+              link habit
+            </span>
           </button>
         ) : null}
 
@@ -481,7 +486,16 @@ export function MomentFormDialog({ onSave, onDelete }: MomentFormDialogProps) {
                         className="text-4xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-14 h-14 flex items-center justify-center transition-colors mt-1"
                         aria-label="Change emoji"
                       >
-                        {emoji || "⭐"}
+                        {emoji ||
+                          (selectedArea?.emoji ? (
+                            <span className="opacity-30">
+                              {selectedArea?.emoji}
+                            </span>
+                          ) : (
+                            selectedArea && (
+                              <AreaSwatch color={selectedArea.color} />
+                            )
+                          ))}
                       </button>
                     </PopoverTrigger>
                     <PopoverContent className="w-fit p-0" align="start">
@@ -672,7 +686,6 @@ export function MomentFormDialog({ onSave, onDelete }: MomentFormDialogProps) {
                     }
                   />
                 )}
-
               </div>
             </div>
           ) : (

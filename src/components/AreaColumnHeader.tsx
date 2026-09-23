@@ -4,6 +4,7 @@
 import { MoreVertical, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { AreaSwatch } from "@/components/AreaSwatch";
 import { ColorPicker } from "@/components/ColorPicker";
 import {
   DropdownMenu,
@@ -97,7 +98,7 @@ export function AreaColumnHeader({
                 className="text-xl flex-shrink-0 hover:bg-stone-100 dark:hover:bg-stone-800 rounded w-8 h-8 flex items-center justify-center transition-colors"
                 aria-label="Change emoji"
               >
-                {area.emoji}
+                {area.emoji || <AreaSwatch color={area.color} />}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-fit p-0" align="start">

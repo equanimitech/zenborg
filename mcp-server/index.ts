@@ -3364,7 +3364,7 @@ defineTool(server, {
   schema: {
     id: z.string(),
     label: z.string().min(1).optional(),
-    emoji: z.string().min(1).optional(),
+    emoji: z.string().optional(), // "" clears it; the phase glyph shows instead
     color: z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/)
