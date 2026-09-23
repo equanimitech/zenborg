@@ -176,7 +176,7 @@ function dwellMs(rung: Primitive): number {
 }
 
 function reason(fence: RuleSpec, rung: Primitive, at: string): string {
-  const head = `[garden] ⌗ outside "${fence.name}"${at ? ` — ${at}` : ""}`;
+  const head = `[garden] ⌗ at the fence around "${fence.name}"${at ? ` — ${at}` : ""}`;
 
   if (rung.kind === "cooldown") {
     const u = (rung as CooldownSpec).unlockPath;
@@ -184,7 +184,7 @@ function reason(fence: RuleSpec, rung: Primitive, at: string): string {
     // a punishment, and invariant 6 exists so this branch always has one.
     if (u.type === "unlock_with_intention") return `${head}. ${u.prompt}`;
     if (u.type === "out_of_band") return `${head}. ${u.note}`;
-    return `${head}. The wait is the unlock.`;
+    return `${head}. The pause is the way through.`;
   }
 
   const gate = rung as GateSpec;
@@ -192,8 +192,8 @@ function reason(fence: RuleSpec, rung: Primitive, at: string): string {
   const exit = gate.proceedAffordance?.label ?? "Cross anyway";
   if (f.type === "intention") return `${head}. ${f.prompt} (${exit}.)`;
   if (f.type === "delay")
-    return `${head}. You sat ${f.seconds}s for this one. ${exit}, or take the fence down.`;
-  return `${head}. You fenced this stream yourself. ${exit}.`;
+    return `${head}. You paused ${f.seconds}s here. ${exit}, or take the fence down.`;
+  return `${head}. You set this fence yourself. ${exit}.`;
 }
 
 // ── Schedule window evaluation ──────────────────────────────────────────
