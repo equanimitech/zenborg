@@ -184,10 +184,21 @@ export const AreaBoardBuilder = observer(() => {
 });
 
 const GESTURES = [
-  ["🌱", "Plant", "areas, habits, moments of 1–3 words, cycles"],
-  ["🤝", "Companion", "people and places, each held with an intention"],
-  ["🚧", "Fence", "fence out the weeds: sites, feeds"],
-  ["🪴", "Tend", "sunrise, sunset, weather, season; phases, not hours"],
+  [
+    "🌱",
+    "Plant",
+    "habits, people, places. What you grow, with whom, and where.",
+  ],
+  [
+    "🪴",
+    "Cultivate",
+    "tend and fence. Every day, tend what matters and fence out the weeds.",
+  ],
+  [
+    "🌾",
+    "Harvest",
+    "reflect and tune. What it taught you; retune for the next season.",
+  ],
 ] as const;
 
 /** First run: an empty garden. One paragraph, the question, the first plot. */

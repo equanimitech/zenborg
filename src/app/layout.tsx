@@ -21,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Zenborg",
   description:
-    "A garden for your attention. Plant what you want to grow, grow it with the people and places you care about, fence out the weeds, and return to tend it every day.",
+    "A garden for your attention. Plant what you want to grow, with the people and places you care about. Cultivate it every day: tend what matters, fence out the weeds. Harvest what it teaches you, and tune the next season.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
