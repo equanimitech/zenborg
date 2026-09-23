@@ -21,10 +21,10 @@ each phase confirmed before writing anything. The gardener leads; you hold the t
 
 | Tab | Phase |
 |---|---|
-| 🌱 Plant | 1. Areas · 2. Habits · 3. People & places |
-| 🪴 Cultivate | 4. Fence out the weeds (optional) · 5. Tend the next 3 days |
+| Plant | 1. Areas · 2. Habits · 3. People & places |
+| Cultivate | 4. Fence out the weeds (optional) · 5. Tend the next 3 days |
 
-🌾 Harvest (reflect and tune) is not part of onboarding: there is nothing to reflect
+Harvest (reflect and tune) is not part of onboarding: there is nothing to reflect
 on yet. Name it once in the close.
 
 ## When to invoke

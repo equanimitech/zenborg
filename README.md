@@ -14,9 +14,9 @@ tend with more consistency, and return with more resilience when something wilts
 
 ## Three tabs
 
-- 🌱 **Plant**: habits, people, places. What you grow, with whom, and where.
-- 🪴 **Cultivate**: tend and fence. Every day, tend what matters and fence out the weeds.
-- 🌾 **Harvest**: reflect and tune. What it taught you; retune for the next season.
+- **Plant**: habits, people, places. What you grow, with whom, and where.
+- **Cultivate**: tend and fence. Every day, tend what matters and fence out the weeds.
+- **Harvest**: reflect and tune. What it taught you; retune for the next season.
 
 It is not a habit tracker, not a task manager, not a screen-time app, not a platform. No
 streaks, no scores, no notifications, no accounts. Your garden lives on your machine.
