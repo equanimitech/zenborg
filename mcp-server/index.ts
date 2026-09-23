@@ -240,11 +240,13 @@ function reconcileHabitSchedule(
 const server = new McpServer(
   { name: "zenborg-mcp", version: "0.4.0" },
   {
-    instructions: `Zenborg is an intention-cultivation garden. The vault at \`${VAULT_ROOT}\` stores the garden state as JSON collections written by the Tauri app.
+    instructions: `Zenborg is a garden for your attention. The vault at \`${VAULT_ROOT}\` stores the garden state as JSON collections written by the Tauri app.
 
 ## Metaphor
 
 Your life is the garden. You are the gardener. Zenborg is the toolshed.
+
+Four gestures: **Plant** (areas, habits, moments, cycles) · **Companion** (people and places, each held with an intention) · **Fence** (fence out the weeds: sites, feeds) · **Tend** (sunrise, sunset, weather, season). The everyday question is "What will I tend to today?". To the gardener, placing a moment is "tending" and removing one is "setting aside"; "pruning" is only the habit attitude, and things fenced out are "weeds".
 
 - **Area** — a plot of the garden (a life domain you cultivate)
 - **Habit** — a perennial (a recurring moment template, lives inside an area)
