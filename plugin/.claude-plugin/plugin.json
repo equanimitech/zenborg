@@ -1,6 +1,6 @@
 {
   "name": "zenborg",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Zenborg for Claude Code: the garden's session surface. Ships the rituals that tend the vault — open and close the day, capture moments, plan and review a season — plus the session close. Reads the fences you declared and puts friction on crossing one, offers a practice for the gap while the agent works, and writes every session event to a local-first attention log that never leaves your machine.",
   "author": {
     "name": "EquanimiTech",
