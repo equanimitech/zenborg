@@ -25,54 +25,21 @@ cat ~/.tauri/zenborg.key
 
 ## Release Steps
 
-### Option 1: Automatic Release (Recommended)
+### Automatic (every merge to main)
 
-1. **Update version** in both files:
-   ```bash
-   # Update package.json version
-   npm version patch  # or minor, or major
+Every push to `main` cuts a release. `.github/workflows/release.yml`:
 
-   # Manually update src-tauri/tauri.conf.json to match
-   ```
+1. `bump` runs `scripts/bump-version.sh minor`, commits `chore: bump version to X.Y.Z` as github-actions[bot], tags `vX.Y.Z`, pushes both.
+2. `create-release` -> `build-tauri` -> `publish-release` run in the same workflow on that tag (tags pushed with `GITHUB_TOKEN` don't trigger other workflows).
 
-2. **Commit the version bump:**
-   ```bash
-   git add package.json src-tauri/tauri.conf.json pnpm-lock.yaml
-   git commit -m "chore: bump version to v0.3.1"
-   git push
-   ```
+Loop guard: `bump` is skipped when the head commit starts with `chore: bump version` or `release:`, or the actor is github-actions[bot]. Runs share `concurrency: release`, so quick merges queue.
 
-3. **Create and push a version tag:**
-   ```bash
-   git tag v0.3.1
-   git push origin v0.3.1
-   ```
+Nothing to do locally. Watch it at https://github.com/equanimitech/zenborg/actions/workflows/release.yml.
 
-4. **GitHub Actions will automatically:**
-   - Build for macOS Apple Silicon (aarch64)
-   - Generate signed update artifacts
-   - Create a draft release
-   - Upload all artifacts
-   - Publish the release
+### Manual
 
-5. **Monitor the workflow:**
-   - Go to: https://github.com/equanimitech/zenborg/actions
-   - Watch the "Release" workflow
-   - Build takes ~5-10 minutes
-
-6. **Edit the release notes** (optional):
-   - Go to: https://github.com/equanimitech/zenborg/releases
-   - Edit the release description
-   - Add changelog details
-
-### Option 2: Manual Trigger
-
-You can also trigger a release manually from the GitHub Actions UI:
-
-1. Go to: https://github.com/equanimitech/zenborg/actions/workflows/release.yml
-2. Click "Run workflow"
-3. Select branch (usually `main`)
-4. Click "Run workflow"
+- **Tag push:** bump locally (`scripts/bump-version.sh patch`), then `git push origin main --tags`. The main push is skipped by the loop guard; the tag push releases.
+- **workflow_dispatch:** Actions -> Release -> Run workflow. Releases the version already in `package.json` (no bump).
 
 ## What Gets Built
 
