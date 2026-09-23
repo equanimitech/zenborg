@@ -201,7 +201,7 @@ function FirstRun({
       data-testid="first-run"
       className="h-full overflow-y-auto px-4 py-10 flex flex-col items-center"
     >
-      <div className="max-w-md space-y-4 font-mono text-sm text-stone-600 dark:text-stone-400">
+      <div className="max-w-md space-y-4 font-sans text-sm text-stone-600 dark:text-stone-400">
         <p>
           <span className="text-stone-900 dark:text-stone-100">
             You are the gardener.
@@ -212,8 +212,12 @@ function FirstRun({
         <ul className="space-y-1">
           {GESTURES.map(([glyph, name, what]) => (
             <li key={name}>
-              <span aria-hidden="true">{glyph}</span>{" "}
-              <span className="text-stone-900 dark:text-stone-100">{name}</span>{" "}
+              <span aria-hidden="true" className="inline-block w-6">
+                {glyph}
+              </span>
+              <span className="font-mono text-stone-900 dark:text-stone-100">
+                {name}
+              </span>{" "}
               · {what}
             </li>
           ))}
