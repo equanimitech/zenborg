@@ -529,7 +529,7 @@ export const SettingsModal = observer(function SettingsModal({
                 <div>
                   <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-1">Zenborg</h3>
                   <p className="text-sm text-stone-600 dark:text-stone-400 mb-1">
-                    An attention orchestration system for budgeting moments toward personal flourishing.
+                    A garden for your attention. You are the gardener; Zenborg is the toolshed.
                   </p>
                   <p className="text-xs text-stone-500 font-mono">
                     Version {process.env.NEXT_PUBLIC_APP_VERSION ?? "0.3.1"}
