@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
-import { armBreak, type BreakTarget } from "@/modules/friction/cooldown/arm";
-import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
-import { breakTarget, pageTransforms, type PageTransform } from "@/modules/friction/policy/store";
+import { normalizeDomain } from "@/modules/domains";
 import { exitLine, fencesFor } from "@/modules/fence/parse";
 import { fenceCache } from "@/modules/fence/store";
 import type { Fence, Fences } from "@/modules/fence/types";
-import { normalizeDomain } from "@/modules/domains";
+import { armBreak, type BreakTarget } from "@/modules/friction/cooldown/arm";
+import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
+import {
+  breakTarget,
+  type PageTransform,
+  pageTransforms,
+} from "@/modules/friction/policy/store";
 
 /**
  * Popup — per-domain fences, then one gesture, then the global count.
@@ -36,17 +40,27 @@ import { normalizeDomain } from "@/modules/domains";
  * room.
  */
 function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 async function currentDomain(): Promise<string | null> {
   try {
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await browser.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
     if (!tab?.url) {
       return null;
     }
     const url = new URL(tab.url);
-    if (!url.hostname || url.protocol === "chrome:" || url.protocol === "chrome-extension:") {
+    if (
+      !url.hostname ||
+      url.protocol === "chrome:" ||
+      url.protocol === "chrome-extension:"
+    ) {
       return null;
     }
     return url.hostname.replace(/^www\./, "").toLowerCase();
@@ -67,15 +81,22 @@ function fenceTypeBadge(fence: Fence): string {
 }
 
 /** Transforms matching this host. Same subdomain logic as fences. */
-function transformsFor(transforms: readonly PageTransform[], host: string): readonly PageTransform[] {
+function transformsFor(
+  transforms: readonly PageTransform[],
+  host: string,
+): readonly PageTransform[] {
   const needle = normalizeDomain(host);
-  if (needle === null) { return []; }
+  if (needle === null) {
+    return [];
+  }
   const out: PageTransform[] = [];
   for (const t of transforms) {
-    const match = t.domains.some((d) =>
-      needle === d || needle.endsWith(`.${d}`)
+    const match = t.domains.some(
+      (d) => needle === d || needle.endsWith(`.${d}`),
     );
-    if (match) { out.push(t); }
+    if (match) {
+      out.push(t);
+    }
   }
   return out;
 }
@@ -102,10 +123,21 @@ export function Popup() {
 
   useEffect(() => {
     currentDomain().then(setDomain);
-    fenceCache.getValue().then(setAllFences).catch(() => setAllFences({}));
-    pageTransforms.getValue().then(setTransforms).catch(() => setTransforms([]));
-    breakTarget.getValue().then(setTarget).catch(() => setTarget(null));
-    cooldownNextLapse().then(setUntil).catch(() => setUntil(null));
+    fenceCache
+      .getValue()
+      .then(setAllFences)
+      .catch(() => setAllFences({}));
+    pageTransforms
+      .getValue()
+      .then(setTransforms)
+      .catch(() => setTransforms([]));
+    breakTarget
+      .getValue()
+      .then(setTarget)
+      .catch(() => setTarget(null));
+    cooldownNextLapse()
+      .then(setUntil)
+      .catch(() => setUntil(null));
   }, []);
 
   const take = (): void => {
@@ -129,7 +161,11 @@ export function Popup() {
   return (
     <div
       className="popup-root"
-      style={accent === undefined ? undefined : ({ "--area": accent } as React.CSSProperties)}
+      style={
+        accent === undefined
+          ? undefined
+          : ({ "--area": accent } as React.CSSProperties)
+      }
     >
       {/* Per-domain fences + transforms — what's in force here */}
       {(hereFences.length > 0 || hereTransforms.length > 0) && (
@@ -164,7 +200,12 @@ export function Popup() {
         </div>
       ) : (
         <>
-          <button className="popup-break" onClick={take} disabled={areas.length === 0}>
+          <button
+            type="button"
+            className="popup-break"
+            onClick={take}
+            disabled={areas.length === 0}
+          >
             Take a break
           </button>
           <p className="popup-break-sub">
@@ -177,12 +218,18 @@ export function Popup() {
 
       {/* Global fence count + manage link */}
       <button
+        type="button"
         className="popup-manage-link"
         onClick={() => {
-          void browser.tabs.create({ url: browser.runtime.getURL("/manage.html") });
+          void browser.tabs.create({
+            url: browser.runtime.getURL("/manage.html"),
+          });
         }}
       >
-        {totalInForce > 0 ? `${totalInForce} rule${totalInForce === 1 ? "" : "s"} total` : "Dashboard"} →
+        {totalInForce > 0
+          ? `${totalInForce} rule${totalInForce === 1 ? "" : "s"} total`
+          : "Dashboard"}{" "}
+        →
       </button>
 
       <p className="popup-note">Everything stays on this machine.</p>

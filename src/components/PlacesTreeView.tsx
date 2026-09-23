@@ -5,9 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Place } from "@/domain/entities/Place";
 import { activeHabits$, places$ } from "@/infrastructure/state/store";
-import {
-  openPlaceFormEdit,
-} from "@/infrastructure/state/ui-store";
+import { openPlaceFormEdit } from "@/infrastructure/state/ui-store";
 import { cn } from "@/lib/utils";
 
 interface TreeNode {
@@ -73,6 +71,7 @@ function PlaceNode({
 
   return (
     <>
+      {/* biome-ignore lint/a11y/useSemanticElements: the row holds the collapse <button>, and buttons cannot nest */}
       <div
         className={cn(
           "flex items-center gap-2 py-1.5 px-3 rounded-sm transition-colors cursor-pointer",
@@ -80,7 +79,14 @@ function PlaceNode({
           filter && matchesFilter && "bg-stone-50 dark:bg-stone-800/50",
         )}
         style={{ paddingLeft: `${depth * 1.5 + 0.75}rem` }}
+        role="button"
+        tabIndex={0}
         onClick={() => openPlaceFormEdit(node.place.id, node.place)}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && e.key === "Enter") {
+            openPlaceFormEdit(node.place.id, node.place);
+          }
+        }}
       >
         <button
           type="button"
@@ -103,8 +109,7 @@ function PlaceNode({
         </button>
 
         <span className="w-5 text-center text-sm leading-none">
-          {node.place.emoji ??
-            (depth === 0 ? "🌍" : depth === 1 ? "📍" : "·")}
+          {node.place.emoji ?? (depth === 0 ? "🌍" : depth === 1 ? "📍" : "·")}
         </span>
 
         <span
@@ -145,51 +150,49 @@ function PlaceNode({
   );
 }
 
-export const PlacesTreeView = observer(
-  ({ filter }: { filter: string }) => {
-    const places = use$(places$);
-    const habits = use$(activeHabits$);
+export const PlacesTreeView = observer(({ filter }: { filter: string }) => {
+  const places = use$(places$);
+  const habits = use$(activeHabits$);
 
-    const allPlaces = useMemo(() => Object.values(places), [places]);
+  const allPlaces = useMemo(() => Object.values(places), [places]);
 
-    const habitCountByPlaceId = useMemo(() => {
-      const counts = new Map<string, number>();
-      for (const h of habits) {
-        for (const pid of h.placeIds ?? []) {
-          counts.set(pid, (counts.get(pid) ?? 0) + 1);
-        }
+  const habitCountByPlaceId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const h of habits) {
+      for (const pid of h.placeIds ?? []) {
+        counts.set(pid, (counts.get(pid) ?? 0) + 1);
       }
-      return counts;
-    }, [habits]);
-
-    const tree = useMemo(
-      () => buildTree(allPlaces, habitCountByPlaceId),
-      [allPlaces, habitCountByPlaceId],
-    );
-
-    const normalizedFilter = filter.trim().toLowerCase();
-
-    if (tree.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full text-stone-400 dark:text-stone-500 text-sm font-mono">
-          no places
-        </div>
-      );
     }
+    return counts;
+  }, [habits]);
 
+  const tree = useMemo(
+    () => buildTree(allPlaces, habitCountByPlaceId),
+    [allPlaces, habitCountByPlaceId],
+  );
+
+  const normalizedFilter = filter.trim().toLowerCase();
+
+  if (tree.length === 0) {
     return (
-      <div className="h-full overflow-y-auto p-2">
-        <div className="max-w-lg mx-auto">
-          {tree.map((node) => (
-            <PlaceNode
-              key={node.place.id}
-              node={node}
-              depth={0}
-              filter={normalizedFilter}
-            />
-          ))}
-        </div>
+      <div className="flex items-center justify-center h-full text-stone-400 dark:text-stone-500 text-sm font-mono">
+        no places
       </div>
     );
-  },
-);
+  }
+
+  return (
+    <div className="h-full overflow-y-auto p-2">
+      <div className="max-w-lg mx-auto">
+        {tree.map((node) => (
+          <PlaceNode
+            key={node.place.id}
+            node={node}
+            depth={0}
+            filter={normalizedFilter}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});

@@ -287,7 +287,11 @@ export function Manage() {
 
       {/* Export */}
       <section className="manage-section">
-        <button type="button" className="manage-export" onClick={() => void handleExport()}>
+        <button
+          type="button"
+          className="manage-export"
+          onClick={() => void handleExport()}
+        >
           Export activity log (JSONL)
         </button>
       </section>

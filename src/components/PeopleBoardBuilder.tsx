@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/a11y/noAutofocus: inline edits open from a deliberate action, so focus has to follow it */
 "use client";
 
 import {
@@ -21,24 +22,24 @@ import { CSS } from "@dnd-kit/utilities";
 import { observer, use$ } from "@legendapp/state/react";
 import { Plus, User } from "lucide-react";
 import { useMemo, useState } from "react";
+import { PersonFormDialog } from "@/components/PersonFormDialog";
+import { slugify } from "@/domain/entities/Moment";
+import type { Person } from "@/domain/entities/Person";
 import {
-  displayName,
   createPerson,
+  displayName,
   normalizeAliases,
 } from "@/domain/entities/Person";
-import type { Person } from "@/domain/entities/Person";
 import type { Place } from "@/domain/entities/Place";
 import type { Relationship } from "@/domain/entities/Relationship";
 import { createRelationship } from "@/domain/entities/Relationship";
-import { slugify } from "@/domain/entities/Moment";
-import { PersonFormDialog } from "@/components/PersonFormDialog";
 import { people$, places$, relationships$ } from "@/infrastructure/state/store";
 import {
   closePersonForm,
   openPersonFormCreate,
   openPersonFormEdit,
-  personFormState$,
   type PeopleGroupBy,
+  personFormState$,
 } from "@/infrastructure/state/ui-store";
 import { columnWidth } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
@@ -62,7 +63,11 @@ function buildBasePlaceMap(
     if (rel.fromType === "person" && rel.toType === "place") {
       const place = places[rel.toId];
       if (place) map.set(rel.fromId, place);
-    } else if (rel.toType === "person" && rel.fromType === "place" && rel.direction === "mutual") {
+    } else if (
+      rel.toType === "person" &&
+      rel.fromType === "place" &&
+      rel.direction === "mutual"
+    ) {
       const place = places[rel.fromId];
       if (place) map.set(rel.toId, place);
     }
@@ -80,21 +85,22 @@ function getPersonBasePlace(
   if (fromRel) return fromRel;
   // legacy fallback
   if (person.basePlace) {
-    return Object.values(allPlaces).find((p) => p.key === person.basePlace) ?? null;
+    return (
+      Object.values(allPlaces).find((p) => p.key === person.basePlace) ?? null
+    );
   }
   return null;
 }
 
-function buildPlacesByKey(allPlaces: Record<string, Place>): Map<string, Place> {
+function buildPlacesByKey(
+  allPlaces: Record<string, Place>,
+): Map<string, Place> {
   const m = new Map<string, Place>();
   for (const p of Object.values(allPlaces)) m.set(p.key, p);
   return m;
 }
 
-function resolveCountry(
-  place: Place,
-  byKey: Map<string, Place>,
-): Place {
+function resolveCountry(place: Place, byKey: Map<string, Place>): Place {
   let current = place;
   const seen = new Set<string>();
   while (current.parentKey && !seen.has(current.id)) {
@@ -128,15 +134,21 @@ function groupPeople(
         label = person.tags?.[0] || NONE_LABELS.tag;
         break;
       case "place": {
-        const place = getPersonBasePlace(person.id, basePlaceMap, person, allPlaces);
-        const country = place ? resolveCountry(place, byKey!) : null;
+        const place = getPersonBasePlace(
+          person.id,
+          basePlaceMap,
+          person,
+          allPlaces,
+        );
+        const country = place && byKey ? resolveCountry(place, byKey) : null;
         key = country?.id || NONE_KEY;
         label = country ? placeLabel(country) : NONE_LABELS.place;
         break;
       }
     }
-    if (!groups.has(key)) groups.set(key, { label, people: [] });
-    groups.get(key)!.people.push(person);
+    const group = groups.get(key) ?? { label, people: [] };
+    group.people.push(person);
+    groups.set(key, group);
   }
 
   if (groupBy === "place") {
@@ -185,7 +197,11 @@ function DraggablePersonCard({
     isDragging,
   } = useSortable({
     id: person.id,
-    data: { personId: person.id, sourceGroupKey: groupKey, type: "person-card" },
+    data: {
+      personId: person.id,
+      sourceGroupKey: groupKey,
+      type: "person-card",
+    },
   });
 
   const style = {
@@ -255,8 +271,14 @@ function EmptyTagColumn({
               onChange={(e) => setName(e.target.value)}
               onBlur={handleSave}
               onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); handleSave(); }
-                if (e.key === "Escape") { setIsCreating(false); setName(""); }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSave();
+                }
+                if (e.key === "Escape") {
+                  setIsCreating(false);
+                  setName("");
+                }
               }}
               autoFocus
               placeholder="Tag name..."
@@ -316,7 +338,8 @@ function PeopleColumn({
       className={cn(
         "flex flex-col snap-start rounded-lg h-full",
         columnWidth.scrollableClassName,
-        isOver && "ring-2 ring-stone-400 dark:ring-stone-500 bg-stone-50 dark:bg-stone-800/50",
+        isOver &&
+          "ring-2 ring-stone-400 dark:ring-stone-500 bg-stone-50 dark:bg-stone-800/50",
       )}
     >
       <div className="px-4 py-3 flex items-center gap-2">
@@ -339,9 +362,7 @@ function PeopleColumn({
 
       <div className="h-[3px] mx-4 bg-stone-300 dark:bg-stone-600" />
 
-      <div
-        className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto min-h-0"
-      >
+      <div className="flex flex-col gap-3 p-4 flex-1 overflow-y-auto min-h-0">
         <SortableContext
           items={people.map((p) => p.id)}
           strategy={verticalListSortingStrategy}
@@ -369,14 +390,18 @@ function PeopleColumn({
   );
 }
 
-
 function findBasedInRel(personId: string): string | null {
   const allRels = relationships$.peek();
   const existing = Object.values(allRels).find(
     (r) =>
       r.label === BASED_IN_LABEL &&
-      ((r.fromType === "person" && r.fromId === personId && r.toType === "place") ||
-       (r.toType === "person" && r.toId === personId && r.fromType === "place" && r.direction === "mutual")),
+      ((r.fromType === "person" &&
+        r.fromId === personId &&
+        r.toType === "place") ||
+        (r.toType === "person" &&
+          r.toId === personId &&
+          r.fromType === "place" &&
+          r.direction === "mutual")),
   );
   return existing?.id ?? null;
 }
@@ -413,14 +438,19 @@ function applyDragGroupChange(
       const current = people$[personId].tags.peek() ?? [];
       const oldTag = current[0];
       const newTag = targetGroupKey === NONE_KEY ? undefined : targetGroupKey;
-      const updated = oldTag ? current.filter((t: string) => t !== oldTag) : [...current];
+      const updated = oldTag
+        ? current.filter((t: string) => t !== oldTag)
+        : [...current];
       if (newTag) updated.unshift(newTag);
       people$[personId].tags.set(updated);
       people$[personId].updatedAt.set(new Date().toISOString());
       break;
     }
     case "place": {
-      syncBasedInRelationship(personId, targetGroupKey === NONE_KEY ? null : targetGroupKey);
+      syncBasedInRelationship(
+        personId,
+        targetGroupKey === NONE_KEY ? null : targetGroupKey,
+      );
       break;
     }
   }
@@ -463,7 +493,9 @@ export const PeopleBoardBuilder = observer(
 
     const sensors = useSensors(
       useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-      useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+      useSensor(TouchSensor, {
+        activationConstraint: { delay: 200, tolerance: 8 },
+      }),
       useSensor(KeyboardSensor),
     );
 
@@ -513,16 +545,21 @@ export const PeopleBoardBuilder = observer(
                 groupKey={g.key}
                 label={g.label}
                 people={g.people}
-                onAddPerson={() => openPersonFormCreate({
-                  tag: groupBy === "tag" && g.key !== NONE_KEY ? g.key : undefined,
-                })}
+                onAddPerson={() =>
+                  openPersonFormCreate({
+                    tag:
+                      groupBy === "tag" && g.key !== NONE_KEY
+                        ? g.key
+                        : undefined,
+                  })
+                }
               />
             ))}
 
             {groupBy === "tag" && (
-              <EmptyTagColumn onCreateTag={(name) =>
-                openPersonFormCreate({ tag: name })
-              } />
+              <EmptyTagColumn
+                onCreateTag={(name) => openPersonFormCreate({ tag: name })}
+              />
             )}
           </div>
 

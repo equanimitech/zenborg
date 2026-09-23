@@ -1,9 +1,18 @@
 "use client";
 
 import { use$ } from "@legendapp/state/react";
-import { AtSign, Trash2, Timer, X } from "lucide-react";
+import { AtSign, Timer, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import {
+  RelationshipTagger,
+  useRelationshipFromMention,
+} from "@/components/RelationshipTagger";
+import {
+  type SelectorOption,
+  SelectorPopover,
+} from "@/components/SelectorPopover";
+import { TaggedNameInput } from "@/components/TaggedNameInput";
 import {
   Dialog,
   DialogContent,
@@ -22,27 +31,50 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { RelationshipTagger, useRelationshipFromMention } from "@/components/RelationshipTagger";
-import {
-  type SelectorOption,
-  SelectorPopover,
-} from "@/components/SelectorPopover";
-import { TaggedNameInput } from "@/components/TaggedNameInput";
 import type { Cadence } from "@/domain/value-objects/Cadence";
 import { useTaggedNameField } from "@/hooks/useTaggedNameField";
+import { relationships$ } from "@/infrastructure/state/store";
 import {
   closePersonForm,
   personFormState$,
 } from "@/infrastructure/state/ui-store";
-import { relationships$ } from "@/infrastructure/state/store";
-
 
 const CADENCE_OPTIONS: SelectorOption<Cadence | null>[] = [
-  { value: null, label: "No cadence", icon: "○", className: "font-mono text-stone-500 dark:text-stone-400", hotkey: "0" },
-  { value: "weekly", label: "Weekly", icon: "⟳", className: "font-mono text-stone-700 dark:text-stone-300", hotkey: "W" },
-  { value: "monthly", label: "Monthly", icon: "⟳", className: "font-mono text-stone-700 dark:text-stone-300", hotkey: "M" },
-  { value: "quarterly", label: "Quarterly", icon: "⟳", className: "font-mono text-stone-700 dark:text-stone-300", hotkey: "Q" },
-  { value: "yearly", label: "Yearly", icon: "⟳", className: "font-mono text-stone-700 dark:text-stone-300", hotkey: "Y" },
+  {
+    value: null,
+    label: "No cadence",
+    icon: "○",
+    className: "font-mono text-stone-500 dark:text-stone-400",
+    hotkey: "0",
+  },
+  {
+    value: "weekly",
+    label: "Weekly",
+    icon: "⟳",
+    className: "font-mono text-stone-700 dark:text-stone-300",
+    hotkey: "W",
+  },
+  {
+    value: "monthly",
+    label: "Monthly",
+    icon: "⟳",
+    className: "font-mono text-stone-700 dark:text-stone-300",
+    hotkey: "M",
+  },
+  {
+    value: "quarterly",
+    label: "Quarterly",
+    icon: "⟳",
+    className: "font-mono text-stone-700 dark:text-stone-300",
+    hotkey: "Q",
+  },
+  {
+    value: "yearly",
+    label: "Yearly",
+    icon: "⟳",
+    className: "font-mono text-stone-700 dark:text-stone-300",
+    hotkey: "Y",
+  },
 ];
 
 interface PersonFormDialogProps {
@@ -59,16 +91,8 @@ interface PersonFormDialogProps {
 
 export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
   const formState = use$(personFormState$);
-  const {
-    open,
-    mode,
-    name,
-    emoji,
-    aliases,
-    tags,
-    cadence,
-    editingPersonId,
-  } = formState;
+  const { open, mode, name, emoji, aliases, tags, cadence, editingPersonId } =
+    formState;
 
   const allRelationships = use$(relationships$);
 
@@ -79,7 +103,10 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const taggedField = useTaggedNameField(name, tags);
-  const addRelFromMention = useRelationshipFromMention("person", editingPersonId ?? null);
+  const addRelFromMention = useRelationshipFromMention(
+    "person",
+    editingPersonId ?? null,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: seeds form state when the dialog opens
   useEffect(() => {
@@ -102,7 +129,8 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
   }, [open]);
 
   const handleSave = () => {
-    const { name: cleanName, tags: finalTags } = taggedField.extractRemainingTags();
+    const { name: cleanName, tags: finalTags } =
+      taggedField.extractRemainingTags();
     if (!cleanName) {
       setValidationError("Name cannot be empty");
       return;
@@ -111,12 +139,19 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
       ? Object.values(allRelationships).find(
           (r) =>
             r.label === "based-in" &&
-            ((r.fromType === "person" && r.fromId === editingPersonId && r.toType === "place") ||
-             (r.toType === "person" && r.toId === editingPersonId && r.fromType === "place" && r.direction === "mutual")),
+            ((r.fromType === "person" &&
+              r.fromId === editingPersonId &&
+              r.toType === "place") ||
+              (r.toType === "person" &&
+                r.toId === editingPersonId &&
+                r.fromType === "place" &&
+                r.direction === "mutual")),
         )
       : null;
     const basePlaceId = basedInRel
-      ? basedInRel.fromType === "person" ? basedInRel.toId : basedInRel.fromId
+      ? basedInRel.fromType === "person"
+        ? basedInRel.toId
+        : basedInRel.fromId
       : null;
     onSave({
       name: cleanName,
@@ -129,7 +164,13 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
     closePersonForm();
   };
 
-  const hotkeysEnabled = !emojiPickerOpen && !aliasesOpen && !cadenceSelectorOpen && !taggedField.isAutocompleteOpen && !taggedField.isMentionOpen && open;
+  const hotkeysEnabled =
+    !emojiPickerOpen &&
+    !aliasesOpen &&
+    !cadenceSelectorOpen &&
+    !taggedField.isAutocompleteOpen &&
+    !taggedField.isMentionOpen &&
+    open;
 
   useHotkeys(
     "enter",
@@ -192,7 +233,9 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
 
               <TaggedNameInput
                 field={taggedField}
-                placeholder={mode === "edit" ? "Name... @mention #tag" : "Name... #tag"}
+                placeholder={
+                  mode === "edit" ? "Name... @mention #tag" : "Name... #tag"
+                }
                 autoFocus={true}
                 className="flex-1 text-4xl font-bold"
                 collisionBoundary={dialogRef.current}
@@ -200,11 +243,16 @@ export function PersonFormDialog({ onSave, onDelete }: PersonFormDialogProps) {
                 showTags={true}
                 showMentions={false}
                 includeAreas={true}
-                onMentionSelect={mode === "edit" ? addRelFromMention : undefined}
+                onMentionSelect={
+                  mode === "edit" ? addRelFromMention : undefined
+                }
               />
             </div>
             {validationError && (
-              <p className="text-sm text-red-500 dark:text-red-400 mt-2" role="alert">
+              <p
+                className="text-sm text-red-500 dark:text-red-400 mt-2"
+                role="alert"
+              >
                 {validationError}
               </p>
             )}
@@ -351,7 +399,10 @@ function AliasesEditor({
 
   const commitDraft = () => {
     const trimmed = draft.trim();
-    if (!trimmed || value.some((a) => a.toLowerCase() === trimmed.toLowerCase())) {
+    if (
+      !trimmed ||
+      value.some((a) => a.toLowerCase() === trimmed.toLowerCase())
+    ) {
       setDraft("");
       return;
     }
@@ -368,15 +419,15 @@ function AliasesEditor({
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5 items-center border border-stone-200 dark:border-stone-700 rounded-md px-2 py-1.5 focus-within:border-stone-400 dark:focus-within:border-stone-500">
-        {value.map((alias, index) => (
+        {value.map((alias) => (
           <span
-            key={`${alias}-${index}`}
+            key={alias}
             className="flex items-center gap-1 px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-xs font-mono text-stone-700 dark:text-stone-300"
           >
             {alias}
             <button
               type="button"
-              onClick={() => onChange(value.filter((_, i) => i !== index))}
+              onClick={() => onChange(value.filter((a) => a !== alias))}
               className="text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
               aria-label={`Remove alias ${alias}`}
             >
@@ -395,7 +446,11 @@ function AliasesEditor({
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
               commitDraft();
-            } else if (e.key === "Backspace" && draft === "" && value.length > 0) {
+            } else if (
+              e.key === "Backspace" &&
+              draft === "" &&
+              value.length > 0
+            ) {
               e.preventDefault();
               onChange(value.slice(0, -1));
             }

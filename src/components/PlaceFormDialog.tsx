@@ -1,17 +1,26 @@
+/** biome-ignore-all lint/a11y/noAutofocus: inline edits open from a deliberate action, so focus has to follow it */
 "use client";
 
 import { use$ } from "@legendapp/state/react";
-import { AtSign, Check, Copy, Link2, MapPin, MapPinned, Navigation, Trash2, TreePine, X } from "lucide-react";
-import { RelationshipTagger, useRelationshipFromMention } from "@/components/RelationshipTagger";
-import { TaggedNameInput } from "@/components/TaggedNameInput";
 import {
-  EmojiPicker,
-  EmojiPickerContent,
-  EmojiPickerFooter,
-  EmojiPickerSearch,
-} from "@/components/ui/emoji-picker";
+  AtSign,
+  Check,
+  Copy,
+  Link2,
+  MapPin,
+  MapPinned,
+  Navigation,
+  Trash2,
+  TreePine,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import {
+  RelationshipTagger,
+  useRelationshipFromMention,
+} from "@/components/RelationshipTagger";
+import { TaggedNameInput } from "@/components/TaggedNameInput";
 import {
   Dialog,
   DialogContent,
@@ -20,17 +29,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  EmojiPicker,
+  EmojiPickerContent,
+  EmojiPickerFooter,
+  EmojiPickerSearch,
+} from "@/components/ui/emoji-picker";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import type { Coordinates } from "@/domain/entities/Place";
 import { useTaggedNameField } from "@/hooks/useTaggedNameField";
+import { places$ } from "@/infrastructure/state/store";
 import {
   closePlaceForm,
   placeFormState$,
 } from "@/infrastructure/state/ui-store";
-import { places$ } from "@/infrastructure/state/store";
 
 interface PlaceFormDialogProps {
   onSave: (props: {
@@ -48,8 +63,19 @@ interface PlaceFormDialogProps {
 
 export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
   const formState = use$(placeFormState$);
-  const { open, mode, emoji, parentKey, lat, lng, address, url, tags, aliases, editingPlaceId } =
-    formState;
+  const {
+    open,
+    mode,
+    emoji,
+    parentKey,
+    lat,
+    lng,
+    address,
+    url,
+    tags,
+    aliases,
+    editingPlaceId,
+  } = formState;
   const name = formState.name;
 
   const allPlaces = use$(places$);
@@ -63,7 +89,10 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const taggedField = useTaggedNameField(name, tags);
-  const addRelFromMention = useRelationshipFromMention("place", editingPlaceId ?? null);
+  const addRelFromMention = useRelationshipFromMention(
+    "place",
+    editingPlaceId ?? null,
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: seeds form state when dialog opens
   useEffect(() => {
@@ -89,9 +118,7 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
   }, [open]);
 
   const possibleParents = useMemo(() => {
-    const currentKey = editingPlaceId
-      ? allPlaces[editingPlaceId]?.key
-      : null;
+    const currentKey = editingPlaceId ? allPlaces[editingPlaceId]?.key : null;
     return Object.values(allPlaces)
       .filter((p) => p.key !== currentKey)
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -104,7 +131,8 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
   const hasCoords = lat.trim() !== "" || lng.trim() !== "";
 
   const handleSave = () => {
-    const { name: cleanName, tags: finalTags } = taggedField.extractRemainingTags();
+    const { name: cleanName, tags: finalTags } =
+      taggedField.extractRemainingTags();
     if (!cleanName) {
       setValidationError("Name cannot be empty");
       return;
@@ -129,7 +157,14 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
     });
   };
 
-  const anyPopoverOpen = emojiPickerOpen || parentOpen || coordsOpen || addressOpen || urlOpen || aliasesOpen || taggedField.isAutocompleteOpen;
+  const anyPopoverOpen =
+    emojiPickerOpen ||
+    parentOpen ||
+    coordsOpen ||
+    addressOpen ||
+    urlOpen ||
+    aliasesOpen ||
+    taggedField.isAutocompleteOpen;
   const hotkeysEnabled = !anyPopoverOpen && open;
 
   useHotkeys(
@@ -193,18 +228,25 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
 
               <TaggedNameInput
                 field={taggedField}
-                placeholder={mode === "edit" ? "Name... @mention #tag" : "Name... #tag"}
+                placeholder={
+                  mode === "edit" ? "Name... @mention #tag" : "Name... #tag"
+                }
                 autoFocus={true}
                 className="flex-1 text-4xl font-bold"
                 collisionBoundary={dialogRef.current}
                 maxSuggestions={5}
                 showTags={true}
                 showMentions={false}
-                onMentionSelect={mode === "edit" ? addRelFromMention : undefined}
+                onMentionSelect={
+                  mode === "edit" ? addRelFromMention : undefined
+                }
               />
             </div>
             {validationError && (
-              <p className="text-sm text-red-500 dark:text-red-400 mt-2" role="alert">
+              <p
+                className="text-sm text-red-500 dark:text-red-400 mt-2"
+                role="alert"
+              >
                 {validationError}
               </p>
             )}
@@ -222,7 +264,8 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                   >
                     <TreePine className="w-4 h-4 text-stone-400 dark:text-stone-500 flex-shrink-0" />
                     <span className="font-mono text-sm flex-1 text-left truncate">
-                      {parentPlace.emoji ? `${parentPlace.emoji} ` : ""}{parentPlace.name}
+                      {parentPlace.emoji ? `${parentPlace.emoji} ` : ""}
+                      {parentPlace.name}
                     </span>
                   </button>
                 </PopoverTrigger>
@@ -230,7 +273,10 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                   <ParentPicker
                     value={parentKey}
                     options={possibleParents}
-                    onChange={(v) => { placeFormState$.parentKey.set(v); setParentOpen(false); }}
+                    onChange={(v) => {
+                      placeFormState$.parentKey.set(v);
+                      setParentOpen(false);
+                    }}
                   />
                 </PopoverContent>
               </Popover>
@@ -250,7 +296,10 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     </span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-72 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+                <PopoverContent
+                  align="start"
+                  className="w-72 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+                >
                   <CoordinatesEditor lat={lat} lng={lng} />
                 </PopoverContent>
               </Popover>
@@ -270,9 +319,14 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     </span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+                <PopoverContent
+                  align="start"
+                  className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+                >
                   <TextFieldEditor
-                    icon={<MapPinned className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />}
+                    icon={
+                      <MapPinned className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />
+                    }
                     label="Address"
                     value={address}
                     onChange={(v) => placeFormState$.address.set(v)}
@@ -337,7 +391,10 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                   <ParentPicker
                     value={parentKey}
                     options={possibleParents}
-                    onChange={(v) => { placeFormState$.parentKey.set(v); setParentOpen(false); }}
+                    onChange={(v) => {
+                      placeFormState$.parentKey.set(v);
+                      setParentOpen(false);
+                    }}
                   />
                 </PopoverContent>
               </Popover>
@@ -354,7 +411,10 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     <span className="text-xs font-mono">coordinates</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-72 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+                <PopoverContent
+                  align="start"
+                  className="w-72 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+                >
                   <CoordinatesEditor lat={lat} lng={lng} />
                 </PopoverContent>
               </Popover>
@@ -371,9 +431,14 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     <span className="text-xs font-mono">address</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+                <PopoverContent
+                  align="start"
+                  className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+                >
                   <TextFieldEditor
-                    icon={<MapPinned className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />}
+                    icon={
+                      <MapPinned className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />
+                    }
                     label="Address"
                     value={address}
                     onChange={(v) => placeFormState$.address.set(v)}
@@ -394,9 +459,14 @@ export function PlaceFormDialog({ onSave, onDelete }: PlaceFormDialogProps) {
                     <span className="text-xs font-mono">url</span>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+                <PopoverContent
+                  align="start"
+                  className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+                >
                   <TextFieldEditor
-                    icon={<Link2 className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />}
+                    icon={
+                      <Link2 className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />
+                    }
                     label="URL"
                     value={url}
                     onChange={(v) => placeFormState$.url.set(v)}
@@ -494,9 +564,14 @@ function UrlField({
             </span>
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95">
+        <PopoverContent
+          align="start"
+          className="w-80 p-3 border-stone-200/50 dark:border-stone-700/50 shadow-sm bg-white/95 dark:bg-stone-900/95"
+        >
           <TextFieldEditor
-            icon={<Link2 className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />}
+            icon={
+              <Link2 className="w-3.5 h-3.5 text-stone-400 dark:text-stone-500" />
+            }
             label="URL"
             value={url}
             onChange={(v) => placeFormState$.url.set(v)}
@@ -510,9 +585,7 @@ function UrlField({
         className="p-2.5 rounded-lg border border-stone-200 dark:border-stone-700 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 hover:border-stone-300 dark:hover:border-stone-600 transition-all flex-shrink-0"
         aria-label="Copy URL"
       >
-        {copied
-          ? <Check className="w-4 h-4" />
-          : <Copy className="w-4 h-4" />}
+        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
       </button>
     </div>
   );
@@ -552,7 +625,9 @@ function ParentPicker({
               : "text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800"
           }`}
         >
-          <span className="w-3.5 text-center flex-shrink-0">{p.emoji || "·"}</span>
+          <span className="w-3.5 text-center flex-shrink-0">
+            {p.emoji || "·"}
+          </span>
           {p.name}
         </button>
       ))}
@@ -574,7 +649,9 @@ function CoordinatesEditor({ lat, lng }: { lat: string; lng: string }) {
       </div>
       <div className="flex gap-2">
         <div className="flex-1 flex flex-col gap-1">
-          <span className="text-[10px] font-mono text-stone-400 dark:text-stone-500">lat</span>
+          <span className="text-[10px] font-mono text-stone-400 dark:text-stone-500">
+            lat
+          </span>
           <input
             type="text"
             value={lat}
@@ -582,12 +659,18 @@ function CoordinatesEditor({ lat, lng }: { lat: string; lng: string }) {
             placeholder="e.g. 51.5074"
             className={inputClass}
             onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }
             }}
           />
         </div>
         <div className="flex-1 flex flex-col gap-1">
-          <span className="text-[10px] font-mono text-stone-400 dark:text-stone-500">lng</span>
+          <span className="text-[10px] font-mono text-stone-400 dark:text-stone-500">
+            lng
+          </span>
           <input
             type="text"
             value={lng}
@@ -595,7 +678,11 @@ function CoordinatesEditor({ lat, lng }: { lat: string; lng: string }) {
             placeholder="e.g. -0.1278"
             className={inputClass}
             onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }
             }}
           />
         </div>
@@ -623,9 +710,15 @@ function AliasesSelector({
 
   const commitDraft = () => {
     const trimmed = draft.trim();
-    if (!trimmed) { setDraft(""); return; }
+    if (!trimmed) {
+      setDraft("");
+      return;
+    }
     const lower = trimmed.toLowerCase();
-    if (value.some((a) => a.toLowerCase() === lower)) { setDraft(""); return; }
+    if (value.some((a) => a.toLowerCase() === lower)) {
+      setDraft("");
+      return;
+    }
     onChange([...value, trimmed]);
     setDraft("");
   };
@@ -639,7 +732,10 @@ function AliasesSelector({
       open={open}
       onOpenChange={(isOpen) => {
         if (isOpen) onOpen();
-        else { commitDraft(); onClose(); }
+        else {
+          commitDraft();
+          onClose();
+        }
       }}
     >
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -690,7 +786,11 @@ function AliasesSelector({
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
                 commitDraft();
-              } else if (e.key === "Backspace" && draft === "" && value.length > 0) {
+              } else if (
+                e.key === "Backspace" &&
+                draft === "" &&
+                value.length > 0
+              ) {
                 e.preventDefault();
                 removeAt(value.length - 1);
               }
@@ -738,7 +838,11 @@ function TextFieldEditor({
         autoFocus
         onFocus={(e) => e.target.select()}
         onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }
         }}
       />
     </>
