@@ -147,6 +147,10 @@ export const AreaBoardBuilder = observer(() => {
     closeHabitForm();
   };
 
+  if (sortedAreas.length === 0) {
+    return <FirstRun onCreateArea={handleCreateArea} />;
+  }
+
   return (
     <>
       <SortableContext
@@ -178,3 +182,52 @@ export const AreaBoardBuilder = observer(() => {
     </>
   );
 });
+
+const GESTURES = [
+  ["🌱", "Plant", "areas, habits, moments of 1–3 words, cycles"],
+  ["🤝", "Companion", "people and places, each held with an intention"],
+  ["🚧", "Fence", "fence out the weeds: sites, feeds"],
+  ["🪴", "Tend", "sunrise, sunset, weather, season; phases, not hours"],
+] as const;
+
+/** First run: an empty garden. One paragraph, the question, the first plot. */
+function FirstRun({
+  onCreateArea,
+}: {
+  onCreateArea: (name: string, emoji: string, color: string) => void;
+}) {
+  return (
+    <div
+      data-testid="first-run"
+      className="h-full overflow-y-auto px-4 py-10 flex flex-col items-center"
+    >
+      <div className="max-w-md space-y-4 font-mono text-sm text-stone-600 dark:text-stone-400">
+        <p>
+          <span className="text-stone-900 dark:text-stone-100">
+            You are the gardener.
+          </span>{" "}
+          Your garden is your habit ecosystem, digital and physical. You already
+          tend it. Zenborg is the toolshed.
+        </p>
+        <ul className="space-y-1">
+          {GESTURES.map(([glyph, name, what]) => (
+            <li key={name}>
+              <span aria-hidden="true">{glyph}</span>{" "}
+              <span className="text-stone-900 dark:text-stone-100">{name}</span>{" "}
+              · {what}
+            </li>
+          ))}
+        </ul>
+        <p className="pt-2 text-stone-900 dark:text-stone-100">
+          What will I tend to today?
+        </p>
+      </div>
+      <div className="mt-6">
+        <EmptyAreaColumn
+          onCreateArea={onCreateArea}
+          label="Plant your first area"
+        />
+      </div>
+    </div>
+  );
+}

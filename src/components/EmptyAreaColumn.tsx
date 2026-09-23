@@ -31,9 +31,13 @@ function pickRandomColor(): string {
 
 interface EmptyAreaColumnProps {
   onCreateArea: (name: string, emoji: string, color: string) => void;
+  label?: string;
 }
 
-export function EmptyAreaColumn({ onCreateArea }: EmptyAreaColumnProps) {
+export function EmptyAreaColumn({
+  onCreateArea,
+  label = "New area",
+}: EmptyAreaColumnProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("⭐");
@@ -134,7 +138,7 @@ export function EmptyAreaColumn({ onCreateArea }: EmptyAreaColumnProps) {
             <Plus className="w-5 h-5 text-stone-400 dark:text-stone-500 group-hover:text-stone-600 dark:group-hover:text-stone-300 transition-colors" />
           </div>
           <h3 className="text-sm font-mono font-medium text-stone-400 dark:text-stone-500 group-hover:text-stone-600 dark:group-hover:text-stone-300 transition-colors truncate">
-            New area
+            {label}
           </h3>
         </div>
       </div>
