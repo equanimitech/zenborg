@@ -71,7 +71,8 @@ Keep observations neutral. "Reading has been quiet for 5 days" not "you should r
 
 ### 4. Offer the next move
 
-Close with an open question:
+Close with an open question. The everyday one is the default:
+- "What will you tend to today?"
 - "Want to plant something for today?"
 - "Should we tend to any of these?"
 - "Ready to set an intention?"

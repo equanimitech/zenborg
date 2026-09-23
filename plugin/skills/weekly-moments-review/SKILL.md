@@ -133,7 +133,7 @@ Close with one open question: "Want to dig deeper on X, plan next week, or shape
 - **Window spans a cycle boundary**: still render per-day; if the user wants the cycle review specifically, route them to `mcp__zenborg__get_cycle_review`.
 - **A moment has `habitId: null`** (spontaneous moment): show it normally; just no health data attached.
 - **A moment's `areaId` doesn't resolve in `list_areas`**: render the moment with `area: ?` rather than dropping it — surface the data integrity issue.
-- **No moments at all in the window**: still render the structure, but lead with "No allocated moments in this window" and ask if the user wants to look further back.
+- **No moments at all in the window**: still render the structure, but lead with "No tended moments in this window" and ask if the user wants to look further back.
 - **User asks for a multi-week window** (e.g. "past month"): walk one 7-day chunk at a time, render each chunk's per-day + tally, then a roll-up tally and a single wilting list at the end.
 
 ## Example invocation flow
