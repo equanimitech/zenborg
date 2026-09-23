@@ -440,7 +440,7 @@ export class CycleService {
     const allocatedCount = this.countAllocatedForPlan(plan.id);
     if (allocatedCount >= plan.budgetedCount) {
       return {
-        error: `Over budget: ${allocatedCount}/${plan.budgetedCount} already allocated`,
+        error: `Over budget: ${allocatedCount}/${plan.budgetedCount} already tended this season`,
       };
     }
 
@@ -1042,7 +1042,7 @@ export class CycleService {
     }
 
     if (moment.day !== null || moment.phase !== null) {
-      return { error: "Moment is already allocated" };
+      return { error: "Moment is already tended" };
     }
 
     // Use domain function to allocate

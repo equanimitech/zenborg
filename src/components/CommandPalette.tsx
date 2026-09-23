@@ -363,7 +363,7 @@ function EntityItem({
       {/* Moment allocation indicator */}
       {entity.type === "moment" && (
         <span className="text-xs text-stone-400 dark:text-stone-500">
-          {isAllocated ? moment?.day : "unallocated"}
+          {isAllocated ? moment?.day : "not yet tended"}
         </span>
       )}
     </CommandItem>

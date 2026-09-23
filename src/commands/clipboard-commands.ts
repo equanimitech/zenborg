@@ -53,10 +53,10 @@ export const clipboardCommands: Command[] = [
   },
   {
     id: "clipboard.delete",
-    label: "Unallocate or Delete Moment",
+    label: "Set Aside or Delete Moment",
     shortcut: "backspace",
     category: "Clipboard",
-    keywords: ["remove", "unallocate"],
+    keywords: ["remove", "set aside", "unallocate"],
     action: () => {
       const focusedId = focusedMomentId$.get();
       if (!focusedId) return;

@@ -23,7 +23,7 @@ export function getBeginningFeedback(
 ): string {
   const count = moments.filter((m) => m.name === momentName).length;
 
-  if (count === 0) return "Not yet allocated";
+  if (count === 0) return "Not yet tended";
   if (count === 1) return "1st time";
   if (count === 2) return "2nd time";
   if (count === 3) return "3rd time";
@@ -47,12 +47,12 @@ export function getKeepingFeedback(
     });
 
   if (allocatedMoments.length === 0) {
-    return "Not yet allocated";
+    return "Not yet tended";
   }
 
   const lastAllocation = allocatedMoments[0];
   if (!lastAllocation.day) {
-    return "Not yet allocated";
+    return "Not yet tended";
   }
 
   const daysSince = differenceInDays(new Date(), new Date(lastAllocation.day));
@@ -106,7 +106,7 @@ export function getBuildingFeedback(
   }
 
   if (!display) {
-    display = "Not yet allocated";
+    display = "Not yet tended";
   }
 
   return { thisWeek, thisMonth, display };

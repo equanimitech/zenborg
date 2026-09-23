@@ -364,7 +364,7 @@ export function DnDProvider({ children }: DnDProviderProps) {
    * Allocate a virtual deck card into a timeline slot.
    * Calls `CycleService.allocateFromPlan` which materializes a new Moment
    * linked to the plan. Errors (over-budget, slot full, etc.) are surfaced
-   * via alert().
+   * via alert() (no inline notice mechanism exists yet).
    */
   function handleAllocateFromPlan(
     dragData: Extract<DraggableData, { type: "deck-card" }>,
@@ -444,7 +444,9 @@ export function DnDProvider({ children }: DnDProviderProps) {
     // unallocating them would send them into an invisible null-day/null-phase
     // state. Reject instead; the user must delete them explicitly.
     if (moment.cyclePlanId === null) {
-      alert("Cannot unallocate spontaneous moment; delete it instead");
+      alert(
+        "This moment was planted on its own, so it has no place to be set aside to. Delete it instead.",
+      );
       return;
     }
 
@@ -465,7 +467,9 @@ export function DnDProvider({ children }: DnDProviderProps) {
       return m?.day && m.phase && m.cyclePlanId === null;
     });
     if (spontaneous.length > 0) {
-      alert("Cannot unallocate spontaneous moment; delete it instead");
+      alert(
+        "This moment was planted on its own, so it has no place to be set aside to. Delete it instead.",
+      );
       return;
     }
 
@@ -488,7 +492,7 @@ export function DnDProvider({ children }: DnDProviderProps) {
       }
     }
 
-    endBatch(`Unallocated ${momentIds.length} moments`);
+    endBatch(`Set aside ${momentIds.length} moments`);
   }
 
   function handleDropOnTimelineCell(

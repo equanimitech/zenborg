@@ -229,9 +229,9 @@ function generateDescription(operations: HistoryOperation[]): string {
       case "BULK_DELETE_MOMENTS":
         return `Deleted ${op.moments.length} moments`;
       case "ALLOCATE_MOMENT":
-        return "Allocated moment";
+        return "Tended moment";
       case "UNALLOCATE_MOMENT":
-        return "Unallocated moment";
+        return "Set aside moment";
       case "MOVE_MOMENT":
         return "Moved moment";
       case "DUPLICATE_MOMENT":

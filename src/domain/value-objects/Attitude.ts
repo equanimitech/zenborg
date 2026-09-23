@@ -60,7 +60,7 @@ export const ATTITUDE_METADATA: Record<
   [Attitude.BEGINNING]: {
     label: "Beginning",
     description: "First encounters, exploration",
-    shows: "Count of times allocated",
+    shows: "Count of times tended",
     icon: "◇",
     hotkey: "1",
     className: "font-mono text-stone-700 dark:text-stone-300",

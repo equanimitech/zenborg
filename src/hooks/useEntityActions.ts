@@ -46,7 +46,7 @@ export interface EntityAction {
  * Actions vary by entity type:
  * - Area: "Create habit in area", "Edit area"
  * - Habit: "Schedule to current cycle", "Create moment from habit", "Edit habit"
- * - Moment: "Allocate to today", "Move to drawing board", "Edit moment", "Delete moment"
+ * - Moment: "Tend today", "Move to drawing board", "Edit moment", "Delete moment"
  */
 export function useEntityActions(
   selectedEntity: SearchableEntity | null,
@@ -136,7 +136,7 @@ export function useEntityActions(
 
           actions.push({
             id: "moment.allocate-today",
-            label: "Allocate to today",
+            label: "Tend today",
             icon: Calendar,
             action: () => {
               allocateMomentWithHistory(
