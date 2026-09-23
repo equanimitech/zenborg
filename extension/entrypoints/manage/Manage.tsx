@@ -117,7 +117,7 @@ export function Manage() {
       <section className="manage-section">
         <h2 className="manage-section-title">Fences</h2>
         {fenceList.length === 0 ? (
-          <p className="manage-empty">No fences declared.</p>
+          <p className="manage-empty">No fences yet. Nothing is fenced out.</p>
         ) : (
           <table className="manage-fence-table">
             <thead>
@@ -250,7 +250,7 @@ export function Manage() {
 
       {/* How to add */}
       <section className="manage-section">
-        <p className="manage-hint">Ask Claude to set a fence, gate, or transform on a domain.</p>
+        <p className="manage-hint">Ask Claude to fence out a weed: a fence, a gate, or a transform on a site.</p>
       </section>
 
       {/* Export */}

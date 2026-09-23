@@ -227,7 +227,7 @@ export function NewTab() {
               {activeMoment.area && <span className="newtab-intention-area">{activeMoment.area}</span>}
             </p>
           ) : (
-            <p className="newtab-intention-none">no active moment</p>
+            <p className="newtab-intention-none">what will I tend to today?</p>
           )}
         </div>
 

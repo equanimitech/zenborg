@@ -35,8 +35,8 @@ async function noteIncognito(): Promise<void> {
   try {
     const allowed = await browser.extension.isAllowedIncognitoAccess();
     foot.textContent = allowed
-      ? "holds here and in incognito."
-      : "tip: enable zenborg in incognito so this holds there too.";
+      ? "this fence holds in incognito too."
+      : "tip: allow zenborg in incognito so this fence holds there too.";
   } catch {
     foot.textContent = "";
   }

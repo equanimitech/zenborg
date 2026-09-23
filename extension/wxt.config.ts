@@ -27,14 +27,14 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: "zenborg",
+    name: "Zenborg",
     // Stable extension ID: Chromium derives a deterministic ID from this
     // public key, so chrome.storage contents and granted permissions survive
     // every rebuild, reload, and browser restart. Public key is safe to commit;
     // private key lives gitignored at .keys/zenborg.pem (originally kairos.pem).
     key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr4PXcGQDz4++ZW7uNr5Y+T1GCHEid5cwAReGiiLBNyjhO5bhM1PqzZ4fYrrzhMY21N1I7htN1Pp/bhuoqgcl0W+fvtzMicQjrQSaCM4PmSPlZbxg1mETT1EPLGWSKiy1NRj8NXAm6QxKGQNVaNNLH+raMz7zJL58K8lB1VLiwkPpKdAp0qMZbHfjlXBr/qoVlCrZwpQ30kWB1TtEj0x0GXISOjAOEIIXu8PHzf4pjnAy9AeWJxsBRSr0WxekdsWGLYn8Do5HEVM42WWRUERn7eMjrauDLEcaoXZh4mVjBPCrzF76/Inby6cltdZCIBLiHJBfPrtPWjYeF3SU4pM6cwIDAQAB",
     description:
-      "See where your attention goes and steer away from compulsion, toward what makes you flourish. Always private, on your device.",
+      "A garden for your attention. Fence out the weeds, see where your attention goes, return to what you tend. Private, on your device.",
     // Sovereignty by permission-minimalism (the manifest IS the privacy
     // statement). Note what is DELIBERATELY absent:
     //   • no host_permissions — zenborg injects no scripts via host grants
@@ -65,7 +65,7 @@ export default defineConfig({
     commands: {
       cooldown: {
         suggested_key: { default: "Ctrl+Shift+K", mac: "Command+Shift+K" },
-        description: "Lock the watched domains for 2h",
+        description: "Take a 2-hour break from your fenced sites",
       },
     },
     // Single shared instance in incognito so the porn Drogue's block holds

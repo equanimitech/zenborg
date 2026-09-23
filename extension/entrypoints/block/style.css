@@ -50,21 +50,6 @@ body {
   margin: 0 auto 1.5rem;
 }
 
-.meta {
-  font-family: var(--font-mono);
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8125rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0 0 2rem;
-}
-
-.meta .f {
-  color: var(--primary);
-  font-weight: 600;
-}
-
 .back {
   appearance: none;
   border: 1px solid var(--border);
