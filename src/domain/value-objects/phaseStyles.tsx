@@ -11,7 +11,7 @@ export interface PhaseStyle {
   icon: PhaseIconComponent;
 }
 
-/** The φ glyph for a phase: the seed's position against its ground. */
+/** The botanical glyph for a phase: one flower through its day. */
 export function phaseGlyphName(phase: Phase): GardenGlyphName {
   return `phase-${phase.toLowerCase()}` as GardenGlyphName;
 }

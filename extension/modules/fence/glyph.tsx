@@ -1,16 +1,26 @@
 import type { Fence } from "./types";
 
 /**
- * Fence badges as φ-grammar glyphs, paths verbatim from
+ * Fence badges as botanical garden glyphs, paths verbatim from
  * docs/design/glyphs/fence*.svg (mirrors src/components/GardenGlyph.tsx).
  * System marks are glyphs; emoji are only for things the gardener chose.
  */
 type FenceGlyphName = "fence" | "fence-standing" | "fence-gate";
 
-const FRAMES: Record<FenceGlyphName, { d: string; cx: number }> = {
-  fence: { d: "M18 10V6H6v12h12v-4", cx: 12 },
-  "fence-standing": { d: "M6 6h12v12H6z", cx: 12 },
-  "fence-gate": { d: "M18 8.5V6H6v12h12v-2.5", cx: 18 },
+const PATHS: Record<FenceGlyphName, string[]> = {
+  fence: [
+    "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20 M17.3 20V8.4L18.5 6.8l1.2 1.6V20",
+    "M6.7 14.2c1.6.2 2.9.2 4.1.1",
+  ],
+  "fence-standing": [
+    "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20 M17.3 20V8.4L18.5 6.8l1.2 1.6V20",
+    "M6.7 14.2c1.6.2 2.9.2 4.1.1M13.2 14.3c1.5.1 2.7.1 4.1 0",
+  ],
+  "fence-gate": [
+    "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20",
+    "M6.7 14.2c1.6.2 2.9.2 4.1.1",
+    "M19.5 20V8.2M19.5 9.6l-4.3 1.5v8.2l4.3.7",
+  ],
 };
 
 export function FenceGlyph({
@@ -22,7 +32,6 @@ export function FenceGlyph({
   label: string;
   size?: number;
 }) {
-  const { d, cx } = FRAMES[name];
   return (
     <span
       role="img"
@@ -36,13 +45,14 @@ export function FenceGlyph({
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.65}
+        strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden="true"
       >
-        <path d={d} />
-        <circle cx={cx} cy="12" r="1.9" fill="currentColor" stroke="none" />
+        {PATHS[name].map((d) => (
+          <path key={d} d={d} />
+        ))}
       </svg>
     </span>
   );
