@@ -1,7 +1,8 @@
 # zenborg — Claude Code plugin
 
-A garden for your attention. Plant what you want to grow, grow it with the people and
-places you care about, fence out the weeds, and return to tend it every day.
+A garden for your attention. Plant what you want to grow, with the people and places you
+care about. Cultivate it every day: tend what matters, fence out the weeds. Harvest what
+it teaches you, and tune the next season.
 
 **You are the gardener.** Your garden is your habit ecosystem, digital and physical. You
 are responsible for tending it, and you already do. Zenborg is the toolshed; this plugin
@@ -13,12 +14,13 @@ scores, no notifications.
 
 ## Skills
 
-| Gesture | Skills |
+Grouped by the app's three tabs:
+
+| Tab | Skills |
 |---|---|
-| 🌱 Plant | `onboarding` (first garden), `tend` (plant and move moments), `season` (plan and review a cycle) |
-| 🤝 Companion | people and places, woven through `onboarding` and `tend` |
-| 🚧 Fence | the fences hook below; declare fences in `onboarding` or with the MCP fence tools |
-| 🪴 Tend | `sunrise`, `sunset`, `weather`, `weekly-moments-review`, `close-up` |
+| 🌱 Plant | `onboarding` (your first garden: areas, habits, people, places) |
+| 🪴 Cultivate | `sunrise`, `tend`, `sunset`, `close-up`, plus the fences hook below |
+| 🌾 Harvest | `weather`, `weekly-moments-review`, `season` |
 
 Plus `oracle-wizard` and `oracle-probe`, for connecting the garden to the tools you
 already use (journal, body, tasks).
@@ -30,7 +32,7 @@ Each concern is its own file:
 | File | Hook | What it does |
 |---|---|---|
 | `observe.mjs` | all 13 events | Append-only activity log to `~/.zenborg/keel/log/*.agent.jsonl` |
-| `hooks/fences.mts` | PreToolUse | A gentle fence: reads the fences you declared and asks before a session wanders past one, with an exit on every rung |
+| `hooks/fences.mts` | PreToolUse | A gentle fence (fences live in Cultivate): reads the fences you declared and asks before a session wanders past one, with an exit on every rung |
 | `hooks/gap-practice.mts` | UserPromptSubmit | A breath practice offered in the gap while the agent works |
 | `hooks/moment-awareness.mts` | SessionStart | Names the moment you are tending, so the session starts with your intention |
 

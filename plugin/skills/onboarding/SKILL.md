@@ -2,9 +2,8 @@
 name: onboarding
 description: >-
   Walk a new gardener through planting their first garden — Plant (areas of life,
-  habits: current, aspirational, returning, pruning), Companion (key people and
-  places), Fence (optional: the weeds to keep out), then Tend (plan the next 3 days
-  of moments). Use when the vault is empty or nearly empty and the user
+  habits: current, aspirational, returning, pruning; key people and places), then
+  Cultivate (optionally fence out the weeds, then tend the next 3 days of moments). Use when the vault is empty or nearly empty and the user
   says "onboarding", "set up my garden", "I'm new", "help me get started",
   "let's set up zenborg", or invokes "/onboarding". Do NOT trigger for adding a
   single moment (tend), opening the day (sunrise), or planning a cycle (season).
@@ -17,15 +16,16 @@ You are responsible for tending it, and you already do. Zenborg is the toolshed:
 helps you tend with more consistency, and return with more resilience when something
 wilts.
 
-Open with that, in your own words and briefly. Then walk the four gestures, each
-confirmed before writing anything. The gardener leads; you hold the trowel.
+Open with that, in your own words and briefly. Then walk the app's first two tabs,
+each phase confirmed before writing anything. The gardener leads; you hold the trowel.
 
-| Gesture | Phase |
+| Tab | Phase |
 |---|---|
-| 🌱 Plant | 1. Areas · 2. Habits |
-| 🤝 Companion | 3. People & places |
-| 🚧 Fence | 4. Weeds to fence out (optional) |
-| 🪴 Tend | 5. The next 3 days |
+| 🌱 Plant | 1. Areas · 2. Habits · 3. People & places |
+| 🪴 Cultivate | 4. Fence out the weeds (optional) · 5. Tend the next 3 days |
+
+🌾 Harvest (reflect and tune) is not part of onboarding: there is nothing to reflect
+on yet. Name it once in the close.
 
 ## When to invoke
 
@@ -166,7 +166,7 @@ Use the area's id from phase 1. Run all in parallel.
 
 Repeat for each area.
 
-## Phase 3 — Companion: people & places
+## Phase 3 — Plant: people & places
 
 ### 3a. People
 
@@ -205,7 +205,7 @@ Present for confirmation, then call `mcp__zenborg__create_place` for each. Run i
 People and places are optional. If the user says "let's skip this" or "I'll add them
 later," move on.
 
-## Phase 4 — Fence: the weeds (optional, brief)
+## Phase 4 — Cultivate: fence out the weeds (optional, brief)
 
 > "Anything you want to fence out? Sites or feeds that pull your attention away from
 > the plots you just planted. Totally fine to skip."
@@ -234,9 +234,10 @@ Fences:
 
 On confirmation, call the tools. Mention once that the browser extension is what puts
 these fences around the browser; without it they are declared but not yet standing.
+Fences live in Cultivate: that is where to see or take one down later.
 Don't push. One or two weeds is plenty. No weeds is fine.
 
-## Phase 5 — Tend: plan the next 3 days
+## Phase 5 — Cultivate: tend the next 3 days
 
 ### 4a. Orientation
 
@@ -284,7 +285,9 @@ Report any `dayViewOverflow` notices.
 > - [R] moments over the next 3 days
 >
 > Tomorrow morning, say 'good morning' or '/sunrise' to open the day and ask
-> 'What will I tend to today?'. '/tend' to plant more moments any time."
+> 'What will I tend to today?'. '/tend' to plant more moments any time. And once
+> a week or a season has passed, Harvest: '/weather', '/weekly-moments-review' or
+> '/season' to reflect on what it taught you and tune the next one."
 
 ## Rules
 

@@ -1,7 +1,7 @@
 {
   "name": "zenborg",
   "version": "0.4.2",
-  "description": "A garden for your attention, in Claude Code. You are the gardener; this is part of the toolshed. Rituals to plant, tend and review the garden (open and close the day, plant moments, plan a season), a gentle fence when a session wanders toward the weeds you declared, a practice for the gap while the agent works, and a local-first attention log that never leaves your machine.",
+  "description": "A garden for your attention, in Claude Code. You are the gardener; this is part of the toolshed. Plant your first garden, cultivate it every day (open and close the day, tend moments, a gentle fence when a session wanders toward the weeds you declared), and harvest what it teaches you (weekly and seasonal reflection). Plus a practice for the gap while the agent works, and a local-first attention log that never leaves your machine.",
   "author": {
     "name": "EquanimiTech",
     "url": "https://equanimi.tech"
