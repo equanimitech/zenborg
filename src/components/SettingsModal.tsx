@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { PhaseConfig } from "@/domain/value-objects/Phase";
+import { phaseGlyphName } from "@/domain/value-objects/phaseStyles";
 import { useUpdater } from "@/hooks/useUpdater";
 import {
   exportGardenData,
@@ -37,7 +38,7 @@ import { isTauri } from "@/lib/tauri-utils";
 import { cn } from "@/lib/utils";
 import { CircularPhaseSlider } from "./CircularPhaseSlider";
 import { ConfirmableAction } from "./ConfirmableAction";
-import { GardenGlyph, type GardenGlyphName } from "./GardenGlyph";
+import { GardenGlyph } from "./GardenGlyph";
 import { OracleSettingsSection } from "./OracleSettingsSection";
 import { VaultStatusSection } from "./VaultStatusSection";
 
@@ -336,13 +337,11 @@ export const SettingsModal = observer(function SettingsModal({
                         ) : (
                           <>
                             <div className="flex items-center gap-3 flex-1">
-                              <span className="text-lg w-6 flex justify-center text-stone-500 dark:text-stone-400">
+                              <span className="text-lg w-6 flex justify-center text-stone-900 dark:text-stone-100">
                                 {config.emoji || (
                                   <GardenGlyph
-                                    name={
-                                      `phase-${config.phase.toLowerCase()}` as GardenGlyphName
-                                    }
-                                    size={18}
+                                    name={phaseGlyphName(config.phase)}
+                                    size={20}
                                   />
                                 )}
                               </span>

@@ -27,6 +27,8 @@ export default defineConfig({
       ],
     },
   },
+  // Match Next's automatic JSX runtime, so components need no `import React`.
+  esbuild: { jsx: "automatic" },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

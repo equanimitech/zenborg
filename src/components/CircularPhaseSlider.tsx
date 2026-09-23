@@ -435,11 +435,11 @@ export function CircularPhaseSlider({
               height={32}
               pointerEvents="none"
             >
-              <div className="flex items-center justify-center w-full h-full">
-                <IconComponent
-                  className="w-6 h-6"
-                  style={{ color: iconColor }}
-                />
+              <div
+                className="flex items-center justify-center w-full h-full"
+                style={{ color: iconColor }}
+              >
+                <IconComponent className="w-6 h-6" />
               </div>
             </foreignObject>
           );
