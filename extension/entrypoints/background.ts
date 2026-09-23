@@ -7,7 +7,7 @@ import { fenceCache } from "@/modules/fence/store";
 import { writeInspection } from "@/modules/fence/inspect";
 import { flushToHost } from "@/modules/relay/client";
 
-const COOLDOWN_ALARM = "kairos-cooldown-lapse";
+const COOLDOWN_ALARM = "zenborg-cooldown-lapse";
 
 /**
  * Re-project DNR when the soonest cooldown lapses.
@@ -70,9 +70,9 @@ export default defineBackground(() => {
   // Flush buffered events to the native host on cold start and on a periodic
   // alarm (eventual-consistency; no daemon, no open port).
   void flushToHost();
-  browser.alarms.create("kairos-relay-flush", { periodInMinutes: 5 });
+  browser.alarms.create("zenborg-relay-flush", { periodInMinutes: 5 });
   browser.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name === "kairos-relay-flush") {
+    if (alarm.name === "zenborg-relay-flush") {
       void flushToHost();
     }
     if (alarm.name === COOLDOWN_ALARM) {

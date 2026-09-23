@@ -25,6 +25,7 @@ import {
   fenceReport,
   seedHostBlocks,
 } from "../src/application/use-cases/fences.ts";
+import { collectResolverHosts, readResolverHealth, syncResolverFences } from "./adapters/adguard.js";
 import {
   crossingTally,
   expandHome,
@@ -3765,6 +3766,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await declareHostBlock(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({ declared: result.declared, standing: result.standing });
   },
 });
@@ -3882,6 +3884,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await seedHostBlocks(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
       declared: result.declared.map((r) => ({
         id: r.id,
@@ -3965,6 +3968,7 @@ defineTool(server, {
       },
     });
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
       declared: result.declared.map((r) => ({
         id: r.id,
@@ -3999,6 +4003,7 @@ defineTool(server, {
         : { id: id as string };
     const result = await clearFences(fenceDeps, target);
     if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
       cleared: result.cleared.map((f) => ({ id: f.id, label: f.name })),
     });
@@ -4008,11 +4013,38 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced: each standing fence with its crossing tally (from the plugin's fences-state.json, zero when never crossed) and the rung the NEXT crossing would land on.",
+    "Report what is currently fenced: each standing fence with its crossing tally (from the plugin's fences-state.json, zero when never crossed), the rung the NEXT crossing would land on, and the enforcement reach per surface.",
   schema: {},
   annotations: { readOnlyHint: true },
   handler: async () => {
-    return ok(await fenceReport(fenceDeps));
+    const report = await fenceReport(fenceDeps);
+    const allFences = readFencesFile(VAULT_ROOT);
+    const resolverHosts = collectResolverHosts(allFences);
+    const health = readResolverHealth(VAULT_ROOT);
+
+    const fences = report.fences.map((f) => {
+      const reach: Record<string, string> = {};
+      if (f.fence.scope.surface === "browser") {
+        reach.browser = "extension";
+        const domains = Array.isArray(f.fence.scope.domain)
+          ? f.fence.scope.domain
+          : [f.fence.scope.domain];
+        const inSyncSet = domains.some((d) => resolverHosts.has(d));
+        if (!inSyncSet) {
+          reach.resolver = "skipped";
+        } else if (health && !health.reachable) {
+          reach.resolver = "unreachable";
+        } else if (health && health.reachable) {
+          reach.resolver = "synced";
+        } else {
+          // No health record yet — never synced
+          reach.resolver = "skipped";
+        }
+      }
+      return { ...f, reach };
+    });
+
+    return ok({ fences });
   },
 });
 
