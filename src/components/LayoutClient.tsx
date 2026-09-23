@@ -2,6 +2,7 @@
 
 import { use$, useSelector } from "@legendapp/state/react";
 import { useEffect } from "react";
+import { AreaService } from "@/application/services/AreaService";
 import { CommandPalette } from "@/components/CommandPalette";
 import { HamburgerMenuButton } from "@/components/HamburgerMenuButton";
 import { ModeSelector } from "@/components/ModeSelector";
@@ -14,11 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AreaService } from "@/application/services/AreaService";
 import { useGlobalKeyboard } from "@/hooks/useGlobalKeyboard";
 import {
-  deleteAreaDialogState$,
   closeDeleteAreaDialog,
+  deleteAreaDialogState$,
   isCommandPaletteOpen$,
   isSettingsOpen$,
   resetCommandPaletteState,
