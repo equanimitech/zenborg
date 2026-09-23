@@ -1,9 +1,10 @@
 ---
 name: onboarding
 description: >-
-  Walk a new gardener through planting their first garden — areas of life, habits
-  (current, aspirational, returning, pruning), key people and places, then plan the
-  next 3 days of moments. Use when the vault is empty or nearly empty and the user
+  Walk a new gardener through planting their first garden — Plant (areas of life,
+  habits: current, aspirational, returning, pruning), Companion (key people and
+  places), Fence (optional: the weeds to keep out), then Tend (plan the next 3 days
+  of moments). Use when the vault is empty or nearly empty and the user
   says "onboarding", "set up my garden", "I'm new", "help me get started",
   "let's set up zenborg", or invokes "/onboarding". Do NOT trigger for adding a
   single moment (tend), opening the day (sunrise), or planning a cycle (season).
@@ -11,8 +12,20 @@ description: >-
 
 # Onboarding
 
-Walk a new gardener through planting their first garden. Four phases, each confirmed
-before writing anything. The gardener leads; you hold the trowel.
+**You are the gardener.** Your garden is your habit ecosystem, digital and physical.
+You are responsible for tending it, and you already do. Zenborg is the toolshed: it
+helps you tend with more consistency, and return with more resilience when something
+wilts.
+
+Open with that, in your own words and briefly. Then walk the four gestures, each
+confirmed before writing anything. The gardener leads; you hold the trowel.
+
+| Gesture | Phase |
+|---|---|
+| 🌱 Plant | 1. Areas · 2. Habits |
+| 🤝 Companion | 3. People & places |
+| 🚧 Fence | 4. Weeds to fence out (optional) |
+| 🪴 Tend | 5. The next 3 days |
 
 ## When to invoke
 
@@ -45,7 +58,7 @@ If the garden is not empty, say so: "You already have some plots planted. Want t
 add to what's here, or start fresh?" Starting fresh means archiving existing areas
 (user confirms), not deleting.
 
-## Phase 1: Areas (plots of the garden)
+## Phase 1 — Plant: areas (plots of the garden)
 
 ### 1a. Elicit areas
 
@@ -97,7 +110,7 @@ names, not hex.
 
 On confirmation, call `mcp__zenborg__create_area` for each. Run all in parallel.
 
-## Phase 2: Habits (perennials in each plot)
+## Phase 2 — Plant: habits (perennials in each plot)
 
 ### 2a. Walk area by area
 
@@ -153,11 +166,11 @@ Use the area's id from phase 1. Run all in parallel.
 
 Repeat for each area.
 
-## Phase 3: People & Places
+## Phase 3 — Companion: people & places
 
 ### 3a. People
 
-> "Who are the people you want to stay close to? Family, friends, colleagues —
+> "Who do you want to grow this garden with? Family, friends, colleagues —
 > anyone whose presence matters in your life."
 
 For each person:
@@ -192,12 +205,43 @@ Present for confirmation, then call `mcp__zenborg__create_place` for each. Run i
 People and places are optional. If the user says "let's skip this" or "I'll add them
 later," move on.
 
-## Phase 4: Plan the next 3 days
+## Phase 4 — Fence: the weeds (optional, brief)
+
+> "Anything you want to fence out? Sites or feeds that pull your attention away from
+> the plots you just planted. Totally fine to skip."
+
+Weeds are sites and feeds, not habits. A habit you are tapering is PRUNING (phase 2);
+don't move it here.
+
+If they name any, for each weed gather:
+- **host** — the registrable host ("youtube.com", not a URL)
+- **returnsTo** — which area(s) attention should come back to when they meet the fence
+- **kind** —
+  - a **standing block** (`mcp__zenborg__set_host_block`) for a site they never need.
+    Requires an `unlockNote`: how they would lift it, deliberately outside the moment
+    of wanting ("ask me in sunrise", "edit it in the app"). Ask for it in their words.
+  - a **gate** (`mcp__zenborg__set_browser_gate`) for a site they have a real reason
+    to use: every N attended minutes the page asks a question. Ask what the question
+    should be, and how many minutes.
+
+Present for confirmation:
+
+```
+Fences:
+  youtube.com    block   returns to: Creative   unlock: "ask in sunrise"
+  linkedin.com   gate    returns to: Work       every 15 min: "What did you come for?"
+```
+
+On confirmation, call the tools. Mention once that the browser extension is what puts
+these fences around the browser; without it they are declared but not yet standing.
+Don't push. One or two weeds is plenty. No weeds is fine.
+
+## Phase 5 — Tend: plan the next 3 days
 
 ### 4a. Orientation
 
-> "Your garden is planted. Now let's put something on the board for the next few days —
-> what do you want to tend tomorrow, the day after, and the day after that?"
+> "Your garden is planted. Now the everyday question: what will you tend to? Let's put
+> something on the board for tomorrow, the day after, and the day after that."
 
 Fetch `mcp__zenborg__list_phase_configs` to know the phase bands (if not already cached).
 
@@ -236,10 +280,11 @@ Report any `dayViewOverflow` notices.
 > - [N] areas
 > - [M] habits across them
 > - [P] people, [Q] places
+> - [F] fences (if any)
 > - [R] moments over the next 3 days
 >
-> Tomorrow morning, say 'good morning' or '/sunrise' to open the day and see
-> what's growing. '/tend' to plant more moments any time."
+> Tomorrow morning, say 'good morning' or '/sunrise' to open the day and ask
+> 'What will I tend to today?'. '/tend' to plant more moments any time."
 
 ## Rules
 
@@ -250,7 +295,7 @@ Report any `dayViewOverflow` notices.
 - No streaks, scores, completion tracking, or badges.
 - No push to be comprehensive. Five areas and ten habits is a fine garden. Two areas and three habits is also a fine garden.
 - If the user wants to skip a phase, skip it. Come back to it later via the relevant skill.
-- People and places are fully optional.
+- People, places and fences are fully optional.
 - Attitude is the user's honest relationship with the practice. Don't judge. PRUNING is not failure. BEGINNING is not commitment. BEING is not complacency.
 
 ## Edge cases
