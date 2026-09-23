@@ -18,9 +18,9 @@ Grouped by the app's three tabs:
 
 | Tab | Skills |
 |---|---|
-| 🌱 Plant | `onboarding` (your first garden: areas, habits, people, places) |
-| 🪴 Cultivate | `sunrise`, `tend`, `sunset`, `close-up`, plus the fences hook below |
-| 🌾 Harvest | `weather`, `weekly-moments-review`, `season` |
+| Plant | `onboarding` (your first garden: areas, habits, people, places) |
+| Cultivate | `sunrise`, `tend`, `sunset`, `close-up`, plus the fences hook below |
+| Harvest | `weather`, `weekly-moments-review`, `season` |
 
 Plus `oracle-wizard` and `oracle-probe`, for connecting the garden to the tools you
 already use (journal, body, tasks).
