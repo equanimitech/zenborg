@@ -3,7 +3,7 @@
  */
 export default function NotFound() {
   return (
-    <div className="min-h-dvh h-dvh bg-stone-50 dark:bg-stone-900 transition-colors flex items-center justify-center">
+    <div className="h-full bg-stone-50 dark:bg-stone-900 transition-colors flex items-center justify-center">
       <div className="text-center">
         <h1 className="text-4xl font-bold text-stone-900 dark:text-stone-100 mb-2">
           404

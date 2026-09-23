@@ -80,7 +80,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         {/* Blocking script to immediately apply theme before any rendering */}
         {/* Critical for iOS PWA to detect system theme on first-gen devices */}
@@ -152,7 +152,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} antialiased h-full overflow-hidden`}
       >
         <ThemeProvider
           attribute="class"

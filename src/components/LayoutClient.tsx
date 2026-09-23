@@ -69,7 +69,11 @@ export function LayoutClient({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="h-dvh grid grid-rows-[auto_1fr]">
+      {/* h-full, not h-dvh: the html → body → here chain resolves against the
+          layout viewport, which WKWebView always resizes. Viewport units are
+          computed separately and can go stale across the macOS fullscreen
+          transition, leaving the footer floating or cut off. */}
+      <div className="h-full grid grid-rows-[auto_1fr]">
         {/* Top Bar - Unified navigation bar with mode selector and settings */}
         <div
           className="z-40 flex items-center justify-center bg-background"
