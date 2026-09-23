@@ -10,7 +10,7 @@ import "@/styles/fonts.css";
 // zenborg-owned theme root (system-aware) so the design tokens resolve.
 document.documentElement.setAttribute(
   "data-kairos-theme",
-  window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+  window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
 );
 
 const back = document.getElementById("back") as HTMLButtonElement | null;

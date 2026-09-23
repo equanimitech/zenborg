@@ -1,5 +1,5 @@
-import { defineConfig } from "wxt";
 import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "wxt";
 
 export default defineConfig({
   outDir: "dist",
@@ -59,7 +59,16 @@ export default defineConfig({
     //     runs from the extension's own log, so the permission had nothing left to
     //     justify it. An unused permission on a manifest that calls itself the
     //     privacy statement is worse than a missing feature.
-    permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon"],
+    permissions: [
+      "storage",
+      "tabs",
+      "activeTab",
+      "declarativeNetRequest",
+      "idle",
+      "alarms",
+      "nativeMessaging",
+      "favicon",
+    ],
     // A keyboard path to the cooldown, so reaching for the lock costs less
     // than reaching for the temptation. No popup to open, no menu to find.
     commands: {

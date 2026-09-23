@@ -40,12 +40,7 @@ import { ConfirmableAction } from "./ConfirmableAction";
 import { OracleSettingsSection } from "./OracleSettingsSection";
 import { VaultStatusSection } from "./VaultStatusSection";
 
-type SettingsPane =
-  | "phases"
-  | "data"
-  | "integrations"
-  | "appearance"
-  | "about";
+type SettingsPane = "phases" | "data" | "integrations" | "appearance" | "about";
 
 const navigationItems: readonly {
   id: SettingsPane;
@@ -181,7 +176,9 @@ export const SettingsModal = observer(function SettingsModal({
         } else {
           setImportMessage({
             type: "error",
-            text: result.message + (result.errors ? `: ${result.errors.join(", ")}` : ""),
+            text:
+              result.message +
+              (result.errors ? `: ${result.errors.join(", ")}` : ""),
           });
         }
       } catch (error) {
@@ -215,8 +212,16 @@ export const SettingsModal = observer(function SettingsModal({
   const showPwa = !isTauri() && !isPWA();
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="overflow-hidden p-0 md:max-h-[600px] md:max-w-[700px]" showCloseButton={false}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
+      <DialogContent
+        className="overflow-hidden p-0 md:max-h-[600px] md:max-w-[700px]"
+        showCloseButton={false}
+      >
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">
           Configure your Zenborg experience
@@ -289,14 +294,24 @@ export const SettingsModal = observer(function SettingsModal({
                             <input
                               type="text"
                               value={phaseFormData.emoji}
-                              onChange={(e) => setPhaseFormData({ ...phaseFormData, emoji: e.target.value })}
+                              onChange={(e) =>
+                                setPhaseFormData({
+                                  ...phaseFormData,
+                                  emoji: e.target.value,
+                                })
+                              }
                               className="w-12 px-2 py-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded text-center text-lg focus:outline-none focus:ring-1 focus:ring-stone-400"
                               maxLength={2}
                             />
                             <input
                               type="text"
                               value={phaseFormData.label}
-                              onChange={(e) => setPhaseFormData({ ...phaseFormData, label: e.target.value })}
+                              onChange={(e) =>
+                                setPhaseFormData({
+                                  ...phaseFormData,
+                                  label: e.target.value,
+                                })
+                              }
                               className="flex-1 px-2 py-1 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-1 focus:ring-stone-400"
                               autoFocus
                             />
@@ -325,7 +340,8 @@ export const SettingsModal = observer(function SettingsModal({
                                   {config.label}
                                 </div>
                                 <div className="text-xs text-stone-500 dark:text-stone-400 font-mono">
-                                  {formatHour(config.startHour)} - {formatHour(config.endHour)}
+                                  {formatHour(config.startHour)} -{" "}
+                                  {formatHour(config.endHour)}
                                 </div>
                               </div>
                             </div>
@@ -341,7 +357,9 @@ export const SettingsModal = observer(function SettingsModal({
                                 type="button"
                                 role="switch"
                                 aria-checked={config.isVisible}
-                                onClick={() => handlePhaseVisibilityToggle(config.id)}
+                                onClick={() =>
+                                  handlePhaseVisibilityToggle(config.id)
+                                }
                                 className={cn(
                                   "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
                                   config.isVisible
@@ -352,7 +370,9 @@ export const SettingsModal = observer(function SettingsModal({
                                 <span
                                   className={cn(
                                     "inline-block h-3 w-3 transform rounded-full bg-stone-50 dark:bg-stone-900 transition-transform",
-                                    config.isVisible ? "translate-x-5" : "translate-x-1",
+                                    config.isVisible
+                                      ? "translate-x-5"
+                                      : "translate-x-1",
                                   )}
                                 />
                               </button>
@@ -379,8 +399,12 @@ export const SettingsModal = observer(function SettingsModal({
                     <Download className="w-4 h-4 text-stone-600 dark:text-stone-400" />
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">Export Data</div>
-                    <div className="text-xs text-stone-500">Download as JSON</div>
+                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                      Export Data
+                    </div>
+                    <div className="text-xs text-stone-500">
+                      Download as JSON
+                    </div>
                   </div>
                 </button>
 
@@ -394,8 +418,12 @@ export const SettingsModal = observer(function SettingsModal({
                     <Upload className="w-4 h-4 text-stone-600 dark:text-stone-400" />
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">Import (Merge)</div>
-                    <div className="text-xs text-stone-500">Combine with existing</div>
+                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                      Import (Merge)
+                    </div>
+                    <div className="text-xs text-stone-500">
+                      Combine with existing
+                    </div>
                   </div>
                 </button>
 
@@ -409,8 +437,12 @@ export const SettingsModal = observer(function SettingsModal({
                     <Upload className="w-4 h-4 text-stone-600 dark:text-stone-400" />
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">Import (Replace)</div>
-                    <div className="text-xs text-stone-500">Replace all data</div>
+                    <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                      Import (Replace)
+                    </div>
+                    <div className="text-xs text-stone-500">
+                      Replace all data
+                    </div>
                   </div>
                 </button>
 
@@ -428,12 +460,18 @@ export const SettingsModal = observer(function SettingsModal({
                 )}
 
                 {isImporting && (
-                  <div className="mt-3 text-center text-sm text-stone-500">Importing data...</div>
+                  <div className="mt-3 text-center text-sm text-stone-500">
+                    Importing data...
+                  </div>
                 )}
 
                 <div className="pt-3 mt-3 border-t border-red-200 dark:border-red-900/30">
-                  <h4 className="text-xs font-medium text-red-900 dark:text-red-200 mb-2">Danger Zone</h4>
-                  <p className="text-xs text-stone-500 mb-3">Reset all data to factory defaults</p>
+                  <h4 className="text-xs font-medium text-red-900 dark:text-red-200 mb-2">
+                    Danger Zone
+                  </h4>
+                  <p className="text-xs text-stone-500 mb-3">
+                    Reset all data to factory defaults
+                  </p>
 
                   {!showResetConfirm ? (
                     <button
@@ -446,13 +484,17 @@ export const SettingsModal = observer(function SettingsModal({
                         <RotateCcw className="w-4 h-4 text-red-700 dark:text-red-400" />
                       </div>
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-red-900 dark:text-red-200">Reset All Data</div>
+                        <div className="text-sm font-medium text-red-900 dark:text-red-200">
+                          Reset All Data
+                        </div>
                       </div>
                     </button>
                   ) : (
                     <div className="space-y-2">
                       {isResetting ? (
-                        <div className="text-center py-3 text-sm text-stone-500 font-mono">Resetting...</div>
+                        <div className="text-center py-3 text-sm text-stone-500 font-mono">
+                          Resetting...
+                        </div>
                       ) : (
                         <>
                           <ConfirmableAction
@@ -483,11 +525,17 @@ export const SettingsModal = observer(function SettingsModal({
               <div className="space-y-2">
                 {mounted ? (
                   <>
-                    {([
-                      { value: "light" as const, label: "Light", Icon: Sun },
-                      { value: "dark" as const, label: "Dark", Icon: Moon },
-                      { value: "system" as const, label: "System", Icon: Monitor },
-                    ] as const).map(({ value, label, Icon }) => (
+                    {(
+                      [
+                        { value: "light" as const, label: "Light", Icon: Sun },
+                        { value: "dark" as const, label: "Dark", Icon: Moon },
+                        {
+                          value: "system" as const,
+                          label: "System",
+                          Icon: Monitor,
+                        },
+                      ] as const
+                    ).map(({ value, label, Icon }) => (
                       <button
                         key={value}
                         type="button"
@@ -510,7 +558,9 @@ export const SettingsModal = observer(function SettingsModal({
                           <Icon className="w-4 h-4 text-stone-700 dark:text-stone-300" />
                         </div>
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-stone-900 dark:text-stone-100">{label}</div>
+                          <div className="text-sm font-medium text-stone-900 dark:text-stone-100">
+                            {label}
+                          </div>
                         </div>
                         {theme === value && (
                           <div className="w-2 h-2 rounded-full bg-stone-900 dark:bg-stone-100" />
@@ -519,7 +569,9 @@ export const SettingsModal = observer(function SettingsModal({
                     ))}
                   </>
                 ) : (
-                  <div className="text-center py-6 text-sm text-stone-500">Loading...</div>
+                  <div className="text-center py-6 text-sm text-stone-500">
+                    Loading...
+                  </div>
                 )}
               </div>
             )}
@@ -527,9 +579,12 @@ export const SettingsModal = observer(function SettingsModal({
             {activePane === "about" && (
               <div className="space-y-3">
                 <div>
-                  <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-1">Zenborg</h3>
+                  <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100 mb-1">
+                    Zenborg
+                  </h3>
                   <p className="text-sm text-stone-600 dark:text-stone-400 mb-1">
-                    A garden for your attention. You are the gardener; Zenborg is the toolshed.
+                    A garden for your attention. You are the gardener; Zenborg
+                    is the toolshed.
                   </p>
                   <p className="text-xs text-stone-500 font-mono">
                     Version {process.env.NEXT_PUBLIC_APP_VERSION ?? "0.3.1"}
@@ -588,11 +643,15 @@ export const SettingsModal = observer(function SettingsModal({
                     )}
 
                     {hasChecked && !update && !checking && !updateError && (
-                      <p className="px-3 text-xs text-stone-500">You're on the latest version.</p>
+                      <p className="px-3 text-xs text-stone-500">
+                        You're on the latest version.
+                      </p>
                     )}
 
                     {updateError && (
-                      <p className="px-3 text-xs text-red-600 dark:text-red-400">{updateError}</p>
+                      <p className="px-3 text-xs text-red-600 dark:text-red-400">
+                        {updateError}
+                      </p>
                     )}
                   </div>
                 )}

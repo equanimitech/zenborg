@@ -462,15 +462,10 @@ export class CycleService {
       ? (() => {
           const t = timingFromSchedule(habit.schedule);
           if (habit.schedule.timezone) {
-            const viewerTz =
-              Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             return {
               ...t,
-              startTime: scheduleLocalStartTime(
-                habit.schedule,
-                viewerTz,
-                day,
-              ),
+              startTime: scheduleLocalStartTime(habit.schedule, viewerTz, day),
             };
           }
           return t;
@@ -1084,15 +1079,10 @@ export class CycleService {
       ? (() => {
           const t = timingFromSchedule(habit.schedule);
           if (habit.schedule.timezone) {
-            const viewerTz =
-              Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const viewerTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
             return {
               ...t,
-              startTime: scheduleLocalStartTime(
-                habit.schedule,
-                viewerTz,
-                day,
-              ),
+              startTime: scheduleLocalStartTime(habit.schedule, viewerTz, day),
             };
           }
           return t;

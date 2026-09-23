@@ -15,15 +15,24 @@
  */
 
 import { useEffect, useState } from "react";
-import { fenceCache, fenceRefusals } from "@/modules/fence/store";
-import { exitLine } from "@/modules/fence/parse";
-import type { Fence, Fences, Refusal } from "@/modules/fence/types";
-import { cooldowns } from "@/modules/friction/cooldown/store";
-import { activeAt, type ActiveCooldown } from "@/modules/friction/cooldown/state";
-import { areas as areasStore, areaMap as areaMapStore, pageTransforms, type AreaInfo, type PageTransform } from "@/modules/friction/policy/store";
-import { setArea } from "@/modules/relay/client";
+import { exportFileName, toJsonl } from "@/modules/activity/events";
 import { readAllEvents } from "@/modules/activity/log";
-import { toJsonl, exportFileName } from "@/modules/activity/events";
+import { exitLine } from "@/modules/fence/parse";
+import { fenceCache, fenceRefusals } from "@/modules/fence/store";
+import type { Fence, Fences, Refusal } from "@/modules/fence/types";
+import {
+  type ActiveCooldown,
+  activeAt,
+} from "@/modules/friction/cooldown/state";
+import { cooldowns } from "@/modules/friction/cooldown/store";
+import {
+  type AreaInfo,
+  areaMap as areaMapStore,
+  areas as areasStore,
+  type PageTransform,
+  pageTransforms,
+} from "@/modules/friction/policy/store";
+import { setArea } from "@/modules/relay/client";
 
 function fenceTypeLabel(fence: Fence): string {
   if (fence.enforcement.kind === "block") {
@@ -44,7 +53,10 @@ function fenceTypeBadge(fence: Fence): string {
 }
 
 function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function Manage() {
@@ -65,13 +77,19 @@ export function Manage() {
     areaMapStore.getValue().then(setMap);
 
     const unwatchFences = fenceCache.watch((v) => {
-      if (v) { setFences(v); }
+      if (v) {
+        setFences(v);
+      }
     });
     const unwatchTransforms = pageTransforms.watch((v) => {
-      if (v) { setTransforms(v); }
+      if (v) {
+        setTransforms(v);
+      }
     });
     const unwatchCooldowns = cooldowns.watch((s) => {
-      if (s) { setCds(activeAt(s, Date.now())); }
+      if (s) {
+        setCds(activeAt(s, Date.now()));
+      }
     });
     return () => {
       unwatchFences();
@@ -82,7 +100,10 @@ export function Manage() {
 
   const fenceList = Object.values(fences);
 
-  const handleAssign = async (domain: string, areaId: string): Promise<void> => {
+  const handleAssign = async (
+    domain: string,
+    areaId: string,
+  ): Promise<void> => {
     // Optimistic: the picker reflects the choice immediately. `setArea` relays
     // over native messaging and may fail silently (host unreachable) — the
     // mirror still reflects the intent, and the host's own policy push is the
@@ -174,7 +195,10 @@ export function Manage() {
                     <td>🛡</td>
                     <td>{t.ruleId}</td>
                     <td className="manage-domains">{t.domains.join(", ")}</td>
-                    <td className="manage-exit" title={t.targets.primary}>{t.targets.primary.slice(0, 40)}{t.targets.primary.length > 40 ? "…" : ""}</td>
+                    <td className="manage-exit" title={t.targets.primary}>
+                      {t.targets.primary.slice(0, 40)}
+                      {t.targets.primary.length > 40 ? "…" : ""}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -217,7 +241,12 @@ export function Manage() {
                   <tr key={domain}>
                     <td>{domain}</td>
                     <td>
-                      <select value={areaId} onChange={(e) => void handleAssign(domain, e.target.value)}>
+                      <select
+                        value={areaId}
+                        onChange={(e) =>
+                          void handleAssign(domain, e.target.value)
+                        }
+                      >
                         <option value="">— unassign —</option>
                         {allAreas.map((a) => (
                           <option key={a.id} value={a.id}>
@@ -250,12 +279,15 @@ export function Manage() {
 
       {/* How to add */}
       <section className="manage-section">
-        <p className="manage-hint">Ask Claude to fence out a weed: a fence, a gate, or a transform on a site.</p>
+        <p className="manage-hint">
+          Ask Claude to fence out a weed: a fence, a gate, or a transform on a
+          site.
+        </p>
       </section>
 
       {/* Export */}
       <section className="manage-section">
-        <button className="manage-export" onClick={() => void handleExport()}>
+        <button type="button" className="manage-export" onClick={() => void handleExport()}>
           Export activity log (JSONL)
         </button>
       </section>
