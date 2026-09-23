@@ -1,0 +1,35 @@
+{
+  "name": "zenborg-gesture-glyphs",
+  "preset": "phi-grammar (docs/design/design-grammar.md), not a generic preset",
+  "grid": 24,
+  "field": "3x3 cells of 8",
+  "strokeWidth": 1.65,
+  "strokeWidthRationale": "6.854% of canvas (grammar table)",
+  "strokeLinecap": "round",
+  "strokeLinejoin": "round",
+  "dotRadius": 1.9,
+  "dotRationale": "1/phi^3 of a cell (8 * 0.236)",
+  "padding": 3,
+  "paddingRationale": "~1/phi^2 of a cell; the canvas-level 38.2% margin in the grammar table is unworkable at icon scale",
+  "primitives": [
+    "point",
+    "line",
+    "square",
+    "circle",
+    "curve"
+  ],
+  "icons": [
+    "plant",
+    "cultivate",
+    "harvest",
+    "fence"
+  ],
+  "meaning": {
+    "plant": "the seed over its ground (the grammar's Plan mark)",
+    "cultivate": "the seed held off-centre in a field of attention (Cultivate mark, crosshair dropped: it read as a target)",
+    "harvest": "the ground curved into a bowl that holds the seed (the grammar's harvesting operation applied to Plant; the S-curve version read as yin-yang)",
+    "fence": "a boundary around the seed, with a gap: a gate, not a lockout (lives under Cultivate)"
+  },
+  "generated": "2026-09-23",
+  "rule": "Every mark carries the same seed point; only the ground around it changes."
+}
