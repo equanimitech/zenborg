@@ -11,7 +11,7 @@ export interface PhaseStyle {
   icon: PhaseIconComponent;
 }
 
-/** The botanical glyph for a phase: one flower through its day. */
+/** The glyph for a phase: the sky over the garden (sun rising, high, setting; moon). */
 export function phaseGlyphName(phase: Phase): GardenGlyphName {
   return `phase-${phase.toLowerCase()}` as GardenGlyphName;
 }

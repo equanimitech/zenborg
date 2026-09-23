@@ -9,8 +9,8 @@ type FenceGlyphName = "fence" | "fence-standing" | "fence-gate";
 
 const PATHS: Record<FenceGlyphName, string[]> = {
   fence: [
-    "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20 M17.3 20V8.4L18.5 6.8l1.2 1.6V20",
-    "M6.7 14.2c1.6.2 2.9.2 4.1.1",
+    "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20",
+    "M6.7 14.2c1.6.2 2.9.2 4.1.1M13.2 14.3c1.8.1 3.5.1 5.3-.1",
   ],
   "fence-standing": [
     "M4.3 20V8.2L5.5 6.6l1.2 1.6V20 M10.8 20V7.6L12 6l1.2 1.6V20 M17.3 20V8.4L18.5 6.8l1.2 1.6V20",
