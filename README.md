@@ -1,7 +1,8 @@
 # Zenborg
 
-> A garden for your attention. Plant what you want to grow, grow it with the people and
-> places you care about, fence out the weeds, and return to tend it every day.
+> A garden for your attention. Plant what you want to grow, with the people and places
+> you care about. Cultivate it every day: tend what matters, fence out the weeds. Harvest
+> what it teaches you, and tune the next season.
 
 **You are the gardener.** Your garden is your habit ecosystem, digital and physical. You
 are responsible for tending it, and you already do. Zenborg is the toolshed: it helps you
@@ -11,12 +12,11 @@ tend with more consistency, and return with more resilience when something wilts
 
 **[equanimi.tech/zenborg](https://equanimi.tech/zenborg)**
 
-## Four gestures
+## Three tabs
 
-- 🌱 **Plant**: areas of your life, habits, moments of 1–3 words, cycles
-- 🤝 **Companion**: people and places, each held with an intention
-- 🚧 **Fence**: fence out the weeds (sites, feeds)
-- 🪴 **Tend**: sunrise, sunset, weather, season. Phases, not hours.
+- 🌱 **Plant**: habits, people, places. What you grow, with whom, and where.
+- 🪴 **Cultivate**: tend and fence. Every day, tend what matters and fence out the weeds.
+- 🌾 **Harvest**: reflect and tune. What it taught you; retune for the next season.
 
 It is not a habit tracker, not a task manager, not a screen-time app, not a platform. No
 streaks, no scores, no notifications, no accounts. Your garden lives on your machine.
@@ -25,11 +25,13 @@ streaks, no scores, no notifications, no accounts. Your garden lives on your mac
 
 - **App (macOS):** download the latest release from
   [GitHub Releases](https://github.com/equanimitech/zenborg/releases/latest).
-- **Claude (optional):** the Claude Code plugin in [`plugin/`](plugin/README.md) opens and
-  closes the day with you, and the MCP server in [`mcp-server/`](mcp-server/) lets any
+- **Claude (optional):** the Claude Code plugin in [`plugin/`](plugin/README.md) walks the
+  same three tabs with you (Plant: `onboarding`; Cultivate: `sunrise`, `tend`, `sunset`,
+  `close-up` and the fence hook; Harvest: `weather`, `weekly-moments-review`, `season`),
+  and the MCP server in [`mcp-server/`](mcp-server/) lets any
   agent read and tend the same garden.
 - **Browser (optional):** the extension in [`extension/`](extension/) puts your fences
-  around the browser.
+  (which live in Cultivate) around the browser.
 
 ## Develop
 

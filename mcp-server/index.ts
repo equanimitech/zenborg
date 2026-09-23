@@ -246,7 +246,7 @@ const server = new McpServer(
 
 Your life is the garden. You are the gardener. Zenborg is the toolshed.
 
-Four gestures: **Plant** (areas, habits, moments, cycles) · **Companion** (people and places, each held with an intention) · **Fence** (fence out the weeds: sites, feeds) · **Tend** (sunrise, sunset, weather, season). The everyday question is "What will I tend to today?". To the gardener, placing a moment is "tending" and removing one is "setting aside"; "pruning" is only the habit attitude, and things fenced out are "weeds".
+Three tabs, two verbs each: **Plant** (habits, people, places: what you grow, with whom, and where) · **Cultivate** (tend and fence: every day, tend what matters and fence out the weeds) · **Harvest** (reflect and tune: what it taught you; retune for the next season). The everyday question is "What will I tend to today?". To the gardener, placing a moment is "tending" and removing one is "setting aside"; "pruning" is only the habit attitude, and things fenced out are "weeds".
 
 - **Area** — a plot of the garden (a life domain you cultivate)
 - **Habit** — a perennial (a recurring moment template, lives inside an area)
