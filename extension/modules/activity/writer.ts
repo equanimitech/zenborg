@@ -362,9 +362,13 @@ export function startActivityWriter(): void {
       return;
     }
     void derivedObserveDomains()
-      .then((observe) => {
+      .then(async (observe) => {
         if (sensorAllowed(domain, observe)) {
-          write(validated.kind, { domain, ...validated.payload });
+          // The tab uuid lets the read side tell two playing tabs on one domain
+          // apart. Browser-attested fields go last so the page cannot override them.
+          const tabId = sender.tab?.id;
+          const tab = tabId === undefined ? undefined : (await tabMapItem.getValue())[tabId];
+          write(validated.kind, { ...validated.payload, domain, ...(tab ? { tab } : {}) });
           flashSensorBadge(sender.tab?.id);
         }
       })
