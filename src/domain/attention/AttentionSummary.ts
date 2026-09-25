@@ -58,11 +58,24 @@ export function dwellRows(
   config: DwellConfig,
 ): readonly DwellRow[] {
   const getLocator = locatorOf[surface];
+  // Dedup by id: the relay can deliver a batch twice (same rule as bouts.ts).
+  const seen = new Set<string>();
   const surfaceEvents = events
     .filter((e) => e.surface === surface && isHumanActor(e))
+    .filter((e) => !seen.has(e.id) && seen.add(e.id))
     .sort((a, b) => a.ts - b.ts);
 
-  const acc = new Map<string, { ms: number; visits: number; areaId?: AreaId }>();
+  const acc = new Map<
+    string,
+    { spans: Interval[]; visits: number; areaId?: AreaId }
+  >();
+  const entryFor = (loc: string, event: ActivityEvent) => {
+    const existing = acc.get(loc);
+    if (existing) return existing;
+    const created = { spans: [] as Interval[], visits: 0, areaId: resolve(event) };
+    acc.set(loc, created);
+    return created;
+  };
 
   for (let i = 0; i < surfaceEvents.length; i++) {
     const event = surfaceEvents[i];
@@ -74,24 +87,126 @@ export function dwellRows(
       ? Math.min(boundary - event.ts, config.capMs)
       : 0;
 
-    const entry = acc.get(loc);
-    if (entry) {
-      entry.ms += dwell;
-      entry.visits += 1;
-    } else {
-      acc.set(loc, { ms: dwell, visits: 1, areaId: resolve(event) });
+    const entry = entryFor(loc, event);
+    entry.spans.push([event.ts, event.ts + dwell]);
+    entry.visits += 1;
+  }
+
+  // A playing video is attention on its domain whether or not the window has
+  // focus. Union with the focus spans, so a focused tab that is also playing
+  // counts once.
+  if (surface === "browser") {
+    for (const { domain, event, span } of playingSpans(surfaceEvents, config.capMs)) {
+      entryFor(domain, event).spans.push(span);
     }
   }
 
   return [...acc.entries()]
-    .map(([locator, { ms, visits, areaId }]) => ({
+    .map(([locator, { spans, visits, areaId }]) => ({
       surface,
       locator,
       ...(areaId !== undefined ? { areaId } : {}),
-      ms,
+      ms: unionMs(spans),
       visits,
     }))
     .sort((a, b) => b.ms - a.ms);
+}
+
+type Interval = readonly [start: Instant, end: Instant];
+
+/** Total length of a set of possibly-overlapping intervals. */
+function unionMs(spans: readonly Interval[]): Duration {
+  const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let reach = Number.NEGATIVE_INFINITY;
+  for (const [start, end] of sorted) {
+    const from = Math.max(start, reach);
+    if (end > from) total += end - from;
+    reach = Math.max(reach, end);
+  }
+  return total;
+}
+
+const PLAY_OPEN = new Set(["video_started", "video_resumed"]);
+const PLAY_CLOSE = new Set(["video_paused", "video_ended", "tab_closed"]);
+
+function num(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+/**
+ * Intervals during which a video was playing, per domain.
+ *
+ * Opens on video_started/video_resumed, closes on video_paused/video_ended
+ * (or tab_closed when the video events carry a tab), keyed by tab when known,
+ * else by domain. Bounds, because a sensor can drop or conflate events:
+ *   - playback position: a close reporting `seconds` caps the span at the
+ *     position advanced since the open, so an unsettled pause is not counted;
+ *   - a video_paused with no open span on its key (two tabs on one domain,
+ *     before events carried a tab) still proves playback: it credits its
+ *     reported position, reaching back no further than the key's last close.
+ *     An orphan video_ended does not — it also fires on detach, long after;
+ *   - screen lock (idle_start state=locked) closes everything. Plain idle
+ *     does not: watching produces no input, which is the whole point;
+ *   - a span never closed ends at the next idle_start, else the last event;
+ *   - every span is capped at `capMs`.
+ */
+function playingSpans(
+  events: readonly ActivityEvent[],
+  capMs: Duration,
+): readonly { domain: string; event: ActivityEvent; span: Interval }[] {
+  const out: { domain: string; event: ActivityEvent; span: Interval }[] = [];
+  const open = new Map<string, ActivityEvent>();
+  const lastClose = new Map<string, Instant>();
+  const push = (event: ActivityEvent, start: Instant, end: Instant) =>
+    out.push({
+      domain: str(event.payload.domain) ?? "",
+      event,
+      span: [start, Math.min(end, start + capMs)],
+    });
+
+  const close = (key: string, opener: ActivityEvent, closer?: ActivityEvent, at = closer?.ts ?? 0) => {
+    open.delete(key);
+    lastClose.set(key, at);
+    const from = num(opener.payload.seconds);
+    const to = num(closer?.payload.seconds);
+    const played = from !== undefined && to !== undefined && to > 0 && to >= from
+      ? (to - from) * 1000
+      : Number.POSITIVE_INFINITY;
+    push(opener, opener.ts, Math.min(at, opener.ts + played));
+  };
+
+  for (const e of events) {
+    if (e.kind === "idle_start" && e.payload.state === "locked") {
+      for (const [key, opener] of open) close(key, opener, undefined, e.ts);
+      continue;
+    }
+    const domain = str(e.payload.domain);
+    if (domain === undefined) continue;
+    const key = str(e.payload.tab) ?? domain;
+    const opener = open.get(key);
+    if (PLAY_OPEN.has(e.kind)) {
+      if (opener === undefined) open.set(key, e);
+    } else if (PLAY_CLOSE.has(e.kind)) {
+      if (opener !== undefined) {
+        close(key, opener, e);
+        continue;
+      }
+      const seconds = num(e.payload.seconds);
+      if (e.kind === "video_paused" && seconds !== undefined && seconds > 0) {
+        push(e, Math.max(e.ts - seconds * 1000, lastClose.get(key) ?? 0), e.ts);
+      }
+      lastClose.set(key, e.ts);
+    }
+  }
+
+  // ponytail: an unclosed span is a guess; idle is the best "gone" proxy we have.
+  const last = events.at(-1)?.ts ?? 0;
+  for (const [key, opener] of open) {
+    const idle = events.find((e) => e.kind === "idle_start" && e.ts > opener.ts);
+    close(key, opener, undefined, idle?.ts ?? last);
+  }
+  return out;
 }
 
 /**

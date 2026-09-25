@@ -130,6 +130,115 @@ describe("dwellRows — browser", () => {
   });
 });
 
+describe("dwellRows — browser video playback", () => {
+  const SEC = 1000;
+  const T0 = 1_790_181_564_000; // 2026-09-23 18:39:24, trimmed from the real log
+  const TAB = "414246c0";
+  let n = 0;
+  const b = (
+    s: number,
+    kind: string,
+    payload: Record<string, unknown> = {},
+    id = `b-${n++}`,
+  ) => ev({ id, ts: T0 + s * SEC, surface: "browser", kind, payload });
+  const yt = (seconds: number) => ({ domain: "youtube.com", seconds });
+  const resolveYt = (e: ActivityEvent) =>
+    e.payload.domain === "youtube.com" ? "area-entertainment" : undefined;
+  const cfg = { capMs: 120 * MINUTE };
+  const ytRow = (events: ActivityEvent[]) =>
+    dwellRows(events, "browser", resolveYt, cfg).find((r) => r.locator === "youtube.com");
+
+  it("counts playback while the browser window has lost focus (real 18:39–18:49 shape)", () => {
+    // One video watched on one tab while focus flicks to the terminal. Focus
+    // spans alone give 11s + 114s; the video was playing for ~7 minutes.
+    const events = [
+      b(-9, "video_started", yt(0)),
+      b(0, "tab_activated", { domain: "youtube.com", tab: TAB }),
+      b(11, "focus_end"),
+      b(26, "focus_start"),
+      b(138, "focus_end"),
+      b(141, "video_paused", yt(153)),
+      b(150, "video_resumed", yt(154)),
+      b(249, "video_paused", yt(250)),
+      b(250, "focus_end"),
+      b(316, "tab_activated", { domain: "web.whatsapp.com", tab: "7654df" }),
+      b(317, "tab_activated", { domain: "youtube.com", tab: TAB }),
+      b(318, "video_resumed", yt(250)),
+      b(431, "focus_end"),
+      b(432, "video_paused", yt(365)),
+      b(512, "video_resumed", yt(365)),
+      b(515, "focus_end"),
+      b(587, "video_ended", yt(432)),
+    ];
+    // Playing: [-9,141] 150s · [150,246] 96s (position-capped) ·
+    // [318,432] ∪ focus [317,431] = 115s · [512,579] 67s (position-capped).
+    const row = ytRow(events)!;
+    expect(row.ms).toBe(428 * SEC);
+    expect(row.areaId).toBe("area-entertainment");
+    expect(row.visits).toBe(2);
+  });
+
+  it("does not double count a focused tab that is also playing", () => {
+    const events = [
+      b(0, "tab_activated", { domain: "youtube.com", tab: TAB }),
+      b(0, "video_started", yt(0)),
+      b(600, "video_paused", yt(600)),
+      b(600, "tab_activated", { domain: "github.com", tab: "gh" }),
+    ];
+    expect(ytRow(events)?.ms).toBe(600 * SEC);
+  });
+
+  it("ignores relay-duplicated events (same id)", () => {
+    const events = [
+      b(0, "video_started", yt(0), "v1"),
+      b(0, "video_started", yt(0), "v1"),
+      b(60, "video_paused", yt(60), "v2"),
+      b(60, "video_paused", yt(60), "v2"),
+      b(0, "tab_activated", { domain: "youtube.com", tab: TAB }, "t1"),
+      b(0, "tab_activated", { domain: "youtube.com", tab: TAB }, "t1"),
+      b(10, "focus_end", {}, "f1"),
+    ];
+    const row = ytRow(events)!;
+    expect(row.ms).toBe(60 * SEC);
+    expect(row.visits).toBe(1);
+  });
+
+  it("bounds a never-closed playing span at the next idle_start", () => {
+    const events = [
+      b(0, "video_started", yt(0)),
+      b(10, "tab_activated", { domain: "github.com", tab: "gh" }),
+      b(1200, "idle_start", { state: "idle" }),
+      b(3000, "focus_start"),
+    ];
+    expect(ytRow(events)?.ms).toBe(1200 * SEC);
+  });
+
+  it("credits an orphan pause's position when two untagged tabs conflate (real 18:39 shape)", () => {
+    // Tab B's ended closes tab A's span (same domain key); A's later pause at
+    // 153s is orphaned but proves play since the previous close. An orphan
+    // ended (detach, long after) proves nothing.
+    const events = [
+      b(0, "video_started", yt(0)), // tab A
+      b(2, "video_started", yt(0)), // tab B, ignored: key already open
+      b(9, "video_ended", yt(8)), // tab B finishes; closes the key at 9s
+      b(150, "video_paused", yt(153)), // tab A: orphan, credits [9,150]
+      b(900, "video_ended", yt(153)), // detach sweep: orphan, credits nothing
+    ];
+    expect(ytRow(events)?.ms).toBe((8 + 141) * SEC); // [0,8] position-capped + [9,150]
+  });
+
+  it("ends a tab-tagged playing span when its tab closes, and on screen lock", () => {
+    const events = [
+      b(0, "video_started", { ...yt(0), tab: "a" }),
+      b(0, "video_started", { ...yt(0), tab: "b" }),
+      b(30, "tab_closed", { domain: "youtube.com", tab: "a" }),
+      b(90, "idle_start", { state: "locked" }),
+      b(4000, "focus_start"),
+    ];
+    expect(ytRow(events)?.ms).toBe(90 * SEC);
+  });
+});
+
 describe("byArea", () => {
   it("aggregates rows by area, excluding unmapped", () => {
     const rows = [
