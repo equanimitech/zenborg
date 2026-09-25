@@ -23,7 +23,8 @@ persistence path.
 | | |
 |---|---|
 | **Area** | a plot of your life. The one shared kernel concept — see below |
-| **Habit** | a perennial: a recurring moment template, lives in an area. You **plant** a habit |
+| **Habit** | a perennial: a recurring moment template, lives in an area. You **plant** a habit. Reads as "routine" in user-facing copy |
+| **Ritual** | an ordered set of habits that plants itself at a phase boundary (e.g. wake-up). Still `Routine` / `routines.json` in code until the rename lands |
 | **Moment** | a tending: a named intention, 1–3 words, allocated to a (day, phase). You **tend** a moment; each one waters a habit |
 | **Cycle** | a season: a time container with an intention |
 | **CyclePlan** | a plot's budget for the season — one per (cycleId, habitId) |
