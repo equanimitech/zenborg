@@ -251,27 +251,27 @@ describe("CycleDeck", () => {
       render(<CycleDeck />);
 
       expect(screen.getByTestId("cycle-deck-heatmap")).toBeInTheDocument();
-      expect(screen.getByText(/No active cycle/i)).toBeInTheDocument();
+      expect(screen.getByText(/no active season/i)).toBeInTheDocument();
     });
   });
 
   describe("empty state (no plans)", () => {
-    it("shows 'No budgeted moments in deck' in read-only mode", () => {
+    it("shows empty state hint in read-only mode", () => {
       mockStore({ activeCycle: testCycle });
 
       render(<CycleDeck />);
 
       expect(
-        screen.getByText(/No budgeted moments in deck/),
+        screen.getByText(/Drag habits from the library to plan your week/),
       ).toBeInTheDocument();
     });
 
-    it("hints to drag habits from library", () => {
+    it("hints to drag habits back to set aside", () => {
       mockStore({ activeCycle: testCycle });
 
       render(<CycleDeck />);
 
-      expect(screen.getByText(/Drag habits/i)).toBeInTheDocument();
+      expect(screen.getByText(/set aside/i)).toBeInTheDocument();
     });
   });
 
@@ -367,7 +367,7 @@ describe("CycleDeck", () => {
 
       render(<CycleDeck />);
 
-      expect(screen.getByTitle("Collapse cycle deck")).toBeInTheDocument();
+      expect(screen.getByTitle("Collapse season deck")).toBeInTheDocument();
     });
 
     it("renders the cycle heatmap above the header", () => {
@@ -410,7 +410,7 @@ describe("CycleDeck", () => {
 
       render(<CycleDeck />);
 
-      expect(screen.getByTitle("Edit cycle deck")).toBeInTheDocument();
+      expect(screen.getByTitle("Edit season deck")).toBeInTheDocument();
     });
 
     it("hides Edit button when collapsed", () => {
@@ -424,7 +424,7 @@ describe("CycleDeck", () => {
 
       render(<CycleDeck />);
 
-      expect(screen.queryByTitle("Edit cycle deck")).toBeNull();
+      expect(screen.queryByTitle("Edit season deck")).toBeNull();
     });
   });
 
@@ -488,7 +488,7 @@ describe("CycleDeck", () => {
 
       render(<CycleDeck />);
 
-      expect(screen.queryByText(/No budgeted moments/)).toBeNull();
+      expect(screen.queryByText(/Drag habits from the library to plan your week/)).toBeNull();
       expect(
         screen.getByTestId("cycle-deck-column-area-1"),
       ).toBeInTheDocument();

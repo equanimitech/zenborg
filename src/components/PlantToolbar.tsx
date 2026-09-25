@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { areas$ } from "@/infrastructure/state/store";
 import {
   type HabitGroupBy,
   type PeopleGroupBy,
@@ -89,9 +90,18 @@ export const PlantToolbar = observer(
     onToggleEmpty: () => void;
   }) => {
     const config = use$(plantViewConfig$);
+    const areaCount = Object.keys(use$(areas$)).length;
+    const isNewUser = areaCount < 3;
+
+    // Progressively reveal entities and groupings as the garden grows
+    const entities = isNewUser
+      ? ENTITIES.filter((e) => e.value === "habits")
+      : ENTITIES;
     const groups =
       config.entity === "habits"
-        ? HABIT_GROUPS
+        ? isNewUser
+          ? HABIT_GROUPS.filter((g) => g.value === "area")
+          : HABIT_GROUPS
         : config.entity === "people"
           ? PEOPLE_GROUPS
           : PLACES_GROUPS;
@@ -100,7 +110,7 @@ export const PlantToolbar = observer(
       <div className="flex items-center gap-2 px-4 py-1.5 border-t border-stone-200 dark:border-stone-800">
         {/* Entity switcher — heavier visual weight, primary action */}
         <nav className="inline-flex items-center gap-0.5 rounded-sm bg-stone-100 dark:bg-stone-800 p-0.5">
-          {ENTITIES.map((e) => (
+          {entities.map((e) => (
             <button
               key={e.value}
               type="button"

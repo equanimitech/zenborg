@@ -111,7 +111,7 @@ export function VirtualDeckCard({
             textColors.primary,
           )}
           role="img"
-          aria-label={`${daysSinceLast} days since last allocation`}
+          aria-label={`${daysSinceLast} days since last tended`}
         >
           ·{daysSinceLast}d
         </span>

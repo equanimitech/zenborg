@@ -42,7 +42,7 @@ export function SeasonReadback({
     return (
       <div className="mx-auto max-w-2xl px-6 py-16">
         <p className="text-sm text-stone-500 dark:text-stone-400">
-          No season to read back yet. Close one and it will be here.
+          Your story will appear here after your first season ends.
         </p>
       </div>
     );

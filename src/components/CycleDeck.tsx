@@ -181,13 +181,13 @@ export function CycleDeck() {
     return (
       <div className="w-full border-t-2 border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-900 flex-shrink-0">
         <div className="px-6 py-4 text-center text-xs font-mono text-stone-400 dark:text-stone-500">
-          no active cycle ·{" "}
+          no active season ·{" "}
           <button
             type="button"
             onClick={() => setCreateDialogOpen(true)}
             className="underline underline-offset-2 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
           >
-            plan one
+            start one
           </button>
         </div>
         <CycleDeckHeatmap />
@@ -243,7 +243,7 @@ export function CycleDeck() {
                 if (e.key === "Enter") e.currentTarget.blur();
               }}
               className="text-sm font-mono text-stone-900 dark:text-stone-100 font-semibold bg-transparent border-b border-stone-300 dark:border-stone-600 focus:border-stone-500 outline-none px-0 py-0 min-w-0"
-              aria-label="Cycle name"
+              aria-label="Season name"
             />
             <div className="flex items-center gap-1.5 text-xs font-mono text-stone-500 flex-shrink-0">
               <input
@@ -298,10 +298,10 @@ export function CycleDeck() {
                 type="button"
                 className="p-1.5 rounded text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
                 title={
-                  effectiveCycle.endDate ? "Adjust end date" : "End this cycle"
+                  effectiveCycle.endDate ? "Adjust end date" : "End this season"
                 }
                 aria-label={
-                  effectiveCycle.endDate ? "Adjust end date" : "End this cycle"
+                  effectiveCycle.endDate ? "Adjust end date" : "End this season"
                 }
               >
                 <Flag className="h-3.5 w-3.5" />
@@ -313,12 +313,12 @@ export function CycleDeck() {
             >
               <div>
                 <p className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                  {effectiveCycle.endDate ? "Cycle end date" : "End cycle"}
+                  {effectiveCycle.endDate ? "Season end date" : "End season"}
                 </p>
                 <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">
                   {effectiveCycle.endDate
                     ? `Adjust when “${effectiveCycle.name}” ended.`
-                    : `Close “${effectiveCycle.name}”. Defaults to today, capped before the next cycle.`}
+                    : `Close “${effectiveCycle.name}”. Defaults to today, capped before the next season.`}
                 </p>
               </div>
               {!effectiveCycle.endDate && (
@@ -370,7 +370,7 @@ export function CycleDeck() {
               type="button"
               onClick={() => setCreateDialogOpen(true)}
               className="p-1.5 rounded text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
-              title="Plan new cycle"
+              title="Plan new season"
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -378,7 +378,7 @@ export function CycleDeck() {
               type="button"
               onClick={toggleEditMode}
               className="p-1.5 rounded text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
-              title={isEditMode ? "Done editing" : "Edit cycle deck"}
+              title={isEditMode ? "Done editing" : "Edit season deck"}
             >
               {isEditMode ? (
                 <Check className="h-3.5 w-3.5" />
@@ -393,7 +393,7 @@ export function CycleDeck() {
           type="button"
           onClick={toggleCollapsed}
           className="p-1.5 rounded text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
-          title={isCollapsed ? "Expand cycle deck" : "Collapse cycle deck"}
+          title={isCollapsed ? "Expand season deck" : "Collapse season deck"}
         >
           {isCollapsed ? (
             <ChevronUp className="h-3.5 w-3.5" />
@@ -488,10 +488,10 @@ export function CycleDeck() {
             )}
           >
             <p className="text-stone-400 text-sm font-mono text-center">
-              No budgeted moments in deck
+              Drag habits from the library to plan your week
             </p>
             <p className="text-xs text-stone-500 font-mono text-center">
-              Drag habits from the library to build your cycle deck
+              Or drag them back here to set aside
             </p>
           </div>
         )}
@@ -524,7 +524,7 @@ export function CycleDeck() {
                 <div className="flex items-center justify-center h-full">
                   <div className="bg-stone-800/90 dark:bg-stone-200/90 text-white dark:text-stone-900 px-6 py-3 rounded-lg shadow-lg">
                     <p className="text-sm font-bold font-mono">
-                      Drop to unallocate back to cycle deck
+                      Drop here to set aside
                     </p>
                   </div>
                 </div>

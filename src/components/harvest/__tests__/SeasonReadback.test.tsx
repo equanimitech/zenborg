@@ -134,7 +134,7 @@ describe("SeasonReadback", () => {
   it("says so plainly when no season has closed yet", () => {
     render(<SeasonReadback season={null} />);
 
-    expect(screen.getByText(/No season to read back yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your story will appear here after your first season ends/i)).toBeInTheDocument();
   });
 
   it("never scores the season — no progress bar, no percentage", () => {

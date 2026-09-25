@@ -57,7 +57,7 @@ describe("Initialize Store", () => {
       expect(cycleValues).toHaveLength(1);
 
       const firstCycle = cycleValues[0];
-      expect(firstCycle.name).toBe("First Cycle");
+      expect(firstCycle.name).toBe("First Season");
       expect(firstCycle.endDate).toBeNull();
 
       // Verify start date is today

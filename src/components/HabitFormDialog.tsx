@@ -3,7 +3,7 @@
 import { use$ } from "@legendapp/state/react";
 import { AtSign, Clock, Layers, Plus, Timer, Trash2, X } from "lucide-react";
 import { RelationshipTagger } from "@/components/RelationshipTagger";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { AreaSelector } from "@/components/AreaSelector";
 import { AttitudeSelector } from "@/components/AttitudeSelector";
@@ -555,8 +555,8 @@ export function HabitFormDialog({ onSave, onDelete }: HabitFormDialogProps) {
             )}
           </div>
 
-          {/* Subtle wrapped row for empty selectors */}
-          <div className="flex flex-wrap gap-3 items-center mt-8 mb-2">
+          {/* Subtle wrapped row for empty selectors — hidden in create mode until toggled */}
+          <MoreOptions show={mode === "edit"}>
             {/* Aliases - subtle label if none */}
             {aliases.length === 0 && (
               <AliasesSelector
@@ -678,7 +678,7 @@ export function HabitFormDialog({ onSave, onDelete }: HabitFormDialogProps) {
                 }
               />
             )}
-          </div>
+          </MoreOptions>
         </div>
 
         {/* Footer */}
@@ -719,6 +719,49 @@ export function HabitFormDialog({ onSave, onDelete }: HabitFormDialogProps) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * In create mode, collapses children behind a "more options" toggle.
+ * In edit mode (show=true), always renders children.
+ */
+function MoreOptions({
+  show,
+  children,
+}: {
+  show: boolean;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (show || expanded) {
+    return (
+      <div className="flex flex-wrap gap-3 items-center mt-8 mb-2">
+        {children}
+        {!show && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="text-stone-400 dark:text-stone-500 text-xs cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+          >
+            fewer options
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-8 mb-2">
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="text-stone-400 dark:text-stone-500 text-xs cursor-pointer hover:text-stone-600 dark:hover:text-stone-300 transition-colors"
+      >
+        more options
+      </button>
+    </div>
   );
 }
 

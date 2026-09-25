@@ -444,7 +444,7 @@ export function DnDProvider({ children }: DnDProviderProps) {
     // unallocating them would send them into an invisible null-day/null-phase
     // state. Reject instead; the user must delete them explicitly.
     if (moment.cyclePlanId === null) {
-      alert("Cannot unallocate spontaneous moment; delete it instead");
+      alert("This moment isn't part of a season plan — delete it instead");
       return;
     }
 
@@ -465,7 +465,7 @@ export function DnDProvider({ children }: DnDProviderProps) {
       return m?.day && m.phase && m.cyclePlanId === null;
     });
     if (spontaneous.length > 0) {
-      alert("Cannot unallocate spontaneous moment; delete it instead");
+      alert("This moment isn't part of a season plan — delete it instead");
       return;
     }
 
