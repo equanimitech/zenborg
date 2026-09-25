@@ -24,13 +24,22 @@ persistence path.
 |---|---|
 | **Area** | a plot of your life. The one shared kernel concept — see below |
 | **Habit** | a perennial: a recurring moment template, lives in an area |
-| **Moment** | what you plant: a named intention, 1–3 words, allocated to a (day, phase) |
+| **Moment** | a tending: a named intention, 1–3 words, allocated to a (day, phase). Each moment waters a habit |
 | **Cycle** | a season: a time container with an intention |
 | **CyclePlan** | a plot's budget for the season — one per (cycleId, habitId) |
 | **Phase** | time-of-day band — MORNING / AFTERNOON / EVENING / NIGHT |
 | **Attitude** | relationship mode — BEGINNING → RETURNING → KEEPING → BUILDING → PUSHING → BEING |
 | **Rhythm / Health** | declared cadence, and the wilting signal derived from it |
+| **Footprints** | activity: where the gardener actually walked, recorded per surface in the activity log |
+| **Spring** | an outside system: `draw` pulls records into footprints, `send` pushes content out |
+| **Fence** | a boundary, enforced through surfaces and through springs' `send` |
 | **DayNote, MetricLog, HistoryEntry, Meta** | supporting records |
+
+The model's spine is intention versus action: **moments** (what you meant to tend) against
+**footprints** (where you walked). Vocabulary decided and stamped in
+[`docs/decisions/2026-09-25-garden-vocabulary.md`](docs/decisions/2026-09-25-garden-vocabulary.md).
+"Oracle", "integration" and "pond" are retired words; the code still carries the first two
+until the migration lands (see Springs below).
 
 `Attitude` lives on **habits**, not areas — 80 of 126 habits carry one, 0 of 20 areas do.
 Anything reasoning about friction reads habits or the moment that references one.
@@ -75,7 +84,20 @@ convention below carries no structured state.
 Root resolution: `vault_root()` in `fs.rs`, mirrored in `resolveVault()` in `vault.ts`.
 They must stay in lockstep; they have drifted before.
 
-### Oracle integrations
+### Springs (outside systems)
+
+**Target** (decided 2026-09-25, not yet built): one `springs.json` holds a record per
+spring: how to reach it (commands), what it records (`records({from,to})` with a privacy
+tier), and where it belongs (area, habit). Drawing springs write into the activity log as
+their own surface; the MCP server reads footprints locally and never calls a spring live.
+One reader, `get_footprints`, replaces `get_attention` and `get_day_trace`. `/new-spring`
+replaces `/oracle-wizard`.
+
+**Today** the concept is split across two files, documented below as they stand:
+`oracles.json` (how to reach a system) and `integrations.json` (source → area/habit
+bindings, `src/domain/integration/IntegrationBinding.ts`, read only by the Garmin report
+script). Garmin already follows the target shape: a scheduled job writes
+`log/*.garmin.jsonl` and `get_body` reads it.
 
 `oracles.json` in the vault root declares the external systems the garden talks to.
 It lives at `~/.zenborg/oracles.json` regardless of debug/release — oracles are about
