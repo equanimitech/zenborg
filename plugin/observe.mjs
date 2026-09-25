@@ -17,6 +17,7 @@ const LOG_DIR = process.env.KEEL_HOME
   ? join(process.env.KEEL_HOME, "log")
   : join(ZENBORG, "log");
 
+/** @type {Record<string, string>} */
 const KIND = {
   "session-start": "session_start",
   "user-submit": "prompt",
@@ -33,9 +34,10 @@ const KIND = {
   "file-changed": "file_changed",
 };
 
+/** @param {number} ts */
 function logFileName(ts) {
   const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, "0");
+  const p = (/** @type {number} */ n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.agent.jsonl`;
 }
 
@@ -44,8 +46,9 @@ function logFileName(ts) {
 // Hook stdin also carries prompt text, full tool_input and tool_response —
 // secrets included — so nothing else from it is persisted.
 const PATH_KEYS = ["file_path", "notebook_path"];
-const str = (v) => (typeof v === "string" ? v : undefined);
+const str = (/** @type {unknown} */ v) => (typeof v === "string" ? v : undefined);
 
+/** @param {any} input */
 export function trimPayload(input) {
   const p = input && typeof input === "object" ? input : {};
   const ti =
