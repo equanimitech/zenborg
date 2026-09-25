@@ -28,7 +28,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-// @ts-expect-error — plain .mjs, no types; the writer is the single source of the shape.
 import { trimPayload } from "../plugin/observe.mjs";
 
 const BACKUP_NAME = "log.bak-2026-09-23";
