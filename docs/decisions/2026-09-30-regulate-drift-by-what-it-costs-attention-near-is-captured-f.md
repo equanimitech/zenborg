@@ -6,7 +6,14 @@ $signature:
   docHash: sha256:d49e33a2d5359b45251801a8954fd3fadce027c11be5390c8cfde2041eedf577
   signedAt: 2026-09-30T09:57:17.723715Z
   signature: ed25519:HQt5gPWyGuQ7EBSQT1WNbq4pDWsPYDT042qlpvWvJJS966xuKzhHTOByR5CS3vLHVQ3KFm2Uw6KdFiW0rQJZBQ==
-type: decision
+$attestation:
+  $type: tech.equanimi.secretariat.stamp
+  signer: did:key:z6MkjB8PQaN1vuUzdtnJsxyXR2f8d3tckGHkUYZMDytQsfak
+  act: attest
+  docHash: sha256:d49e33a2d5359b45251801a8954fd3fadce027c11be5390c8cfde2041eedf577
+  docFilename: 2026-09-30-regulate-drift-by-what-it-costs-attention-near-is-captured-f.md
+  stampedAt: 2026-09-30T09:57:33.458591Z
+  signature: ed25519:d5mjton9SxdEvPxNlja3uKCfD3CZloC+JgyCEKvHYyQCVPCAojc6BByp+ANUf9c3kpEYfHfJjQySecgmK4a8DQ==
 ---
 # Regulate drift by what it costs attention: near is captured, far waits for a break, away splits into rest and feed
 
