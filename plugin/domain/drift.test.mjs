@@ -38,3 +38,18 @@ test(
     }
   },
 );
+
+// The in-repo original. The sibling-checkout check above predates the plugin
+// moving into this repo; this one pins the file the fence hook imports.
+const IN_REPO = join(HERE, "../../src/domain/attention/Discrepancy.ts");
+
+test(
+  "Discrepancy.ts is byte-identical to src/domain",
+  { skip: !existsSync(IN_REPO) },
+  () => {
+    assert.equal(
+      readFileSync(join(HERE, "attention/Discrepancy.ts"), "utf8"),
+      readFileSync(IN_REPO, "utf8"),
+    );
+  },
+);

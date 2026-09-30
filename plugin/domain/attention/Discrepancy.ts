@@ -24,9 +24,7 @@ export interface Discrepancy {
   /**
    * Every moment planted in the (day, phase) cell. A set, not a moment.
    *
-   * A cell holds however many moments are planted in it. `DAY_VIEW_PHASE_CAPACITY`
-   * is 3, but that is what the coarse day view shows, and the write paths
-   * deliberately do not enforce it. The domain carries no cardinality bound.
+   * Every moment planted in the (day, phase) cell. No cardinality bound.
    */
   readonly plantedMomentIds: readonly MomentId[];
   /** The area attention actually resolved to. Absent when nothing was observed. */
@@ -64,3 +62,13 @@ export function isAbsence(discrepancy: Discrepancy): boolean {
     discrepancy.kind === "absence" && discrepancy.plantedMomentIds.length === 0
   );
 }
+
+/**
+ * How far a departure from a session fence went, as the session declares it.
+ *
+ * Distance classifies commitment fit; what the fence does about it is set by
+ * what the departure costs attention (decision 2026-09-30): near is held to a
+ * capture, far waits for a breakpoint, away is not the coding hook's to gate.
+ * `inside` is not a distance, it is no departure, so it is not listed here.
+ */
+export type DriftDistance = "near" | "far" | "away";
