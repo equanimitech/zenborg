@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Bump the app version across package.json + tauri.conf.json,
-# commit, tag, and optionally push.
+# Bump the version across package.json, tauri.conf.json and the Claude Code
+# plugin manifest, then commit and tag. One version for the app and the
+# plugin: /plugin update only sees a release when plugin.json moves.
 #
 # Usage:
 #   ./scripts/bump-version.sh          # patch bump (0.18.0 → 0.18.1)
@@ -13,6 +14,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="$ROOT/package.json"
 TAURI="$ROOT/src-tauri/tauri.conf.json"
+PLUGIN="$ROOT/plugin/.claude-plugin/plugin.json"
 
 current=$(node -p "require('$PKG').version")
 IFS='.' read -r major minor patch <<< "$current"
@@ -29,7 +31,7 @@ echo "$current → $next"
 
 node -e "
   const fs = require('fs');
-  for (const f of ['$PKG', '$TAURI']) {
+  for (const f of ['$PKG', '$TAURI', '$PLUGIN']) {
     const j = JSON.parse(fs.readFileSync(f, 'utf8'));
     j.version = '$next';
     fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
@@ -37,7 +39,7 @@ node -e "
 "
 
 cd "$ROOT"
-git add package.json src-tauri/tauri.conf.json
+git add package.json src-tauri/tauri.conf.json plugin/.claude-plugin/plugin.json
 git commit -m "chore: bump version to $next"
 git tag "v$next"
 
