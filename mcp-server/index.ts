@@ -4011,6 +4011,23 @@ defineTool(server, {
 });
 
 defineTool(server, {
+  name: "declare_drift",
+  description:
+    "Name where the next work sits relative to the session fence, before working outside it. inside = it is the fence's own work. near = same plot, another intention: capture only (a moment, a Linear issue, a Things to-do, a note under docs/ideas/), then return. far = another plot: waits for a breakpoint (the gardener's next message, going idle, or leaving for another app). away = not work; the coding hook does not gate it. The fence hook reads this call; the tool only acknowledges it. A declaration lasts until the gardener's next message.",
+  schema: {
+    distance: z.enum(["inside", "near", "far", "away"]),
+    reason: z.string().min(1).describe("One line: what the work is and why"),
+    capture: z
+      .boolean()
+      .optional()
+      .describe("True when the call that follows is a capture"),
+  },
+  annotations: { readOnlyHint: true },
+  handler: async ({ distance, reason }) =>
+    ok({ declared: distance, reason, until: "the gardener's next message" }),
+});
+
+defineTool(server, {
   name: "get_fence",
   description:
     "Report what is currently fenced: each standing fence with its crossing tally (from the plugin's fences-state.json, zero when never crossed), the rung the NEXT crossing would land on, and the enforcement reach per surface.",

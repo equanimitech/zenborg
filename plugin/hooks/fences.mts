@@ -34,6 +34,15 @@
  *
  * Fail open, always. A hook that throws must not trap the person whose machine
  * it is running on.
+ *
+ * ── Fences that ask (pitch 2026-09-30) ─────────────────────────────────
+ *
+ * A stream fence asks where the work sits and responds by what the departure
+ * costs (decision 2026-09-30): the agent declares with `declare_drift`, read
+ * here at PreToolUse; near is held to a capture, far waits for a breakpoint,
+ * inside and away pass. The garden, tool loading and the question are always
+ * allowed, and the gardener's `cross: <reason>` (UserPromptSubmit, also here)
+ * opens a pass. The key stays in the house.
  */
 
 import {

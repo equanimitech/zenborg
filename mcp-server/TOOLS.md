@@ -47,7 +47,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 
 ### Write-side (require user authorization)
 
-`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `clear_fence`
+`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `clear_fence` · `declare_drift`
 
 ---
 
@@ -153,7 +153,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `list_phase_configs` | — | 4 rows, sorted by order. |
 | `update_phase_config` | `id, ...fields` | Configs are seeded; update only. |
 
-### Fences (7 tools, unchanged from 0.3.0)
+### Fences (8 tools)
 
 | Tool | Key params | Notes |
 |---|---|---|
@@ -164,6 +164,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `seed_host_blocks` | `returnsTo, unlockNote, hosts` | Batch blocklist. Idempotent. |
 | `clear_fence` | `id` or `all` | Take fences down. `destructiveHint`. |
 | `get_fence` | — | Standing fences with crossing tallies. |
+| `declare_drift` | `distance, reason` | Name a departure from the session fence; the fence hook reads it. Ack only. |
 
 ---
 
