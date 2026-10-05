@@ -4,8 +4,13 @@
 //!
 //! ## Single-writer guard
 //!
-//! Advisory flock on `<log_dir>/.writer.lock`. A second instance exits loudly
-//! rather than doubling every event.
+//! Advisory flocks on `<log_dir>/.scheduler.lock` and `<log_dir>/.writer.lock`.
+//! A second instance exits loudly rather than doubling every event or job run.
+//!
+//! ## Scheduler
+//!
+//! Zenborg jobs live in `<vault>/jobs.json`, read once at startup — see
+//! `scheduler.rs`.
 //!
 //! ## Vault resolution
 //!
@@ -85,11 +90,11 @@ fn vault_root() -> Result<PathBuf> {
     Ok(root)
 }
 
-/// Advisory flock on `<log_dir>/.writer.lock`. Returns the held file handle —
+/// Advisory flock on `<log_dir>/<name>`. Returns the held file handle —
 /// dropping it releases the lock.
-fn acquire_writer_lock(log_dir: &std::path::Path) -> Result<File> {
+fn acquire_lock(log_dir: &std::path::Path, name: &str) -> Result<File> {
     fs::create_dir_all(log_dir)?;
-    let lock_path = log_dir.join(".writer.lock");
+    let lock_path = log_dir.join(name);
     let file = OpenOptions::new()
         .create(true)
         .write(true)
@@ -101,7 +106,7 @@ fn acquire_writer_lock(log_dir: &std::path::Path) -> Result<File> {
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if rc != 0 {
         bail!(
-            "another writer holds the lock at {}. Only one observer may write to the same log directory.",
+            "another process holds the lock at {}. Only one daemon may run per vault.",
             lock_path.display()
         );
     }
@@ -120,21 +125,25 @@ fn main() -> Result<()> {
     let config_json = writer::read_config(&keel_dir);
     let observer_config = config::resolve_observer_config(&config_json);
 
-    if !observer_config.enabled {
-        log::info!("[daemon] observer disabled in config — exiting. Set desktop.backgroundObserver.enabled: true to start.");
-        return Ok(());
-    }
-
     let log_dir = keel_dir.join(&observer_config.log_dir_name);
 
-    let _lock = acquire_writer_lock(&log_dir)
-        .context("single-writer guard failed")?;
-    log::info!("[daemon] writer lock acquired on {}", log_dir.display());
+    // The scheduler runs whether or not the observer does, so it gets its own
+    // single-instance guard: two daemons would run every job twice.
+    let _scheduler_lock = acquire_lock(&log_dir, ".scheduler.lock")
+        .context("single-scheduler guard failed")?;
+    scheduler::bootstrap(&vault);
 
-    let state = Arc::new(state::ObserverState::new(observer_config, keel_dir.clone()));
-
-    sensors::start(Arc::clone(&state));
-    scheduler::bootstrap(&keel_dir);
+    let _writer_lock = if observer_config.enabled {
+        let lock = acquire_lock(&log_dir, ".writer.lock")
+            .context("single-writer guard failed")?;
+        log::info!("[daemon] writer lock acquired on {}", log_dir.display());
+        let state = Arc::new(state::ObserverState::new(observer_config, keel_dir.clone()));
+        sensors::start(Arc::clone(&state));
+        Some(lock)
+    } else {
+        log::info!("[daemon] observer disabled in config — scheduler only. Set desktop.backgroundObserver.enabled: true to observe.");
+        None
+    };
 
     log::info!("[daemon] running. Send SIGTERM to stop.");
 
