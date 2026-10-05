@@ -100,6 +100,10 @@ every morning.
 
 ## 2. The scheduler (step 4)
 
+> **Superseded 2026-10-05** by [`2026-10-05-zenborg-jobs-run-in-the-daemon.md`](2026-10-05-zenborg-jobs-run-in-the-daemon.md):
+> the scheduler runs in `zenborg-daemon`, configured by `<vault>/jobs.json`. The config
+> below is no longer read.
+
 `src-tauri/src/scheduler/` — the two triggers launchd offered, and nothing else. It knows
 nothing about Garmin or Things; a job is data.
 

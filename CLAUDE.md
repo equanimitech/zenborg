@@ -143,6 +143,13 @@ Skills read this file but never write it. The gardener edits it directly — or 
 `/oracle-wizard` skill, which walks through creating a new integration. A missing file
 means "try everything, probe at runtime" — the pre-oracle behaviour.
 
+### Jobs (scheduled commands)
+
+`jobs.json` in the vault root, keyed by job id, is run by `zenborg-daemon` (never the app):
+interval or file-watch triggers, read once at daemon start. The daemon is the only reader;
+the gardener edits it by hand. See
+[`docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md`](docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md).
+
 ## Area sidecar folders
 
 Unstructured, area-scoped content lives beside the JSON, never inside it:

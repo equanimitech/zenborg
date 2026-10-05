@@ -3,7 +3,6 @@ mod login_item;
 mod mcp_install;
 mod native_host_install;
 mod observer;
-mod scheduler;
 mod vault;
 
 use observer::{ObserverConfig, ObserverState};
@@ -116,14 +115,11 @@ pub fn run() {
 
             // ── Background mode ──────────────────────────────────
             //
-            // Migration steps 3 and 4 of "the garden absorbs keel". The
-            // desktop activity writer and the two schedules that were three
-            // launchd agents now belong to this process. Both are off unless
-            // the keel config says otherwise, because `apps/tray` and the
-            // plists are not retired until step 6 and two writers on one
-            // collection would double every event.
+            // Migration step 3 of "the garden absorbs keel": the desktop
+            // activity writer. Scheduled jobs are not run here — the
+            // `zenborg-daemon` owns them (`<vault>/jobs.json`), so they keep
+            // running when the app is quit and never run twice.
             observer::bootstrap(app.handle());
-            scheduler::bootstrap();
 
             if background {
                 // Closing the window stops being quitting. The observer's

@@ -1,7 +1,10 @@
-//! Scheduler runtime — spawns interval and watch jobs.
-//! Pure logic lives in observer_core::config; this module owns the runtime.
+//! Scheduler runtime — runs the zenborg jobs in `<vault>/jobs.json`.
+//!
+//! Pure parsing lives in observer_core::config; this module owns the runtime.
+//! Jobs are read once at startup: edits to jobs.json take effect on the next
+//! daemon restart (`launchctl kickstart -k gui/$(id -u)/tech.equanimi.zenborg.daemon`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -9,10 +12,10 @@ use std::time::{Duration, Instant};
 
 use notify::{Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Watcher};
 
-use observer_core::config::{self, Job, Trigger};
-use observer_core::writer;
+use observer_core::config::{self, Job, Trigger, JOBS_FILE};
 
 fn run(job: &Job) {
+    log::info!("[scheduler] {} started", job.name);
     let started = Instant::now();
     let mut command = Command::new(&job.program);
     command
@@ -33,7 +36,13 @@ fn run(job: &Job) {
             );
         }
         Ok(status) => {
-            log::info!("[scheduler] {} exited with {}", job.name, status);
+            // info, not warn: jobs exit non-zero on purpose when a dependency is down.
+            log::info!(
+                "[scheduler] {} exited with {} after {:?}",
+                job.name,
+                status,
+                started.elapsed()
+            );
         }
         Err(error) => {
             log::warn!("[scheduler] {} could not start: {error}", job.name);
@@ -101,9 +110,11 @@ fn spawn_watch(job: Job, paths: Vec<PathBuf>, debounce: Duration) {
     });
 }
 
-/// Start every enabled job. Returns their names, for the startup log line.
-pub fn bootstrap(keel_dir: &std::path::Path) -> Vec<String> {
-    let jobs = config::parse_jobs(&writer::read_config(keel_dir));
+/// Start every enabled job in `<vault>/jobs.json`. A missing or malformed
+/// file schedules nothing. Returns the job names, for the startup log line.
+pub fn bootstrap(vault: &Path) -> Vec<String> {
+    let path = vault.join(JOBS_FILE);
+    let jobs = config::parse_jobs(&std::fs::read_to_string(&path).unwrap_or_default());
     let names: Vec<String> = jobs.iter().map(|j| j.name.clone()).collect();
 
     for job in jobs {
@@ -117,7 +128,7 @@ pub fn bootstrap(keel_dir: &std::path::Path) -> Vec<String> {
     }
 
     if names.is_empty() {
-        log::info!("[scheduler] no jobs configured");
+        log::info!("[scheduler] no jobs enabled in {}", path.display());
     } else {
         log::info!("[scheduler] started: {}", names.join(", "));
     }

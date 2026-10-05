@@ -121,38 +121,32 @@ pub struct Job {
 const MIN_INTERVAL: Duration = Duration::from_secs(60);
 const DEFAULT_DEBOUNCE: Duration = Duration::from_secs(30);
 
-/// Parse `desktop.scheduler.jobs`.
+/// The zenborg jobs collection, at the vault root.
+pub const JOBS_FILE: &str = "jobs.json";
+
+/// Parse `<vault>/jobs.json` — a JSON object keyed by job id, like every
+/// other vault collection. A job's `name` defaults to its id.
 ///
 /// Pure, and forgiving in exactly one direction: a job that cannot be read is
 /// dropped, never guessed at.
-pub fn parse_jobs(config_json: &str) -> Vec<Job> {
-    let Some(array) = serde_json::from_str::<Value>(config_json)
-        .ok()
-        .and_then(|c| {
-            c.get("desktop")?
-                .get("scheduler")?
-                .get("jobs")?
-                .as_array()
-                .cloned()
-        })
-    else {
+pub fn parse_jobs(jobs_json: &str) -> Vec<Job> {
+    let Some(Value::Object(map)) = serde_json::from_str::<Value>(jobs_json).ok() else {
         return Vec::new();
     };
-
-    let mut jobs = Vec::new();
-    for node in &array {
-        if let Some(job) = parse_job(node) {
-            jobs.push(job);
-        }
-    }
-    jobs
+    map.iter()
+        .filter_map(|(id, node)| parse_job(id, node))
+        .collect()
 }
 
-fn parse_job(node: &Value) -> Option<Job> {
+fn parse_job(id: &str, node: &Value) -> Option<Job> {
     if node.get("enabled").and_then(Value::as_bool) != Some(true) {
         return None;
     }
-    let name = node.get("name").and_then(Value::as_str)?.to_string();
+    let name = node
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(id)
+        .to_string();
     let program = PathBuf::from(node.get("program").and_then(Value::as_str)?);
     if name.is_empty() || program.as_os_str().is_empty() {
         return None;
@@ -314,28 +308,28 @@ mod tests {
     // ── Scheduler tests ──
 
     #[test]
-    fn an_absent_or_broken_config_schedules_nothing() {
-        for input in ["", "{ not json", "{}", r#"{"desktop":{"scheduler":{}}}"#] {
+    fn an_absent_or_broken_jobs_file_schedules_nothing() {
+        for input in ["", "{ not json", "{}", "[]", r#"{"desktop":{"scheduler":{"jobs":[]}}}"#] {
             assert!(parse_jobs(input).is_empty(), "input {input:?}");
         }
     }
 
     #[test]
     fn a_job_has_to_say_enabled_out_loud() {
-        let json = r#"{"desktop":{"scheduler":{"jobs":[
-            {"name":"garmin","program":"/x","trigger":{"kind":"interval","seconds":3600}}
-        ]}}}"#;
+        let json = r#"{"garmin":
+            {"program":"/x","trigger":{"kind":"interval","seconds":3600}}
+        }"#;
         assert!(parse_jobs(json).is_empty());
     }
 
     #[test]
-    fn the_garmin_plist_translates_to_one_interval_job() {
-        let json = r#"{"desktop":{"scheduler":{"jobs":[{
-            "name":"garmin","enabled":true,
+    fn an_interval_job_is_keyed_by_id_and_named_after_it() {
+        let json = r#"{"garmin":{
+            "enabled":true,
             "program":"/repo/integrations/garmin/garmin_sync.py",
             "env":{"PATH":"/opt/homebrew/bin:/usr/bin:/bin"},
             "trigger":{"kind":"interval","seconds":3600,"runAtLoad":true}
-        }]}}}"#;
+        }}"#;
         let jobs = parse_jobs(json);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].name, "garmin");
@@ -346,26 +340,29 @@ mod tests {
                 run_at_load: true
             }
         );
+        assert_eq!(
+            jobs[0].env.get("PATH").map(String::as_str),
+            Some("/opt/homebrew/bin:/usr/bin:/bin")
+        );
     }
 
     #[test]
-    fn the_classify_plist_translates_to_one_watch_job() {
-        let json = r#"{"desktop":{"scheduler":{"jobs":[{
-            "name":"classify","enabled":true,
-            "program":"/Users/x/Library/pnpm/node",
-            "args":["/repo/apps/agent/keel-classify.mjs"],
-            "trigger":{"kind":"watch","paths":["/db/main.sqlite","/db/main.sqlite-wal"],"debounceSeconds":10}
-        }]}}}"#;
+    fn a_watch_job_carries_its_args_paths_and_debounce() {
+        let json = r#"{"voicememos":{
+            "id":"voicememos","name":"Voice memos","enabled":true,
+            "program":"/Users/x/.local/bin/murmur",
+            "args":["sync"],
+            "trigger":{"kind":"watch","paths":["/db/Cloud.db","/db/Cloud.db-wal"],"debounceSeconds":300}
+        }}"#;
         let jobs = parse_jobs(json);
         assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].name, "Voice memos");
+        assert_eq!(jobs[0].args, vec!["sync"]);
         assert_eq!(
             jobs[0].trigger,
             Trigger::Watch {
-                paths: vec![
-                    PathBuf::from("/db/main.sqlite"),
-                    PathBuf::from("/db/main.sqlite-wal")
-                ],
-                debounce: Duration::from_secs(10),
+                paths: vec![PathBuf::from("/db/Cloud.db"), PathBuf::from("/db/Cloud.db-wal")],
+                debounce: Duration::from_secs(300),
             }
         );
     }
@@ -382,10 +379,10 @@ mod tests {
 
     #[test]
     fn a_reckless_interval_is_floored_rather_than_honoured() {
-        let json = r#"{"desktop":{"scheduler":{"jobs":[{
-            "name":"busy","enabled":true,"program":"/x",
+        let json = r#"{"busy":{
+            "enabled":true,"program":"/x",
             "trigger":{"kind":"interval","seconds":1}
-        }]}}}"#;
+        }}"#;
         assert_eq!(
             parse_jobs(json)[0].trigger,
             Trigger::Interval {
@@ -397,12 +394,13 @@ mod tests {
 
     #[test]
     fn an_unreadable_job_is_dropped_and_its_siblings_still_run() {
-        let json = r#"{"desktop":{"scheduler":{"jobs":[
-            {"name":"nameless","enabled":true,"trigger":{"kind":"interval","seconds":3600}},
-            {"name":"unknown","enabled":true,"program":"/x","trigger":{"kind":"cron","expr":"* * * * *"}},
-            {"name":"pathless-watch","enabled":true,"program":"/x","trigger":{"kind":"watch","paths":[]}},
-            {"name":"good","enabled":true,"program":"/x","trigger":{"kind":"interval","seconds":3600}}
-        ]}}}"#;
+        let json = r#"{
+            "programless":{"enabled":true,"trigger":{"kind":"interval","seconds":3600}},
+            "unknown":{"enabled":true,"program":"/x","trigger":{"kind":"cron","expr":"* * * * *"}},
+            "pathless-watch":{"enabled":true,"program":"/x","trigger":{"kind":"watch","paths":[]}},
+            "not-an-object":"oops",
+            "good":{"enabled":true,"program":"/x","trigger":{"kind":"interval","seconds":3600}}
+        }"#;
         let jobs = parse_jobs(json);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].name, "good");
