@@ -232,6 +232,62 @@ pub fn watch_roots(paths: &[PathBuf]) -> Vec<PathBuf> {
     roots
 }
 
+/// Expand a leading `~` and every `$HOME` / `${HOME}` against `home`.
+/// Nothing else is templated: `$HOMEBREW` and `~user` stay as written.
+pub fn expand_home(raw: &str, home: &str) -> String {
+    let s = match raw.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{home}{rest}"),
+        _ => raw.to_string(),
+    };
+    let s = s.replace("${HOME}", home);
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s.as_str();
+    while let Some(i) = rest.find("$HOME") {
+        let after = &rest[i + 5..];
+        let ident = after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+        out.push_str(&rest[..i]);
+        out.push_str(if ident { "$HOME" } else { home });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// launchd hands the daemon a bare PATH; a job that sets none gets this one.
+pub fn default_job_path(home: &str) -> String {
+    format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+}
+
+/// Make a parsed job runnable on this machine: expand `~`/`$HOME` in its
+/// program, args, env values and watch paths, and give it the default PATH
+/// when it sets none. Pure — the caller supplies `home`.
+pub fn localize_job(job: Job, home: &str) -> Job {
+    let path = |p: &PathBuf| PathBuf::from(expand_home(&p.to_string_lossy(), home));
+    let mut env: HashMap<String, String> = job
+        .env
+        .iter()
+        .map(|(k, v)| (k.clone(), expand_home(v, home)))
+        .collect();
+    env.entry("PATH".into())
+        .or_insert_with(|| default_job_path(home));
+    Job {
+        program: path(&job.program),
+        args: job.args.iter().map(|a| expand_home(a, home)).collect(),
+        env,
+        trigger: match job.trigger {
+            Trigger::Watch { paths, debounce } => Trigger::Watch {
+                paths: paths.iter().map(path).collect(),
+                debounce,
+            },
+            interval => interval,
+        },
+        name: job.name,
+    }
+}
+
 /// What the UI (or the MCP surface, later) can see about the observer.
 #[derive(Debug, Clone, Serialize)]
 pub struct ObserverStatus {
@@ -404,5 +460,52 @@ mod tests {
         let jobs = parse_jobs(json);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].name, "good");
+    }
+
+    #[test]
+    fn home_expands_in_its_three_spellings_and_nowhere_else() {
+        let h = "/Users/x";
+        assert_eq!(expand_home("~", h), "/Users/x");
+        assert_eq!(expand_home("~/.local/bin/murmur", h), "/Users/x/.local/bin/murmur");
+        assert_eq!(expand_home("$HOME/a:${HOME}/b", h), "/Users/x/a:/Users/x/b");
+        assert_eq!(expand_home("--out=$HOME", h), "--out=/Users/x");
+        assert_eq!(expand_home("~bob/x", h), "~bob/x");
+        assert_eq!(expand_home("a~/b", h), "a~/b");
+        assert_eq!(expand_home("$HOMEBREW/bin", h), "$HOMEBREW/bin");
+        assert_eq!(expand_home("$PATH", h), "$PATH");
+        assert_eq!(expand_home("sync", h), "sync");
+    }
+
+    #[test]
+    fn a_localized_job_is_portable_and_gets_a_path_when_it_sets_none() {
+        let json = r#"{"memos":{
+            "enabled":true,"program":"murmur","args":["sync","--dir=~/x","$HOME/y"],
+            "env":{"DB":"${HOME}/db"},
+            "trigger":{"kind":"watch","paths":["~/Library/a.db"]}
+        }}"#;
+        let job = localize_job(parse_jobs(json).remove(0), "/Users/x");
+        assert_eq!(job.program, PathBuf::from("murmur"));
+        assert_eq!(job.args, vec!["sync", "--dir=~/x", "/Users/x/y"]);
+        assert_eq!(job.env["DB"], "/Users/x/db");
+        assert_eq!(job.env["PATH"], default_job_path("/Users/x"));
+        assert!(job.env["PATH"].starts_with("/Users/x/.local/bin:/opt/homebrew/bin:"));
+        assert_eq!(
+            job.trigger,
+            Trigger::Watch {
+                paths: vec![PathBuf::from("/Users/x/Library/a.db")],
+                debounce: DEFAULT_DEBOUNCE,
+            }
+        );
+    }
+
+    #[test]
+    fn a_job_that_sets_its_own_path_keeps_it_expanded() {
+        let json = r#"{"g":{
+            "enabled":true,"program":"~/bin/g","env":{"PATH":"~/bin:/usr/bin"},
+            "trigger":{"kind":"interval","seconds":3600}
+        }}"#;
+        let job = localize_job(parse_jobs(json).remove(0), "/Users/x");
+        assert_eq!(job.program, PathBuf::from("/Users/x/bin/g"));
+        assert_eq!(job.env["PATH"], "/Users/x/bin:/usr/bin");
     }
 }
