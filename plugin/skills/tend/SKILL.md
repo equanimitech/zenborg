@@ -116,3 +116,4 @@ The search tools rank matches: exact > prefix > substring > levenshtein (distanc
 - **Multiple moments for the same (day, phase):** plant them all. The cap is a display concern, not a data invariant. Report `dayViewOverflow` if past 3 so the user is aware.
 - **Past or future dates:** honor "yesterday I ran" or "Friday I have dinner with Bea". Derive the date, confirm it.
 - **No area for standalone moment:** ask which area before planting.
+- **Craft in Morning:** Morning holds wellness and what recharges. When a candidate lands in MORNING and its area is tagged `craft` rather than `wellness` (tags via `list_areas`), add a gentle line under Proposals: "Morning holds what recharges. Plant this in Afternoon instead?" Plant wherever the gardener chooses.

@@ -66,6 +66,7 @@ From the wilting habits, cycle health, and sleep:
 - List 3-5 habits that are wilting or approaching their rhythm threshold
 - Note the cycle's elapsed/remaining days
 - If `list_people_to_reach` returns overdue contacts, mention the top 2-3
+- Morning holds wellness and what recharges. If a moment already planted in Morning belongs to a `craft`-tagged area (check tags via `list_areas`), note it once and ask whether it would sit better in another phase. The gardener decides; never move it yourself.
 
 Keep observations neutral. "Reading has been quiet for 5 days" not "you should read more."
 
