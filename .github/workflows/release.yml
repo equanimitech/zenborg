@@ -138,6 +138,32 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: '--target aarch64-apple-darwin'
 
+      # tauri-action notarizes and staples the .app, not the .dmg around it, so a
+      # downloaded dmg fails Gatekeeper ("Unnotarized Developer ID"). Notarize the
+      # dmg, staple it, and replace the asset tauri-action uploaded. Updater
+      # artifacts (.app.tar.gz, .sig, latest.json) are left alone.
+      - name: Notarize and staple the dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          dmgs=(src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] && [ -f "${dmgs[0]}" ] || { echo "expected one dmg, got: ${dmgs[*]}"; exit 1; }
+          dmg="${dmgs[0]}"
+          # Tauri signs the dmg with the Developer ID identity. The signing
+          # keychain is gone after tauri-action, so fail rather than ship unsigned.
+          codesign --verify --strict "$dmg"
+          sig="$(codesign -dvv "$dmg" 2>&1)"
+          grep -q '^Authority=Developer ID Application' <<<"$sig" || { echo "dmg is not Developer ID signed:"; echo "$sig"; exit 1; }
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          tag="v$(node -p "require('./package.json').version")"
+          gh release upload "$tag" "$dmg" --clobber
+
   publish-release:
     permissions:
       contents: write
