@@ -27,12 +27,15 @@ daemon is always a release binary, so there is no `-dev` vault for it.
     "id": "voicememos",
     "name": "voicememos",          // optional; defaults to the key
     "enabled": true,               // must be literally true
-    "program": "/Users/rafa/.local/bin/murmur",   // absolute — launchd's PATH is bare
+    "program": "murmur",           // bare name: resolved on the job's PATH
     "args": ["sync"],
-    "env": { "PATH": "/opt/homebrew/bin:/Users/rafa/.local/bin:/usr/bin:/bin" },
+    "env": {},                     // no PATH here → the default PATH below
     "trigger": {
       "kind": "watch",             // or "interval"
-      "paths": ["…/CloudRecordings.db", "…/CloudRecordings.db-wal"],
+      "paths": [
+        "~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/CloudRecordings.db",
+        "~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings/CloudRecordings.db-wal"
+      ],
       "debounceSeconds": 300       // default 30
     }
   }
@@ -40,6 +43,14 @@ daemon is always a release binary, so there is no `-dev` vault for it.
 ```
 
 Interval trigger: `{ "kind": "interval", "seconds": 3600, "runAtLoad": true }`.
+
+**Portable paths.** A leading `~` and `$HOME` / `${HOME}` expand to the daemon's home in
+`program`, each `args` item, each `env` value and each watch path, so one jobs.json works on
+any Mac. Nothing else is templated (`observer_core::config::localize_job`).
+
+**Default PATH.** launchd gives the daemon a bare PATH. A job whose `env` sets no `PATH`
+runs with `~/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin`, and
+a bare `program` name is looked up on it. Set `env.PATH` to replace it, not extend it.
 
 Unchanged from the app scheduler: 60 s interval floor; a watch subscribes to the containing
 directory (SQLite replaces `-wal`) and fires once a burst has been quiet for

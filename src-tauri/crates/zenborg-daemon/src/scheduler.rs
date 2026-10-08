@@ -114,7 +114,12 @@ fn spawn_watch(job: Job, paths: Vec<PathBuf>, debounce: Duration) {
 /// file schedules nothing. Returns the job names, for the startup log line.
 pub fn bootstrap(vault: &Path) -> Vec<String> {
     let path = vault.join(JOBS_FILE);
-    let jobs = config::parse_jobs(&std::fs::read_to_string(&path).unwrap_or_default());
+    let home = dirs::home_dir().unwrap_or_default();
+    let home = home.to_string_lossy();
+    let jobs: Vec<Job> = config::parse_jobs(&std::fs::read_to_string(&path).unwrap_or_default())
+        .into_iter()
+        .map(|job| config::localize_job(job, &home))
+        .collect();
     let names: Vec<String> = jobs.iter().map(|j| j.name.clone()).collect();
 
     for job in jobs {

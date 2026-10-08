@@ -130,27 +130,10 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          #
-          # NOTARIZATION TEMPORARILY DISABLED (2026-08-21).
-          #
-          # Apple returns 403 "A required agreement is missing or has expired"
-          # until the Developer Program License Agreement is re-accepted by the
-          # Account Holder at developer.apple.com/account.
-          # That needs an SMS 2FA code unavailable while travelling.
-          #
-          # Tauri only notarizes when APPLE_ID, APPLE_PASSWORD and APPLE_TEAM_ID
-          # are all present, so commenting them out keeps Developer ID signing
-          # (cert valid to 2027-02-01) and skips the notary call entirely.
-          #
-          # RESTORE AFTER 2026-09-08: accept the agreement, uncomment the three
-          # lines below, re-tag. Unnotarized builds are fine on our own machines
-          # (the updater replaces the bundle in place and never sets
-          # com.apple.quarantine), but a fresh download on someone else's Mac
-          # hits the Gatekeeper wall until this is back on.
-          #
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Notarize: Tauri notarizes only when all three are set (needs the Apple DPLA accepted).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: '--target aarch64-apple-darwin'
