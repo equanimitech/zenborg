@@ -22,6 +22,7 @@ import {
   habits$,
   moments$,
   phaseConfigs$,
+  storeHydrated$,
 } from "@/infrastructure/state/store";
 import {
   canReadActivity,
@@ -37,6 +38,9 @@ import { WeekReadbackView } from "./WeekReadbackView";
  * model. The log is only read while this scale is on screen.
  */
 export function HarvestWeek() {
+  // The store fills in place at boot; depending on `hydrated` is what
+  // recomputes the readback once it lands (same as CultivateWeekView).
+  const hydrated = useValue(storeHydrated$);
   const areas = useValue(areas$);
   const habits = useValue(habits$);
   const moments = useValue(moments$);
@@ -98,6 +102,7 @@ export function HarvestWeek() {
         week.to,
       ),
     [
+      hydrated,
       events,
       habitMap,
       moments,
@@ -119,13 +124,15 @@ export function HarvestWeek() {
           { name: a.name, color: a.color, order: a.order },
         ]),
       ),
-    [areas],
+    [hydrated, areas],
   );
 
   const isThisWeek = week.from === thisWeek.from;
   // Sunday's waking day ends at Monday 04:00, so its end names the next Monday.
   const nextWeek = () =>
     setWeek(weekOf(localDate(wakingDayWindow(week.to).to)));
+
+  if (!hydrated) return null;
 
   return (
     <WeekReadbackView

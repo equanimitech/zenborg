@@ -213,12 +213,17 @@ export function WeekReadbackView({
                 <th className={`pb-2 text-right font-normal ${label}`}>
                   Last week
                 </th>
-                <th className={`pb-2 pl-6 text-right font-normal ${label}`}>
-                  Footprints
-                </th>
-                <th className={`pb-2 text-right font-normal ${label}`}>
-                  Last week
-                </th>
+                {/* Unseen is not zero: without the log, no footprint column at all. */}
+                {logReadable && (
+                  <>
+                    <th className={`pb-2 pl-6 text-right font-normal ${label}`}>
+                      Footprints
+                    </th>
+                    <th className={`pb-2 text-right font-normal ${label}`}>
+                      Last week
+                    </th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -232,12 +237,16 @@ export function WeekReadbackView({
                   </td>
                   <td className={`py-2 ${number} ${ink}`}>{r.planted}</td>
                   <td className={`py-2 ${number} ${faint}`}>{r.plantedLast}</td>
-                  <td className={`py-2 pl-6 ${number} ${ink}`}>
-                    {formatMinutes(r.minutes)}
-                  </td>
-                  <td className={`py-2 ${number} ${faint}`}>
-                    {formatMinutes(r.minutesLast)}
-                  </td>
+                  {logReadable && (
+                    <>
+                      <td className={`py-2 pl-6 ${number} ${ink}`}>
+                        {formatMinutes(r.minutes)}
+                      </td>
+                      <td className={`py-2 ${number} ${faint}`}>
+                        {formatMinutes(r.minutesLast)}
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

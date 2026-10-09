@@ -4,12 +4,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import React from "react";
+import { storeHydrated$ } from "@/infrastructure/state/store";
 import HarvestPage from "../page";
 
 globalThis.React = React;
 
 describe("Harvest", () => {
   it("opens on the week and zooms out to the season", () => {
+    storeHydrated$.set(true);
     render(<HarvestPage />);
     expect(
       screen.getByRole("heading", { name: "The week" }),

@@ -144,5 +144,8 @@ describe("WeekReadbackView", () => {
   it("says the log is unreadable in the web build instead of showing an empty week", () => {
     renderView(false);
     expect(screen.getByText(/desktop app's activity log/)).toBeInTheDocument();
+    // Unseen is not zero: no footprint minutes render at all.
+    expect(screen.queryByText("Footprints")).toBeNull();
+    expect(screen.queryByText(/^\d+ (h|m)$|^\d+ h \d+ m$/)).toBeNull();
   });
 });
