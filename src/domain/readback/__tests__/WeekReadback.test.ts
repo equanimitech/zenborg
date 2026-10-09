@@ -350,6 +350,41 @@ describe("weekReadback", () => {
     ]);
   });
 
+  it("reports the minutes credited through idle, inside the area's total", () => {
+    const base = fixture();
+    // Tuesday evening: a film in Stremio behind the terminal, no input for 2 h.
+    const film = [
+      ev("desktop", "app_switched", at("2026-10-06", 20, 0), {
+        app_name: "Ghostty",
+      }),
+      ev("desktop", "wake_held_start", at("2026-10-06", 20, 0), {
+        app_name: "Stremio",
+        assertion: "Video Wake Lock",
+      }),
+      ev("desktop", "idle_start", at("2026-10-06", 20, 5), {
+        thresholdMs: 120_000,
+      }),
+      ev("desktop", "idle_end", at("2026-10-06", 22, 5)),
+      ev("desktop", "wake_held_end", at("2026-10-06", 22, 6), {
+        app_name: "Stremio",
+        assertion: "Video Wake Lock",
+      }),
+    ];
+    const screen = weekReadback(
+      { ...base, events: [...base.events, ...film] },
+      WEEK.from,
+      WEEK.to,
+    ).footprints.find((f) => f.surface === "screen");
+    if (screen?.status !== "drawn") throw new Error("screen not drawn");
+    expect(screen.thisWeek.byArea[0]).toEqual({
+      areaId: "ent",
+      areaName: "Entertainment",
+      minutes: 180, // 60 as before + the 120-min film
+    });
+    expect(screen.thisWeek.coverage.idleCreditedMin).toBe(120);
+    expect(screen.lastWeek.coverage.idleCreditedMin).toBe(0);
+  });
+
   it("reads work from agent prompts and body from mapped workouts", () => {
     const r = read();
     const work = r.footprints.find((f) => f.surface === "work");
