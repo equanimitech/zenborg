@@ -21,6 +21,8 @@ const SURFACES: readonly ActivitySurface[] = [
   "desktop",
   "browser",
   "garmin",
+  "git",
+  "linear",
 ];
 
 /**

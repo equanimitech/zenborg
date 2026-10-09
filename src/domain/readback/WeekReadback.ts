@@ -51,7 +51,7 @@ export const READING_SOURCES: Readonly<
 > = {
   body: ["garmin"],
   screen: ["desktop", "browser"],
-  work: ["agent"],
+  work: ["agent", "git", "linear"],
   journal: [],
   comms: [],
 };
@@ -78,6 +78,36 @@ const CAP_MS: Readonly<Partial<Record<ActivitySurface, number>>> = {
 
 const UNMAPPED_SHOWN = 10;
 
+/**
+ * Springs whose lines are day tallies or timestamps, not spans. They are
+ * counted, never turned into minutes, and never set against anything.
+ */
+export type CountedSource = "git" | "linear";
+
+export const COUNT_UNITS: Readonly<Record<CountedSource, string>> = {
+  git: "commits",
+  linear: "issues moved",
+};
+
+/** One counted spring over a window. No line in the window reads "not drawn", not zero. */
+export type CountReading =
+  | {
+      readonly source: CountedSource;
+      readonly unit: string;
+      readonly status: "not drawn";
+    }
+  | {
+      readonly source: CountedSource;
+      readonly unit: string;
+      readonly status: "drawn";
+      readonly total: number;
+      readonly byArea: readonly {
+        areaId: string;
+        areaName: string;
+        count: number;
+      }[];
+    };
+
 /** How much of the window a surface could see. Plain counts, never a share. */
 export interface Coverage {
   /**
@@ -101,6 +131,8 @@ export interface Footprint {
   /** The largest unmapped locators (app, host, cwd, activity type). The full total is `coverage.unmappedMin`. */
   readonly unmapped: readonly { locator: string; minutes: number }[];
   readonly coverage: Coverage;
+  /** Counted springs on this surface (work: commits, issues moved). Counts, never minutes. */
+  readonly counts?: readonly CountReading[];
 }
 
 export type SurfaceReading =
@@ -257,10 +289,11 @@ interface Located {
 interface Reading {
   readonly rows: readonly Located[];
   readonly observed: readonly Interval[];
+  readonly counts?: readonly CountReading[];
 }
 
 function footprintOf(
-  { rows, observed }: Reading,
+  { rows, observed, counts }: Reading,
   areaName: (id: string) => string,
 ): Footprint {
   const byArea = new Map<string, number>();
@@ -291,6 +324,7 @@ function footprintOf(
         [...unmapped.values()].reduce((sum, ms) => sum + ms, 0),
       ),
     },
+    ...(counts ? { counts } : {}),
   };
 }
 
@@ -302,6 +336,7 @@ interface ReadContext {
   readonly from: number;
   readonly to: number;
   readonly habitArea: (habitId: string) => string | undefined;
+  readonly areaName: (areaId: string) => string;
   readonly garminHabitMap?: GarminHabitMap;
 }
 
@@ -351,6 +386,61 @@ function readScreen(ctx: ReadContext): Reading {
   };
 }
 
+/**
+ * What one event adds to its spring's count, and under which key. Commits
+ * sum; an issue counts once however many times it moved.
+ */
+const COUNT_KEY: Readonly<
+  Record<CountedSource, (e: ActivityEvent) => { key: string; n: number }>
+> = {
+  git: (e) => ({
+    key: e.id,
+    n: typeof e.payload.commits === "number" ? e.payload.commits : 0,
+  }),
+  linear: (e) => ({ key: String(e.payload.issue), n: 1 }),
+};
+
+function countOf(
+  { events, resolve, areaName }: ReadContext,
+  source: CountedSource,
+): CountReading {
+  const unit = COUNT_UNITS[source];
+  const mine = events.filter((e) => e.surface === source);
+  if (mine.length === 0) return { source, unit, status: "not drawn" };
+  const all = new Map<string, number>();
+  const perArea = new Map<string, Map<string, number>>();
+  for (const e of mine) {
+    const { key, n } = COUNT_KEY[source](e);
+    all.set(key, n);
+    const areaId = resolve(e);
+    if (areaId === undefined) continue;
+    const keys = perArea.get(areaId) ?? new Map<string, number>();
+    keys.set(key, n);
+    perArea.set(areaId, keys);
+  }
+  const sum = (m: Map<string, number>) =>
+    [...m.values()].reduce((a, b) => a + b, 0);
+  return {
+    source,
+    unit,
+    status: "drawn",
+    total: sum(all),
+    byArea: [...perArea.entries()]
+      .map(([areaId, keys]) => ({
+        areaId,
+        areaName: areaName(areaId),
+        count: sum(keys),
+      }))
+      .filter((a) => a.count > 0)
+      .sort((a, b) => b.count - a.count),
+  };
+}
+
+/**
+ * Agent prompts as minutes; git and Linear as counts beside them. A commit
+ * tally or a state change has no span, so it never becomes minutes and never
+ * counts as seen time.
+ */
 function readWork(ctx: ReadContext): Reading {
   const agent = spansOf(ctx, "agent");
   return {
@@ -360,6 +450,7 @@ function readWork(ctx: ReadContext): Reading {
       ms: unionMs(r.spans),
     })),
     observed: agent.flatMap((r) => r.spans),
+    counts: [countOf(ctx, "git"), countOf(ctx, "linear")],
   };
 }
 
@@ -497,6 +588,7 @@ export function weekReadback(
           from: fromMs,
           to: toMs,
           habitArea,
+          areaName,
           ...(input.garminHabitMap
             ? { garminHabitMap: input.garminHabitMap }
             : {}),

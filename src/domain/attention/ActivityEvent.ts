@@ -11,8 +11,17 @@ import type { Duration, Instant } from "./ids";
  * Contract: `keel/packages/domain/docs/event-taxonomy.md`.
  */
 
-/** The surface that observed the event. */
-export type ActivitySurface = "agent" | "desktop" | "browser" | "garmin";
+/**
+ * The surface that observed the event. `git` and `linear` are springs whose
+ * lines are day tallies and timestamps, never spans: read them as counts.
+ */
+export type ActivitySurface =
+  | "agent"
+  | "desktop"
+  | "browser"
+  | "garmin"
+  | "git"
+  | "linear";
 
 /**
  * Kinds are an open set. They accrete per surface and are never centrally

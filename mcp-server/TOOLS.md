@@ -170,7 +170,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 
 | Tool | Key params | Notes |
 |---|---|---|
-| `get_footprints` | `day?` or `from?, to?` | The week read back (Monday → Sunday, days roll at 04:00): board per day/phase, planted per area (this week + last), footprints per surface by area in minutes with coverage `{ seenHours, idleCreditedMin, unmappedMin }`, wilting habits. Journal and comms read `"not drawn"`. No ratios. Replaced `get_attention` and `get_day_trace`. |
+| `get_footprints` | `day?` or `from?, to?` | The week read back (Monday → Sunday, days roll at 04:00): board per day/phase, planted per area (this week + last), footprints per surface by area in minutes with coverage `{ seenHours, idleCreditedMin, unmappedMin }`, wilting habits. Work also carries `counts`: commits (git) and issues moved (Linear), never minutes. Journal and comms, and a counted spring with no line, read `"not drawn"`. No ratios. Replaced `get_attention` and `get_day_trace`. |
 | `get_body` | `day?` or `from?, to?` | Garmin nights and workouts. |
 | `get_area_map` | — | Path, host and app rules that resolve footprints to areas. |
 | `map_area` | `kind, key, area` | Add or remove one rule. `area: null` removes. |

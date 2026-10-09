@@ -377,6 +377,80 @@ describe("weekReadback", () => {
     });
   });
 
+  it("draws git and Linear on work as counts beside the minutes, never as minutes", () => {
+    const base = fixture();
+    const git = (day: string, cwd: string, commits: number) =>
+      ev(
+        "git",
+        "commits_counted",
+        at(day, 4),
+        { repo: cwd.split("/").pop(), cwd, commits },
+        { id: `git:${day}:${cwd}` },
+      );
+    const moved = (issue: string, ts: number, from: string, to: string) =>
+      ev("linear", "issue_moved", ts, { issue, from, to });
+    const r = weekReadback(
+      {
+        ...base,
+        events: [
+          ...base.events,
+          git("2026-10-05", "/code/themia/leggia", 2),
+          git("2026-10-07", "/code/themia/minerva", 3),
+          git("2026-10-07", "/code/elsewhere/tool", 1),
+          moved("ABC-1", at("2026-10-06", 9), "Todo", "In Progress"),
+          moved("ABC-1", at("2026-10-08", 17), "In Progress", "In Review"),
+          moved("ABC-2", at("2026-10-09", 11), "Backlog", "Todo"),
+        ],
+      },
+      WEEK.from,
+      WEEK.to,
+    );
+    const work = r.footprints.find((f) => f.surface === "work");
+    if (work?.status !== "drawn") throw new Error("work not drawn");
+    expect(work.thisWeek.counts).toEqual([
+      {
+        source: "git",
+        unit: "commits",
+        status: "drawn",
+        total: 6,
+        byArea: [{ areaId: "themia", areaName: "Themia", count: 5 }],
+      },
+      // An issue that moved twice is one issue moved. Ids carry no area.
+      {
+        source: "linear",
+        unit: "issues moved",
+        status: "drawn",
+        total: 2,
+        byArea: [],
+      },
+    ]);
+    // The minutes and the seen time are the agent's alone.
+    const plain = read().footprints.find((f) => f.surface === "work");
+    if (plain?.status !== "drawn") throw new Error("work not drawn");
+    expect(work.thisWeek.byArea).toEqual(plain.thisWeek.byArea);
+    expect(work.thisWeek.coverage).toEqual(plain.thisWeek.coverage);
+    // Last week had no line from either spring.
+    expect(work.lastWeek.counts?.map((c) => c.status)).toEqual([
+      "not drawn",
+      "not drawn",
+    ]);
+  });
+
+  it("reads a counted spring with no line as not drawn, not zero", () => {
+    const work = read().footprints.find((f) => f.surface === "work");
+    if (work?.status !== "drawn") throw new Error("work not drawn");
+    expect(work.thisWeek.counts).toEqual([
+      { source: "git", unit: "commits", status: "not drawn" },
+      { source: "linear", unit: "issues moved", status: "not drawn" },
+    ]);
+    // Surfaces without a spring still read "not drawn" as a whole.
+    expect(
+      read()
+        .footprints.filter((f) => f.status === "not drawn")
+        .map((f) => f.surface),
+    ).toEqual(["journal", "comms"]);
+  });
+
   it("lists habits wilting at the window's close", () => {
     expect(read().wilting).toEqual([
       { habitId: "sit", name: "Sit", areaId: "wellness", areaName: "Wellness" },

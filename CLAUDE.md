@@ -102,7 +102,10 @@ and puts coverage on every total.
 `oracles.json` (how to reach a system) and `integrations.json` (source → area/habit
 bindings, `src/domain/integration/IntegrationBinding.ts`, read only by the Garmin report
 script). Garmin already follows the target shape: a scheduled job writes
-`log/*.garmin.jsonl` and `get_body` reads it.
+`log/*.garmin.jsonl` and `get_body` reads it. So do git and Linear
+(`zenborg-mcp spring git|linear`, `mcp-server/springs.ts`): they write
+`log/*.git.jsonl` (repo + commit count) and `log/*.linear.jsonl` (issue id + state
+change), and the readback's work surface counts them, never as minutes.
 
 `oracles.json` in the vault root declares the external systems the garden talks to.
 It lives at `~/.zenborg/oracles.json` regardless of debug/release — oracles are about

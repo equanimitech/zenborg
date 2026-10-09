@@ -1,0 +1,59 @@
+{
+  "data": {
+    "viewer": {
+      "assignedIssues": {
+        "pageInfo": { "hasNextPage": false, "endCursor": "cursor-1" },
+        "nodes": [
+          {
+            "identifier": "ABC-101",
+            "title": "A title that must never reach the log",
+            "description": "A body that must never reach the log",
+            "history": {
+              "nodes": [
+                {
+                  "createdAt": "2026-10-08T09:15:00.000Z",
+                  "fromState": { "name": "In Progress" },
+                  "toState": { "name": "In Review" }
+                },
+                {
+                  "createdAt": "2026-10-07T16:40:00.000Z",
+                  "fromState": { "name": "Todo" },
+                  "toState": { "name": "In Progress" }
+                },
+                {
+                  "createdAt": "2026-10-07T16:41:00.000Z",
+                  "fromState": null,
+                  "toState": null
+                }
+              ]
+            }
+          },
+          {
+            "identifier": "ABC-102",
+            "history": {
+              "nodes": [
+                {
+                  "createdAt": "2026-10-08T11:00:00.000Z",
+                  "fromState": null,
+                  "toState": { "name": "Backlog" }
+                }
+              ]
+            }
+          },
+          {
+            "title": "No identifier: dropped",
+            "history": {
+              "nodes": [
+                {
+                  "createdAt": "2026-10-08T11:00:00.000Z",
+                  "fromState": { "name": "Todo" },
+                  "toState": { "name": "Done" }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
