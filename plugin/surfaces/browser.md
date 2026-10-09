@@ -1,38 +1,47 @@
 # Browser
 
-What the gardener does in the browser — sites visited, focus patterns, fence enforcement.
+The browser half of the **screen** surface (`plugin/surfaces/screen.md`):
+which site had the tab, for how long, and which video played. Also where
+fences act on sites.
 
 ## Sources
 
 | Source | Type | Probe method |
 |--------|------|-------------|
-| zenborg browser gate | app internal | `mcp__zenborg__get_fence`, `mcp__zenborg__get_boundaries` |
-| zenborg browser transform | app internal | `mcp__zenborg__set_browser_transform` (write — probe reads fence state only) |
-| screen time (macOS) | CLI | `defaults read` or third-party tool (not yet wired as oracle) |
+| zenborg browser extension (sensor) | local log | `mcp__zenborg__get_footprints` → `screen`; raw: `~/.zenborg/log/<day>.browser.jsonl` |
+| zenborg fences on hosts | app internal | `mcp__zenborg__get_fence`, `mcp__zenborg__get_boundaries` |
 
 ## Key fields
 
-### Browser gate (`get_fence`, `get_boundaries`)
+### Dwell (written for every domain)
 
-- `fenceId` — which fence is active
-- `blockedDomains` — what's blocked right now
-- `allowedDomains` — what's permitted
-- `activeRule` — which intervention rule triggered the fence
-- `boundaries` — the full set of configured fences with activation conditions
+- `tab_activated { domain, tab }` opens a span; `focus_end`, `idle_start` or
+  the next `tab_activated` closes it. Duration is tracked: minutes per domain
+  come back through `get_footprints` (capped at 120 min per span).
+- `focus_start`, `navigation_committed`, `tab_opened`, `tab_closed`,
+  `idle_end` — context, not boundaries.
 
-### Screen time (future — no oracle wired yet)
+### Senses (observe-tier domains only)
 
-- App name, domain, foreground duration per session
-- Category (social, productivity, entertainment)
-- Daily totals by category
+- `video_started` / `video_resumed` / `video_paused` / `video_ended`
+  `{ domain, tab, seconds }` — playback counts as attention on its domain
+  whether or not the window has focus. A screen lock closes it; plain idle
+  does not.
+- `post_seen`, `game_finished` — feed and game senses where an adapter exists.
+
+### Fences (`get_fence`, `get_boundaries`)
+
+- Standing host blocks, browser gates and transforms, with crossing tallies.
 
 ## Noise (skip on probe)
 
-- Internal IPC details between the browser extension and Tauri
-- Extension version metadata
+- URLs, titles, post content — never written (privacy tier: domain + timing)
+- Extension version metadata, IPC details
 
 ## Gotchas
 
-- Browser data is zenborg-internal, not an oracle — probe reads it via MCP tools
-- No duration tracking yet — fences show what's blocked, not time spent
-- Screen time API is macOS-specific and requires permissions; may never be an oracle
+- The video sense runs in the top frame only: iframe and DRM players emit no
+  video events until pitch slice 5 (see `screen.md`, blind spots).
+- A domain off the watchlist's observe tier gets dwell but no senses.
+- Brave in front with no `tab_activated` attributed reads as the desktop app
+  "Brave Browser", unmapped.
