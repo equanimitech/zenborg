@@ -39,6 +39,7 @@ const locatorOf: Readonly<Record<ActivitySurface, LocatorOf>> = {
   garmin: () => undefined,
   // Counted, never dwelt in: a commit tally or a state change has no span.
   git: () => undefined,
+  linear: () => undefined,
 };
 
 /**

@@ -12,15 +12,16 @@ import type { Duration, Instant } from "./ids";
  */
 
 /**
- * The surface that observed the event. `git` is a spring whose lines are
- * day tallies, never spans: read them as counts.
+ * The surface that observed the event. `git` and `linear` are springs whose
+ * lines are day tallies and timestamps, never spans: read them as counts.
  */
 export type ActivitySurface =
   | "agent"
   | "desktop"
   | "browser"
   | "garmin"
-  | "git";
+  | "git"
+  | "linear";
 
 /**
  * Kinds are an open set. They accrete per surface and are never centrally

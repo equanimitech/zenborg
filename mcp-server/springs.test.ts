@@ -2,17 +2,29 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseActivityLines } from "../src/domain/attention/ActivityEvent.ts";
+import { localDate } from "../src/domain/attention/GardenClock.ts";
 import {
   commitTimes,
   discoverRepos,
   drawGit,
+  fetchLinearIssues,
   gitDayEvents,
   gitFreeEnv,
+  LINEAR_QUERY,
+  type LinearPage,
+  linearEvents,
   recentDays,
   runSpring,
 } from "./springs.ts";
+
+const LINEAR_FIXTURE = JSON.parse(
+  fs.readFileSync(
+    path.join(import.meta.dirname, "fixtures", "linear-assigned-issues.json"),
+    "utf8",
+  ),
+) as LinearPage;
 
 const at = (day: string, h: number, m = 0) => {
   const [y, mo, d] = day.split("-").map(Number);
@@ -203,5 +215,125 @@ describe("git spring", () => {
       await runSpring(vault, ["git"], {}, new Date(at("2026-10-09", 12))),
     ).toBe(1);
     expect(fs.existsSync(kept)).toBe(true);
+  });
+});
+
+const fakeFetch = (pages: readonly LinearPage[]) => {
+  const calls: { headers: Record<string, string>; body: string }[] = [];
+  const impl = (async (_url: string, init: RequestInit) => {
+    calls.push({
+      headers: init.headers as Record<string, string>,
+      body: init.body as string,
+    });
+    return new Response(JSON.stringify(pages[calls.length - 1]), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
+  return { impl, calls };
+};
+
+describe("linear spring", () => {
+  it("never asks for a title, a description, a comment or a body", () => {
+    expect(LINEAR_QUERY).not.toMatch(/title|description|comment|body/i);
+  });
+
+  it("maps each state change to issue id, from → to, ts; nothing else rides along", () => {
+    const issues = LINEAR_FIXTURE.data?.viewer?.assignedIssues?.nodes ?? [];
+    const events = linearEvents(issues);
+    expect(events.map((e) => [e.payload, e.ts])).toEqual([
+      [
+        { issue: "ABC-101", from: "In Progress", to: "In Review" },
+        Date.parse("2026-10-08T09:15:00.000Z"),
+      ],
+      [
+        { issue: "ABC-101", from: "Todo", to: "In Progress" },
+        Date.parse("2026-10-07T16:40:00.000Z"),
+      ],
+      [
+        { issue: "ABC-102", from: null, to: "Backlog" },
+        Date.parse("2026-10-08T11:00:00.000Z"),
+      ],
+    ]);
+    expect(events.every((e) => e.surface === "linear" && !e.durationMs)).toBe(
+      true,
+    );
+    expect(JSON.stringify(events)).not.toMatch(/title|never reach/i);
+  });
+
+  it("follows pages and sends the key as the Authorization header", async () => {
+    const page1: LinearPage = {
+      data: {
+        viewer: {
+          assignedIssues: {
+            pageInfo: { hasNextPage: true, endCursor: "c1" },
+            nodes: [{ identifier: "ABC-1" }],
+          },
+        },
+      },
+    };
+    const { impl, calls } = fakeFetch([page1, LINEAR_FIXTURE]);
+    const issues = await fetchLinearIssues("test-key", new Date(0), impl);
+    expect(issues).toHaveLength(4);
+    expect(calls[0].headers.Authorization).toBe("test-key");
+    expect(JSON.parse(calls[1].body).variables.after).toBe("c1");
+  });
+
+  it("writes log/<day>.linear.jsonl and a rerun rewrites the day", async () => {
+    const vault = tmp("linear");
+    const now = new Date("2026-10-09T12:00:00.000Z");
+    const env = { LINEAR_API_KEY: "test-key" };
+    const run = () =>
+      runSpring(
+        vault,
+        ["linear", "--days", "3"],
+        env,
+        now,
+        fakeFetch([LINEAR_FIXTURE]).impl,
+      );
+
+    expect(await run()).toBe(0);
+    const day = (ts: string) => localDate(Date.parse(ts));
+    const file = path.join(
+      vault,
+      "log",
+      `${day("2026-10-08T09:15:00.000Z")}.linear.jsonl`,
+    );
+    const first = fs.readFileSync(file, "utf8");
+    expect(await run()).toBe(0);
+    expect(fs.readFileSync(file, "utf8")).toBe(first);
+    const lines = parseActivityLines(first, "linear");
+    expect(new Set(lines.map((e) => e.payload.issue))).toEqual(
+      new Set(["ABC-101", "ABC-102"]),
+    );
+    expect(first).not.toMatch(/never reach|test-key/);
+  });
+
+  it("exits 1 quietly, writing nothing, when LINEAR_API_KEY is absent", async () => {
+    const vault = tmp("nokey");
+    const { impl, calls } = fakeFetch([LINEAR_FIXTURE]);
+    const stderr = vi.spyOn(process.stderr, "write");
+    expect(await runSpring(vault, ["linear"], {}, new Date(), impl)).toBe(1);
+    expect(calls).toHaveLength(0);
+    expect(stderr).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(vault, "log"))).toBe(false);
+    stderr.mockRestore();
+  });
+
+  it("exits 1 and keeps the files when the API errors", async () => {
+    const vault = tmp("apierr");
+    const impl = (async () =>
+      new Response("{}", { status: 500 })) as unknown as typeof fetch;
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    expect(
+      await runSpring(
+        vault,
+        ["linear"],
+        { LINEAR_API_KEY: "k" },
+        new Date(),
+        impl,
+      ),
+    ).toBe(1);
+    expect(fs.existsSync(path.join(vault, "log"))).toBe(false);
+    stderr.mockRestore();
   });
 });

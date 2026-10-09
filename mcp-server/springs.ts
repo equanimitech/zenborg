@@ -2,14 +2,16 @@
  * Springs that draw into the activity log, run by the daemon via `jobs.json`.
  *
  *   zenborg-mcp spring git    [--days N]   → log/<day>.git.jsonl
+ *   zenborg-mcp spring linear [--days N]   → log/<day>.linear.jsonl
  *
  * Each run rewrites every day file it covers (the last N calendar days, today
  * included, default 7), so a rerun replaces a day and never appends a
  * duplicate. The MCP server only ever reads these files; it never calls a
  * spring live.
  *
- * Privacy tier, settled with the gardener: git records repo + commit count.
- * No commit messages or diffs are ever requested, let alone written.
+ * Privacy tier, settled with the gardener: git records repo + commit count,
+ * Linear records issue id + state change + time. No commit messages, diffs,
+ * titles, bodies or descriptions are ever requested, let alone written.
  */
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -43,7 +45,7 @@ export function recentDays(now: Date, n: number): string[] {
  */
 export function writeDays(
   dir: string,
-  surface: "git",
+  surface: "git" | "linear",
   days: readonly string[],
   events: readonly ActivityEvent[],
 ): void {
@@ -191,6 +193,115 @@ export function drawGit(
   return events.length;
 }
 
+// ── Linear ─────────────────────────────────────────────────────────────────
+
+const LINEAR_URL = "https://api.linear.app/graphql";
+
+/**
+ * The viewer's assigned issues touched since `$since`, with their state
+ * history. Asks for the identifier and state names only: never a title, a
+ * description, a comment or a body.
+ */
+export const LINEAR_QUERY = `query Moves($since: DateTimeOrDuration!, $after: String) {
+  viewer {
+    assignedIssues(first: 50, after: $after, filter: { updatedAt: { gte: $since } }) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        identifier
+        history(first: 100) {
+          nodes { createdAt fromState { name } toState { name } }
+        }
+      }
+    }
+  }
+}`;
+
+interface LinearIssueNode {
+  readonly identifier?: unknown;
+  readonly history?: {
+    readonly nodes?: readonly {
+      readonly createdAt?: unknown;
+      readonly fromState?: { readonly name?: unknown } | null;
+      readonly toState?: { readonly name?: unknown } | null;
+    }[];
+  };
+}
+
+export interface LinearPage {
+  readonly data?: {
+    readonly viewer?: {
+      readonly assignedIssues?: {
+        readonly pageInfo?: {
+          readonly hasNextPage?: boolean;
+          readonly endCursor?: string | null;
+        };
+        readonly nodes?: readonly LinearIssueNode[];
+      };
+    };
+  };
+  readonly errors?: readonly unknown[];
+}
+
+const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+
+/**
+ * Map Linear issues to `issue_moved` events: one per state change. Fields are
+ * picked one by one, never spread, so nothing the API adds can ride along.
+ */
+export function linearEvents(
+  issues: readonly LinearIssueNode[],
+): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+  for (const issue of issues) {
+    const id = str(issue.identifier);
+    if (!id) continue;
+    for (const h of issue.history?.nodes ?? []) {
+      const to = str(h.toState?.name);
+      const at = str(h.createdAt);
+      const ts = at ? Date.parse(at) : Number.NaN;
+      if (!to || Number.isNaN(ts)) continue;
+      events.push({
+        id: `linear:${id}:${ts}`,
+        surface: "linear",
+        kind: "issue_moved",
+        ts,
+        sessionId: "",
+        payload: { issue: id, from: str(h.fromState?.name) ?? null, to },
+      });
+    }
+  }
+  return events;
+}
+
+/** Every page of the viewer's issues touched since `since`. Throws on any API error. */
+export async function fetchLinearIssues(
+  key: string,
+  since: Date,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LinearIssueNode[]> {
+  const issues: LinearIssueNode[] = [];
+  let after: string | null = null;
+  do {
+    const res = await fetchImpl(LINEAR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: key },
+      body: JSON.stringify({
+        query: LINEAR_QUERY,
+        variables: { since: since.toISOString(), after },
+      }),
+    });
+    if (!res.ok) throw new Error(`linear: HTTP ${res.status}`);
+    const page = (await res.json()) as LinearPage;
+    if (page.errors?.length) throw new Error("linear: GraphQL error");
+    const conn = page.data?.viewer?.assignedIssues;
+    issues.push(...(conn?.nodes ?? []));
+    after = conn?.pageInfo?.hasNextPage
+      ? (conn.pageInfo.endCursor ?? null)
+      : null;
+  } while (after);
+  return issues;
+}
+
 // ── CLI ────────────────────────────────────────────────────────────────────
 
 function daysArg(args: readonly string[]): number {
@@ -207,8 +318,9 @@ function daysArg(args: readonly string[]): number {
 export async function runSpring(
   vaultRoot: string,
   args: readonly string[],
-  _env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = process.env,
   now: Date = new Date(),
+  fetchImpl: typeof fetch = fetch,
 ): Promise<number> {
   const days = recentDays(now, daysArg(args));
   switch (args[0]) {
@@ -222,8 +334,27 @@ export async function runSpring(
       drawGit(vaultRoot, areas, days);
       return 0;
     }
+    case "linear": {
+      const key = env.LINEAR_API_KEY;
+      if (!key) return 1;
+      const [y, m, d] = days[0].split("-").map(Number);
+      try {
+        const issues = await fetchLinearIssues(
+          key,
+          new Date(y, m - 1, d),
+          fetchImpl,
+        );
+        writeDays(logDir(vaultRoot), "linear", days, linearEvents(issues));
+        return 0;
+      } catch (error) {
+        process.stderr.write(`[spring linear] ${(error as Error).message}\n`);
+        return 1;
+      }
+    }
     default:
-      process.stderr.write("usage: zenborg-mcp spring <git> [--days N]\n");
+      process.stderr.write(
+        "usage: zenborg-mcp spring <git|linear> [--days N]\n",
+      );
       return 2;
   }
 }
