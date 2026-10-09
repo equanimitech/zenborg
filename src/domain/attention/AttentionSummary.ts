@@ -57,6 +57,8 @@ export interface DwellSpans {
   readonly locator: string;
   readonly areaId?: AreaId;
   readonly spans: readonly Interval[];
+  /** The part of `spans` credited through idle: an app held the Mac awake while no input came. */
+  readonly idleCredited: readonly Interval[];
   readonly visits: number;
 }
 
@@ -67,7 +69,10 @@ export function dwellRows(
   config: DwellConfig,
 ): readonly DwellRow[] {
   return dwellSpans(events, surface, resolve, config)
-    .map(({ spans, ...row }) => ({ ...row, ms: unionMs(spans) }))
+    .map(({ spans, idleCredited: _, ...row }) => ({
+      ...row,
+      ms: unionMs(spans),
+    }))
     .sort((a, b) => b.ms - a.ms);
 }
 
@@ -88,13 +93,19 @@ export function dwellSpans(
 
   const acc = new Map<
     string,
-    { spans: Interval[]; visits: number; areaId?: AreaId }
+    {
+      spans: Interval[];
+      idleCredited: Interval[];
+      visits: number;
+      areaId?: AreaId;
+    }
   >();
   const entryFor = (loc: string, event: ActivityEvent) => {
     const existing = acc.get(loc);
     if (existing) return existing;
     const created = {
       spans: [] as Interval[],
+      idleCredited: [] as Interval[],
       visits: 0,
       areaId: resolve(event),
     };
@@ -128,13 +139,27 @@ export function dwellSpans(
     }
   }
 
-  return [...acc.entries()].map(([locator, { spans, visits, areaId }]) => ({
-    surface,
-    locator,
-    ...(areaId !== undefined ? { areaId } : {}),
-    spans,
-    visits,
-  }));
+  // Watching produces no input, so the frontmost app's span ends at idle. The
+  // idle minutes go to the app holding the Mac awake, which may not be the
+  // frontmost one (a video playing behind the terminal).
+  if (surface === "desktop") {
+    for (const { app, event, span } of heldIdleSpans(surfaceEvents)) {
+      const entry = entryFor(app, event);
+      entry.spans.push(span);
+      entry.idleCredited.push(span);
+    }
+  }
+
+  return [...acc.entries()].map(
+    ([locator, { spans, idleCredited, visits, areaId }]) => ({
+      surface,
+      locator,
+      ...(areaId !== undefined ? { areaId } : {}),
+      spans,
+      idleCredited,
+      visits,
+    }),
+  );
 }
 
 export type Interval = readonly [start: Instant, end: Instant];
@@ -242,10 +267,89 @@ function playingSpans(
   return out;
 }
 
+/** The daemon's power-assertion pair: an app holds the Mac awake (`wake_held_start`) and lets go. */
+const HELD_KINDS = new Set(["wake_held_start", "wake_held_end"]);
+
+/** Longest stretch of idle one app can be credited with: a Mac left awake overnight counts 3 h at most. */
+export const IDLE_CREDIT_CAP_MS = 3 * 60 * 60_000;
+
+const isLock = (e: ActivityEvent) =>
+  e.kind === "idle_start" && e.payload.state === "locked";
+
+/**
+ * Idle minutes credited to the app that held the Mac awake through them.
+ *
+ * An idle stretch runs from a plain `idle_start` to the next `idle_end`,
+ * screen lock (`idle_start` state=locked) or daemon restart
+ * (`writer_started`), else the last event, and is capped at
+ * `IDLE_CREDIT_CAP_MS`. A hold runs from `wake_held_start` to the matching
+ * `wake_held_end` (same app and assertion), a restart, or the last event.
+ * The credit is their overlap, per app. Reasons are never classified: a hold
+ * is a hold, and the cap and the lock bound the error.
+ */
+function heldIdleSpans(
+  events: readonly ActivityEvent[],
+): readonly { app: string; event: ActivityEvent; span: Interval }[] {
+  const last = events.at(-1)?.ts ?? 0;
+  const idle: Interval[] = [];
+  let idleFrom: Instant | undefined;
+  const open = new Map<string, ActivityEvent>();
+  const holds: { app: string; event: ActivityEvent; span: Interval }[] = [];
+  const release = (key: string, start: ActivityEvent, at: Instant) => {
+    open.delete(key);
+    holds.push({
+      app: str(start.payload.app_name) ?? "",
+      event: start,
+      span: [start.ts, at],
+    });
+  };
+
+  for (const e of events) {
+    if (e.kind === "idle_start" && !isLock(e)) {
+      // A second idle_start with no idle_end between (a paused daemon)
+      // starts afresh: the first stretch's end is unknown, so it credits nothing.
+      idleFrom = e.ts;
+      continue;
+    }
+    if (e.kind === "idle_end" || isLock(e) || e.kind === "writer_started") {
+      if (idleFrom !== undefined) idle.push([idleFrom, e.ts]);
+      idleFrom = undefined;
+    }
+    if (e.kind === "writer_started") {
+      for (const [key, start] of open) release(key, start, e.ts);
+      continue;
+    }
+    if (!HELD_KINDS.has(e.kind)) continue;
+    const app = str(e.payload.app_name);
+    if (app === undefined) continue;
+    const key = `${app}\u0000${str(e.payload.assertion) ?? ""}`;
+    const start = open.get(key);
+    if (e.kind === "wake_held_start") {
+      if (start === undefined) open.set(key, e);
+    } else if (start !== undefined) {
+      release(key, start, e.ts);
+    }
+  }
+  if (idleFrom !== undefined) idle.push([idleFrom, last]);
+  for (const [key, start] of open) release(key, start, last);
+
+  const capped = idle.map(
+    ([s, e]) => [s, Math.min(e, s + IDLE_CREDIT_CAP_MS)] as const,
+  );
+  return holds.flatMap(({ app, event, span: [hs, he] }) =>
+    capped
+      .map(([is, ie]) => [Math.max(hs, is), Math.min(he, ie)] as const)
+      .filter(([s, e]) => e > s)
+      .map((span) => ({ app, event, span })),
+  );
+}
+
 /**
  * Find the next dwell boundary after surfaceEvents[fromIndex].
  *
- * For desktop/agent, any subsequent event works (the old behaviour).
+ * For desktop/agent, any subsequent event works (the old behaviour), except
+ * the daemon's wake-hold pair: an app taking or releasing a power assertion
+ * says nothing about where focus is.
  * For browser, only boundary kinds count — focus_start, navigation_committed,
  * etc. happen simultaneously with tab_activated and would truncate real dwell
  * to near-zero.
@@ -256,8 +360,10 @@ function findBoundary(
   surface: ActivitySurface,
 ): number | undefined {
   if (surface !== "browser") {
-    const next = surfaceEvents[fromIndex + 1];
-    return next?.ts;
+    for (let j = fromIndex + 1; j < surfaceEvents.length; j++) {
+      if (!HELD_KINDS.has(surfaceEvents[j].kind)) return surfaceEvents[j].ts;
+    }
+    return undefined;
   }
   for (let j = fromIndex + 1; j < surfaceEvents.length; j++) {
     if (BROWSER_BOUNDARY_KINDS.has(surfaceEvents[j].kind)) {

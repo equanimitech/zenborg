@@ -2,6 +2,8 @@
 //!
 //! Tauri state replaced with Arc<ObserverState>, app.emit() with log::warn!.
 
+use std::collections::BTreeMap;
+use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
@@ -15,12 +17,16 @@ use observer_core::config;
 use observer_core::domain::{self, IdleTransition};
 use observer_core::writer;
 
+use crate::assertions::{self, HoldTransition};
 use crate::state::ObserverState;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1500);
 const INPUT_POLLS_PER_BIN: usize = 2;
 const INPUT_POLLS_PER_ROLLUP: usize = 20;
 const INPUT_BIN_MS: u64 = 3_000;
+/// Power assertions and the screen lock are sampled every 10 polls (15 s):
+/// one `pmset` spawn per sample, cheap enough, and a film is hours long.
+const HOLD_POLLS_PER_SAMPLE: usize = 10;
 
 #[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -28,6 +34,60 @@ extern "C" {
     fn CGEventSourceCounterForEventType(state_id: u32, event_type: u32) -> u32;
     fn CGPreflightScreenCaptureAccess() -> bool;
     fn CGRequestScreenCaptureAccess() -> bool;
+    fn CGSessionCopyCurrentDictionary() -> *const std::ffi::c_void;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFDictionaryGetValue(
+        dict: *const std::ffi::c_void,
+        key: *const std::ffi::c_void,
+    ) -> *const std::ffi::c_void;
+    fn CFStringCreateWithCString(
+        alloc: *const std::ffi::c_void,
+        c_str: *const std::ffi::c_char,
+        encoding: u32,
+    ) -> *const std::ffi::c_void;
+    fn CFRelease(cf: *const std::ffi::c_void);
+}
+
+/// True while the login window covers the session. The session dictionary
+/// carries `CGSSessionScreenIsLocked` only while locked.
+#[cfg(target_os = "macos")]
+fn screen_locked() -> bool {
+    const UTF8: u32 = 0x0800_0100;
+    unsafe {
+        let session = CGSessionCopyCurrentDictionary();
+        if session.is_null() {
+            return false;
+        }
+        let key =
+            CFStringCreateWithCString(std::ptr::null(), c"CGSSessionScreenIsLocked".as_ptr(), UTF8);
+        let locked = !key.is_null() && !CFDictionaryGetValue(session, key).is_null();
+        if !key.is_null() {
+            CFRelease(key);
+        }
+        CFRelease(session);
+        locked
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn screen_locked() -> bool {
+    false
+}
+
+/// Apps holding the Mac awake right now. An unreadable `pmset` reads as none.
+// ponytail: one process spawn per sample; IOPMCopyAssertionsByProcess if 15 s ever costs too much.
+fn current_holds() -> std::collections::BTreeSet<assertions::Hold> {
+    Command::new("/usr/bin/pmset")
+        .args(["-g", "assertions"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| assertions::parse_holds(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or_default()
 }
 
 #[cfg(target_os = "macos")]
@@ -104,6 +164,22 @@ fn emit(state: &ObserverState, kind: &str, ts: u64, payload: serde_json::Value, 
     }
 }
 
+fn emit_holds(state: &ObserverState, transitions: Vec<HoldTransition>, now: u64) {
+    for t in transitions {
+        let (kind, (app, name), duration_ms) = match t {
+            HoldTransition::Start(hold) => ("wake_held_start", hold, None),
+            HoldTransition::End { hold, duration_ms } => ("wake_held_end", hold, Some(duration_ms)),
+        };
+        emit(
+            state,
+            kind,
+            now,
+            json!({ "app_name": app, "assertion": name }),
+            duration_ms,
+        );
+    }
+}
+
 fn check_paused(state: &ObserverState) -> bool {
     let config_json = writer::read_config(&state.keel_dir);
     let config = config::parse_observer_config(&config_json);
@@ -153,6 +229,8 @@ fn spawn_loop(state: Arc<ObserverState>) {
         let mut input_prev: Option<[u32; 4]> = None;
         let mut input_deltas: Vec<[u64; 4]> = Vec::new();
         let mut ticks: usize = 0;
+        let mut holds: BTreeMap<assertions::Hold, u64> = BTreeMap::new();
+        let mut locked = false;
 
         loop {
             thread::sleep(POLL_INTERVAL);
@@ -163,6 +241,11 @@ fn spawn_loop(state: Arc<ObserverState>) {
                 idle_since = None;
                 input_prev = None;
                 input_deltas.clear();
+                // Close open holds so none spans the pause.
+                let at = now_ms();
+                let released = assertions::hold_transitions(&mut holds, Default::default(), at);
+                emit_holds(&state, released, at);
+                locked = false;
                 continue;
             }
 
@@ -194,6 +277,25 @@ fn spawn_loop(state: Arc<ObserverState>) {
             } else {
                 input_prev = None;
                 input_deltas.clear();
+            }
+
+            if ticks % HOLD_POLLS_PER_SAMPLE == 0 {
+                // A lock ends any idle credit; it reads like the browser's
+                // chrome.idle "locked" state, so both surfaces say it one way.
+                let now_locked = screen_locked();
+                if now_locked && !locked {
+                    emit(
+                        &state,
+                        "idle_start",
+                        now,
+                        json!({ "state": "locked" }),
+                        None,
+                    );
+                }
+                locked = now_locked;
+
+                let transitions = assertions::hold_transitions(&mut holds, current_holds(), now);
+                emit_holds(&state, transitions, now);
             }
 
             if let Ok(idle) = UserIdle::get_time() {

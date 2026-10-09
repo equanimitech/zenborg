@@ -7,9 +7,7 @@ import {
   dwellRows,
 } from "../AttentionSummary";
 
-function ev(
-  overrides: Partial<ActivityEvent> & { ts: number },
-): ActivityEvent {
+function ev(overrides: Partial<ActivityEvent> & { ts: number }): ActivityEvent {
   return {
     id: `e-${overrides.ts}`,
     surface: "desktop",
@@ -89,22 +87,46 @@ describe("dwellRows — browser", () => {
 
   it("skips non-boundary events between tab_activated pairs", () => {
     const events = [
-      ev({ ts: 0, surface: "browser", kind: "tab_activated", payload: { domain: "zoom.us" } }),
+      ev({
+        ts: 0,
+        surface: "browser",
+        kind: "tab_activated",
+        payload: { domain: "zoom.us" },
+      }),
       ev({ ts: 1, surface: "browser", kind: "focus_start", payload: {} }),
-      ev({ ts: 60 * MINUTE, surface: "browser", kind: "tab_activated", payload: { domain: "github.com" } }),
+      ev({
+        ts: 60 * MINUTE,
+        surface: "browser",
+        kind: "tab_activated",
+        payload: { domain: "github.com" },
+      }),
     ];
-    const rows = dwellRows(events, "browser", browserResolve, { capMs: 120 * MINUTE });
+    const rows = dwellRows(events, "browser", browserResolve, {
+      capMs: 120 * MINUTE,
+    });
     const zoom = rows.find((r) => r.locator === "zoom.us")!;
     expect(zoom.ms).toBe(60 * MINUTE);
   });
 
   it("uses focus_end as a boundary for long single-tab sessions", () => {
     const events = [
-      ev({ ts: 0, surface: "browser", kind: "tab_activated", payload: { domain: "zoom.us" } }),
+      ev({
+        ts: 0,
+        surface: "browser",
+        kind: "tab_activated",
+        payload: { domain: "zoom.us" },
+      }),
       ev({ ts: 0, surface: "browser", kind: "focus_start", payload: {} }),
-      ev({ ts: 60 * MINUTE, surface: "browser", kind: "focus_end", payload: {} }),
+      ev({
+        ts: 60 * MINUTE,
+        surface: "browser",
+        kind: "focus_end",
+        payload: {},
+      }),
     ];
-    const rows = dwellRows(events, "browser", browserResolve, { capMs: 120 * MINUTE });
+    const rows = dwellRows(events, "browser", browserResolve, {
+      capMs: 120 * MINUTE,
+    });
     const zoom = rows.find((r) => r.locator === "zoom.us")!;
     expect(zoom.ms).toBe(60 * MINUTE);
     expect(zoom.visits).toBe(1);
@@ -112,19 +134,38 @@ describe("dwellRows — browser", () => {
 
   it("uses idle_start as a boundary", () => {
     const events = [
-      ev({ ts: 0, surface: "browser", kind: "tab_activated", payload: { domain: "zoom.us" } }),
-      ev({ ts: 30 * MINUTE, surface: "browser", kind: "idle_start", payload: {} }),
+      ev({
+        ts: 0,
+        surface: "browser",
+        kind: "tab_activated",
+        payload: { domain: "zoom.us" },
+      }),
+      ev({
+        ts: 30 * MINUTE,
+        surface: "browser",
+        kind: "idle_start",
+        payload: {},
+      }),
     ];
-    const rows = dwellRows(events, "browser", browserResolve, { capMs: 120 * MINUTE });
+    const rows = dwellRows(events, "browser", browserResolve, {
+      capMs: 120 * MINUTE,
+    });
     expect(rows[0].ms).toBe(30 * MINUTE);
   });
 
   it("gives zero dwell when no boundary follows", () => {
     const events = [
-      ev({ ts: 0, surface: "browser", kind: "tab_activated", payload: { domain: "zoom.us" } }),
+      ev({
+        ts: 0,
+        surface: "browser",
+        kind: "tab_activated",
+        payload: { domain: "zoom.us" },
+      }),
       ev({ ts: 1, surface: "browser", kind: "focus_start", payload: {} }),
     ];
-    const rows = dwellRows(events, "browser", browserResolve, { capMs: 120 * MINUTE });
+    const rows = dwellRows(events, "browser", browserResolve, {
+      capMs: 120 * MINUTE,
+    });
     expect(rows[0].ms).toBe(0);
     expect(rows[0].visits).toBe(1);
   });
@@ -146,7 +187,9 @@ describe("dwellRows — browser video playback", () => {
     e.payload.domain === "youtube.com" ? "area-entertainment" : undefined;
   const cfg = { capMs: 120 * MINUTE };
   const ytRow = (events: ActivityEvent[]) =>
-    dwellRows(events, "browser", resolveYt, cfg).find((r) => r.locator === "youtube.com");
+    dwellRows(events, "browser", resolveYt, cfg).find(
+      (r) => r.locator === "youtube.com",
+    );
 
   it("counts playback while the browser window has lost focus (real 18:39–18:49 shape)", () => {
     // One video watched on one tab while focus flicks to the terminal. Focus
@@ -239,11 +282,129 @@ describe("dwellRows — browser video playback", () => {
   });
 });
 
+describe("dwellRows — idle credited to the app holding the Mac awake", () => {
+  const HOUR = 60 * MINUTE;
+  const rows = (events: ActivityEvent[]) =>
+    dwellRows(events, "desktop", resolve, { capMs: 30 * MINUTE });
+  const ms = (events: ActivityEvent[], app: string) =>
+    rows(events).find((r) => r.locator === app)?.ms ?? 0;
+  const held = (ts: number, app: string, assertion = "Playing audio") =>
+    ev({
+      ts,
+      id: `held-${ts}-${assertion}`,
+      kind: "wake_held_start",
+      payload: { app_name: app, assertion },
+    });
+  const released = (ts: number, app: string, assertion = "Playing audio") =>
+    ev({
+      ts,
+      id: `released-${ts}-${assertion}`,
+      kind: "wake_held_end",
+      payload: { app_name: app, assertion },
+    });
+  const idle = (ts: number) =>
+    ev({
+      ts,
+      id: `idle-${ts}`,
+      kind: "idle_start",
+      payload: { thresholdMs: 120_000 },
+    });
+  const back = (ts: number) => ev({ ts, id: `back-${ts}`, kind: "idle_end" });
+  const lock = (ts: number) =>
+    ev({
+      ts,
+      id: `lock-${ts}`,
+      kind: "idle_start",
+      payload: { state: "locked" },
+    });
+
+  it("bridges idle while a player holds the Mac awake: a 2-h film counts", () => {
+    const events = [
+      ev({ ts: 0, payload: { app_name: "Stremio" } }),
+      held(1 * MINUTE, "Stremio", "Video Wake Lock"), // not a focus boundary
+      idle(5 * MINUTE),
+      back(125 * MINUTE),
+    ];
+    expect(ms(events, "Stremio")).toBe(125 * MINUTE);
+  });
+
+  it("credits the app holding the assertion, not the frontmost one", () => {
+    const events = [
+      ev({ ts: 0, payload: { app_name: "Slack" } }),
+      held(2 * MINUTE, "Brave Browser"),
+      idle(10 * MINUTE),
+      back(50 * MINUTE),
+      released(55 * MINUTE, "Brave Browser"),
+    ];
+    expect(ms(events, "Slack")).toBe(10 * MINUTE);
+    expect(ms(events, "Brave Browser")).toBe(40 * MINUTE);
+    const brave = rows(events).find((r) => r.locator === "Brave Browser");
+    expect(brave?.visits).toBe(0);
+  });
+
+  it("ends the credited stretch at a screen lock", () => {
+    const events = [
+      ev({ ts: 0, payload: { app_name: "Stremio" } }),
+      held(0, "Stremio"),
+      idle(5 * MINUTE),
+      lock(25 * MINUTE),
+      back(3 * HOUR),
+    ];
+    expect(ms(events, "Stremio")).toBe(25 * MINUTE);
+  });
+
+  it("caps a credited stretch at 3 h: a Mac left awake overnight", () => {
+    const events = [
+      held(0, "Brave Browser"),
+      idle(MINUTE),
+      back(10 * HOUR),
+      released(10 * HOUR, "Brave Browser"),
+    ];
+    expect(ms(events, "Brave Browser")).toBe(3 * HOUR);
+  });
+
+  it("credits nobody when no app holds the Mac awake through the idle", () => {
+    const events = [
+      ev({ ts: 0, payload: { app_name: "Slack" } }),
+      held(MINUTE, "Brave Browser"),
+      released(4 * MINUTE, "Brave Browser"), // let go before input stopped
+      idle(5 * MINUTE),
+      back(2 * HOUR),
+    ];
+    expect(ms(events, "Slack")).toBe(5 * MINUTE);
+    expect(ms(events, "Brave Browser")).toBe(0);
+  });
+
+  it("keeps a hold open until its own assertion is released", () => {
+    const events = [
+      held(0, "Brave Browser", "Playing audio"),
+      held(0, "Brave Browser", "Video Wake Lock"),
+      idle(MINUTE),
+      released(11 * MINUTE, "Brave Browser", "Video Wake Lock"), // tab hidden
+      released(31 * MINUTE, "Brave Browser", "Playing audio"),
+      back(HOUR),
+    ];
+    expect(ms(events, "Brave Browser")).toBe(30 * MINUTE);
+  });
+});
+
 describe("byArea", () => {
   it("aggregates rows by area, excluding unmapped", () => {
     const rows = [
-      { surface: "desktop" as const, locator: "Slack", areaId: "a", ms: 100, visits: 2 },
-      { surface: "desktop" as const, locator: "Firefox", areaId: "a", ms: 50, visits: 1 },
+      {
+        surface: "desktop" as const,
+        locator: "Slack",
+        areaId: "a",
+        ms: 100,
+        visits: 2,
+      },
+      {
+        surface: "desktop" as const,
+        locator: "Firefox",
+        areaId: "a",
+        ms: 50,
+        visits: 1,
+      },
       { surface: "desktop" as const, locator: "Calculator", ms: 30, visits: 1 },
     ];
     const areas = byArea(rows);
