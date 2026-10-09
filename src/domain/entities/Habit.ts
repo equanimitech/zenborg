@@ -1,4 +1,4 @@
-import { normalizeTag } from "@/domain/services/TagService";
+import { normalizeTag } from "../services/TagService";
 import type { Attitude } from "../value-objects/Attitude";
 import type { Phase, PhaseConfig } from "../value-objects/Phase";
 import type { Rhythm } from "../value-objects/Rhythm";

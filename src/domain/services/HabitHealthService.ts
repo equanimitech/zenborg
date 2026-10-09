@@ -1,18 +1,18 @@
-import type { CyclePlan } from "@/domain/entities/CyclePlan";
-import type { Habit } from "@/domain/entities/Habit";
+import { fromISODate } from "../../lib/dates";
+import type { CyclePlan } from "../entities/CyclePlan";
+import type { Habit } from "../entities/Habit";
 import {
   countsAsAllocation,
   type Moment,
   momentInvolvesHabit,
-} from "@/domain/entities/Moment";
-import { Attitude } from "@/domain/value-objects/Attitude";
-import type { Health } from "@/domain/value-objects/Health";
+} from "../entities/Moment";
+import { Attitude } from "../value-objects/Attitude";
+import type { Health } from "../value-objects/Health";
 import {
   PERIOD_DAYS,
   type Rhythm,
   rhythmSilenceThresholdDays,
-} from "@/domain/value-objects/Rhythm";
-import { fromISODate } from "@/lib/dates";
+} from "../value-objects/Rhythm";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const BUDDING_PERIOD_COUNT = 3;
@@ -114,8 +114,7 @@ export class HabitHealthService {
   ): Health {
     if (!rhythm) return "unstated";
     const baseThreshold = rhythmSilenceThresholdDays(rhythm);
-    const extendedThreshold =
-      baseThreshold * RETURNING_THRESHOLD_MULTIPLIER;
+    const extendedThreshold = baseThreshold * RETURNING_THRESHOLD_MULTIPLIER;
 
     const lastAllocation = this.latestAllocationDate(habitMoments, now);
     if (lastAllocation === null) return "wilting";
@@ -124,8 +123,7 @@ export class HabitHealthService {
       (now.getTime() - lastAllocation.getTime()) / MS_PER_DAY;
     if (daysSinceLast > extendedThreshold) return "wilting";
 
-    const reEntryWindowDays =
-      extendedThreshold * RETURNING_REENTRY_PERIODS;
+    const reEntryWindowDays = extendedThreshold * RETURNING_REENTRY_PERIODS;
     const reEntryWindowStart = new Date(
       now.getTime() - reEntryWindowDays * MS_PER_DAY,
     );
