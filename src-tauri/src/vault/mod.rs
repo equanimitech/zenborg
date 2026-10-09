@@ -69,6 +69,12 @@ pub fn activity_read(from: String, to: String) -> Result<Vec<activity::ActivityF
     activity::read_activity_files(&vault_root()?.join("log"), &from, &to)
 }
 
+/// `integrations/garmin/habit-map.json`, raw, or null when absent.
+#[tauri::command]
+pub fn garmin_habit_map_read() -> Result<Option<String>, String> {
+    activity::read_garmin_habit_map(&vault_root()?)
+}
+
 #[tauri::command]
 pub fn vault_root_path() -> Result<String, String> {
     vault_root().map(|p| p.to_string_lossy().to_string())

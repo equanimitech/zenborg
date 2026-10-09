@@ -69,9 +69,34 @@ pub fn read_activity_files(
     Ok(files)
 }
 
+/// The Garmin habit map's text, or `None` when the file is absent. Parsed on
+/// the TS side by `parseHabitMap`, the same function the MCP server uses.
+pub fn read_garmin_habit_map(vault: &Path) -> Result<Option<String>, String> {
+    let path = vault.join("integrations").join("garmin").join("habit-map.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    fs::read_to_string(&path)
+        .map(Some)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn garmin_habit_map_is_raw_text_or_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_garmin_habit_map(dir.path()).unwrap(), None);
+        let garmin = dir.path().join("integrations").join("garmin");
+        fs::create_dir_all(&garmin).unwrap();
+        fs::write(garmin.join("habit-map.json"), "{\"version\":1}").unwrap();
+        assert_eq!(
+            read_garmin_habit_map(dir.path()).unwrap(),
+            Some("{\"version\":1}".to_string())
+        );
+    }
 
     #[test]
     fn reads_files_in_range_and_skips_the_rest() {

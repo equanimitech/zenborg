@@ -159,7 +159,7 @@ import {
 } from "./attention.js";
 import { logDir, readActivityLog } from "./activity-log.js";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
-import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
+import { readHabitMap } from "./garmin-map.js";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 
 function nowIso(): string {
@@ -4156,13 +4156,7 @@ defineTool(server, {
 // ────────────────────────────────────────────────────────────────────────
 
 function loadHabitMap() {
-  const mapPath = path.join(VAULT_ROOT, "integrations", "garmin", "habit-map.json");
-  if (!fs.existsSync(mapPath)) return parseHabitMap(null);
-  try {
-    return parseHabitMap(JSON.parse(fs.readFileSync(mapPath, "utf8")));
-  } catch {
-    return parseHabitMap(null);
-  }
+  return readHabitMap(VAULT_ROOT);
 }
 
 defineTool(server, {
