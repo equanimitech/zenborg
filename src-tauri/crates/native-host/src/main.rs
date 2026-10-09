@@ -214,10 +214,13 @@ fn handle_request_fences(vault: &Path) {
     write_message(&json!({"type": "fences", "fences": fences}));
 }
 
-fn handle_request_observe(vault: &Path) {
-    let fences = read_json(&vault.join("fences.json"));
+/// The observe tier the extension arms its senses on: browser fence domains
+/// plus every host the vault maps to an area (`map_area` kind=host writes
+/// `areas[].surfaces.hosts`). Mapping a site to an area is what makes it
+/// observed; there is no second list to keep. Sorted, so the reply is stable.
+fn observe_domains(fences: &Value, areas: &Value) -> Vec<String> {
     let mut domains = HashSet::new();
-    if let Value::Object(map) = &fences {
+    if let Value::Object(map) = fences {
         for fence in map.values() {
             if let Some(scope) = fence.get("scope") {
                 for d in browser_domains(scope) {
@@ -226,8 +229,23 @@ fn handle_request_observe(vault: &Path) {
             }
         }
     }
-    let list: Vec<&str> = domains.iter().map(|s| s.as_str()).collect();
-    write_message(&json!({"type": "observe", "domains": list}));
+    if let Value::Object(map) = areas {
+        for area in map.values() {
+            let hosts = area.pointer("/surfaces/hosts").and_then(|v| v.as_array());
+            for h in hosts.into_iter().flatten().filter_map(|v| v.as_str()) {
+                domains.insert(h.to_string());
+            }
+        }
+    }
+    let mut list: Vec<String> = domains.into_iter().collect();
+    list.sort();
+    list
+}
+
+fn handle_request_observe(vault: &Path) {
+    let fences = read_json(&vault.join("fences.json"));
+    let areas = read_collection(vault, "areas");
+    write_message(&json!({"type": "observe", "domains": observe_domains(&fences, &areas)}));
 }
 
 fn handle_request_policy(vault: &Path) {
@@ -458,5 +476,41 @@ fn main() {
             "request_events" => handle_request_events(&msg, &vault),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_host_mapped_to_an_area_is_observed_and_an_unmapped_one_is_not() {
+        let areas = json!({
+            "a1": { "id": "a1", "name": "Entertainment", "surfaces": { "hosts": ["example.tv"], "apps": ["Player"] } },
+            "a2": { "id": "a2", "name": "Work", "surfaces": { "paths": ["~/dev"] } },
+            "a3": { "id": "a3", "name": "Bare" }
+        });
+        let observed = observe_domains(&json!({}), &areas);
+        assert_eq!(observed, vec!["example.tv".to_string()]);
+        assert!(!observed.contains(&"player.example.net".to_string()));
+    }
+
+    #[test]
+    fn fence_domains_and_area_hosts_merge_once() {
+        let fences = json!({
+            "f1": { "id": "f1", "scope": { "surface": "browser", "domain": ["example.tv", "fenced.example.org"] } },
+            "f2": { "id": "f2", "scope": { "surface": "desktop", "domain": "ignored.example" } }
+        });
+        let areas = json!({ "a1": { "surfaces": { "hosts": ["example.tv"] } } });
+        assert_eq!(
+            observe_domains(&fences, &areas),
+            vec!["example.tv".to_string(), "fenced.example.org".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_missing_or_malformed_areas_file_observes_nothing_extra() {
+        assert!(observe_domains(&json!({}), &json!({})).is_empty());
+        assert!(observe_domains(&json!({}), &json!({ "a1": { "surfaces": { "hosts": "example.tv" } } })).is_empty());
     }
 }

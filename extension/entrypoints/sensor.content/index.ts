@@ -7,6 +7,13 @@
  * generic senses (video, feed, shopping — they self-select by what the
  * page exhibits) plus the game sense where a site adapter exists.
  *
+ * It runs in every frame, because embedded players live in iframes. The
+ * background credits a subframe's events to the TAB's domain (the browser
+ * attests `sender.tab.url`), never the iframe's host, and lets one frame per
+ * tab hold playback at a time (`claimPlayback`). Subframes arm the video
+ * sense only: the feed, shopping and game senses and the dwell gate read the
+ * page itself, so they stay in the top frame, as before.
+ *
  * No company names here: domains are user-authored watchlist entries;
  * site-specific probes are data in modules/sensors/adapters.ts.
  */
@@ -20,7 +27,10 @@ import { armDwellGate } from "@/modules/friction/gate/arm";
 
 export default defineContentScript({
   matches: ["http://*/*", "https://*/*"],
+  allFrames: true,
+  matchAboutBlank: true,
   async main() {
+    const top = window === window.top;
     let observed = false;
     let gated = false;
     try {
@@ -37,7 +47,7 @@ export default defineContentScript({
     // The gate is independent of the observe tier: a domain can be gated
     // without being deep-sensed, and the dwell it reads comes from the coarse
     // writer events every domain produces.
-    if (gated) {
+    if (gated && top) {
       armDwellGate();
     }
 
@@ -46,6 +56,9 @@ export default defineContentScript({
     }
 
     armVideoSense();
+    if (!top) {
+      return;
+    }
     armFeedSense();
     armShoppingSense();
 

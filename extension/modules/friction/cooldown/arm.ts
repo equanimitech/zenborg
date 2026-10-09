@@ -15,8 +15,8 @@
 
 import { buildBrowserEvent } from "@/modules/activity/events";
 import { appendEvent } from "@/modules/activity/log";
-import { derivedObserveDomains } from "@/modules/watchlist/store";
-import { breakTarget, type BreakTarget } from "@/modules/friction/policy/store";
+import { deriveObserveSet } from "@/modules/watchlist/derived";
+import { areaMap, breakTarget, type BreakTarget } from "@/modules/friction/policy/store";
 import { fenceableHosts } from "@/modules/fence/parse";
 import { fenceCache } from "@/modules/fence/store";
 import { DEFAULT_COOLDOWN_MS, armCooldown } from "./store";
@@ -89,8 +89,14 @@ export async function armWatchedCooldown(
   // come off the policy mirror, projected host-side from
   // `~/.zenborg/keel/rules/*.json`; that store is retired, and the candidate set
   // is the same question asked of the one that replaced it.
-  const declared = [...fenceableHosts(await fenceCache.getValue())];
-  const domains = declared.length > 0 ? declared : await derivedObserveDomains();
+  //
+  // The fallback leaves out the vault's mapped hosts on purpose: those join the
+  // observe tier so embedded players are sensed, and every area's hosts — work
+  // ones included — must not become a lock nobody declared.
+  const fences = await fenceCache.getValue();
+  const declared = [...fenceableHosts(fences)];
+  const domains =
+    declared.length > 0 ? declared : [...deriveObserveSet(fences, await areaMap.getValue())];
   const until = await armCooldown({
     ruleId: WATCHED_COOLDOWN_RULE,
     domains,
