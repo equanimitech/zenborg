@@ -4084,6 +4084,7 @@ defineTool(server, {
     "footprints per surface (body, screen, work, journal, comms) by area in minutes with the largest unmapped locators, " +
     "and the habits wilting at the week's close. " +
     'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
+    'Work also carries counts: commits (git) and issues moved (Linear), never minutes; a counted spring with no line in the week reads "not drawn". ' +
     "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
     "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {

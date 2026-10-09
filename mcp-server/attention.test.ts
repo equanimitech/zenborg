@@ -87,6 +87,40 @@ describe("getFootprints", () => {
       unmappedMin: 0,
     });
   });
+
+  it("reads the springs' git and Linear files into work as counts", () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), "zenborg-footprints-"));
+    fs.mkdirSync(path.join(vault, "log"));
+    const line = (surface: string, kind: string, ts: number, payload: object) =>
+      JSON.stringify({
+        id: `${kind}-${ts}`,
+        surface,
+        kind,
+        ts,
+        sessionId: "",
+        payload,
+      });
+    fs.writeFileSync(
+      path.join(vault, "log", "2026-10-06.git.jsonl"),
+      `${line("git", "commits_counted", at("2026-10-06", 4), { repo: "alpha", cwd: "/code/alpha", commits: 4 })}\n`,
+    );
+    fs.writeFileSync(
+      path.join(vault, "log", "2026-10-07.linear.jsonl"),
+      `${line("linear", "issue_moved", at("2026-10-07", 15), { issue: "ABC-7", from: "Todo", to: "Done" })}\n`,
+    );
+    const r = getFootprints(vault, empty, { day: "2026-10-06" });
+    const work = r.footprints.find((f) => f.surface === "work");
+    if (work?.status !== "drawn") throw new Error("work not drawn");
+    expect(
+      work.thisWeek.counts?.map((c) =>
+        c.status === "drawn" ? [c.unit, c.total] : [c.unit, c.status],
+      ),
+    ).toEqual([
+      ["commits", 4],
+      ["issues moved", 1],
+    ]);
+    expect(work.thisWeek.byArea).toEqual([]); // counts never become minutes
+  });
 });
 
 describe("footprintParamsError", () => {
