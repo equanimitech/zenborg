@@ -191,6 +191,21 @@ function fixture(): ReadbackInput {
       { activityType: "running" },
       { durationMs: 30 * MIN },
     ),
+    // Two rides no habit claims: one unmapped locator, summed.
+    ev(
+      "garmin",
+      "workout_completed",
+      at("2026-10-10", 9),
+      { activityType: "cycling" },
+      { durationMs: 20 * MIN },
+    ),
+    ev(
+      "garmin",
+      "workout_completed",
+      at("2026-10-11", 9),
+      { activityType: "cycling" },
+      { durationMs: 30 * MIN },
+    ),
   ];
   const moments: Moment[] = [
     moment("standup", "themia", "2026-10-06", Phase.MORNING, { order: 1 }),
@@ -334,6 +349,10 @@ describe("weekReadback", () => {
     expect(body.thisWeek.byArea).toEqual([
       { areaId: "wellness", areaName: "Wellness", minutes: 30 },
     ]);
+    expect(body.thisWeek.unmapped).toEqual([
+      { locator: "cycling", minutes: 50 },
+    ]);
+    expect(body.thisWeek.coverage.unmappedMin).toBe(50);
     expect(body.lastWeek.coverage).toEqual({
       seenHours: 0,
       idleCreditedMin: 0,

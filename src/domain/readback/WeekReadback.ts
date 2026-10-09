@@ -236,9 +236,10 @@ function footprintOf(
   areaName: (id: string) => string,
 ): Footprint {
   const byArea = new Map<string, number>();
-  const unmapped: Located[] = [];
+  const unmapped = new Map<string, number>();
   for (const row of located) {
-    if (row.areaId === undefined) unmapped.push(row);
+    if (row.areaId === undefined)
+      unmapped.set(row.locator, (unmapped.get(row.locator) ?? 0) + row.ms);
     else byArea.set(row.areaId, (byArea.get(row.areaId) ?? 0) + row.ms);
   }
   return {
@@ -250,15 +251,17 @@ function footprintOf(
       }))
       .filter((a) => a.minutes > 0)
       .sort((a, b) => b.minutes - a.minutes),
-    unmapped: unmapped
-      .map((r) => ({ locator: r.locator, minutes: toMin(r.ms) }))
+    unmapped: [...unmapped.entries()]
+      .map(([locator, ms]) => ({ locator, minutes: toMin(ms) }))
       .filter((r) => r.minutes > 0)
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, UNMAPPED_SHOWN),
     coverage: {
       seenHours: seenHours(events),
       idleCreditedMin: 0,
-      unmappedMin: toMin(unmapped.reduce((sum, r) => sum + r.ms, 0)),
+      unmappedMin: toMin(
+        [...unmapped.values()].reduce((sum, ms) => sum + ms, 0),
+      ),
     },
   };
 }
