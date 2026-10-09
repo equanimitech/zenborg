@@ -1,6 +1,7 @@
 "use client";
 
 import { useValue } from "@legendapp/state/react";
+import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { CycleService } from "@/application/services/CycleService";
 import { BandedHeatmap } from "@/components/banded-heatmap/BandedHeatmap";
@@ -91,6 +92,14 @@ export default function HarvestPage() {
   return (
     <div className="h-full bg-background transition-colors flex flex-col overflow-hidden">
       <div className="flex-shrink-0 border-b border-stone-200 px-4 py-3 dark:border-stone-800">
+        <div className="mb-2 flex justify-end">
+          <Link
+            className="text-sm text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
+            href="/week"
+          >
+            The week
+          </Link>
+        </div>
         <BandedHeatmap
           areas={areaList}
           cycles={cycleList}
