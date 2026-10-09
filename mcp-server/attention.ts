@@ -23,6 +23,7 @@ import {
   weekReadback,
 } from "../src/domain/readback/WeekReadback.ts";
 import { logDir, readActivityLog } from "./activity-log.ts";
+import { toHealthSubject } from "./health.ts";
 import type {
   Area,
   Cycle,
@@ -259,6 +260,32 @@ export interface FootprintCollections {
   cyclePlans: Record<string, CyclePlan>;
 }
 
+/** Longest explicit range; a readback is a week, a month at most. */
+export const MAX_FOOTPRINT_DAYS = 31;
+
+/** Why these params cannot be read, or null when they can. */
+export function footprintParamsError(params: {
+  day?: string;
+  from?: string;
+  to?: string;
+}): string | null {
+  if (params.to && !params.from)
+    return "`to` needs `from`; pass `day` to read a week";
+  if (params.day && params.from) return "pass `day` or `from`/`to`, not both";
+  if (params.from && params.to) {
+    if (params.to < params.from)
+      return `to (${params.to}) is before from (${params.from})`;
+    const days =
+      Math.round(
+        (wakingDayWindow(params.to).from - wakingDayWindow(params.from).from) /
+          86_400_000,
+      ) + 1;
+    if (days > MAX_FOOTPRINT_DAYS)
+      return `range is ${days} days; read at most ${MAX_FOOTPRINT_DAYS}`;
+  }
+  return null;
+}
+
 /**
  * The window to read: an explicit `from`/`to` range, else the Monday → Sunday
  * week holding `day` (default: today's waking day).
@@ -271,11 +298,7 @@ export function footprintWindow(
   return weekOf(params.day ?? wakingDay(now));
 }
 
-/**
- * `get_footprints`: the one domain readback over the vault and the log.
- * The vault's records differ from the domain's only in enum-vs-literal
- * spelling, hence the casts at this edge.
- */
+/** `get_footprints`: the one domain readback over the vault and the log. */
 export function getFootprints(
   vaultRoot: string,
   c: FootprintCollections,
@@ -291,16 +314,16 @@ export function getFootprints(
     span.to,
     READBACK_LOG_SURFACES,
   );
-  const input = {
+  const input: ReadbackInput = {
     events,
     moments: Object.values(c.moments),
-    habits: Object.values(c.habits),
+    habits: Object.values(c.habits).map(toHealthSubject),
     areas: Object.values(c.areas),
     phaseConfigs: Object.values(c.phaseConfigs),
     cycles: Object.values(c.cycles),
     cyclePlans: Object.values(c.cyclePlans),
     ...(garminHabitMap ? { garminHabitMap } : {}),
     now,
-  } as unknown as ReadbackInput;
+  };
   return weekReadback(input, from, to);
 }

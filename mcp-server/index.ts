@@ -150,6 +150,7 @@ import {
   validateRoutine,
 } from "./routines.js";
 import {
+  footprintParamsError,
   getFootprints,
   getSurfaces,
   mapArea,
@@ -4085,15 +4086,16 @@ defineTool(server, {
       "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week.",
     ),
     from: DaySchema.optional().describe(
-      "Inclusive start day of an explicit range, instead of a week. Last week becomes the same-length range before it.",
+      "Inclusive start day of an explicit range (at most 31 days), instead of a week. Last week becomes the same-length range before it.",
     ),
-    to: DaySchema.optional().describe("Inclusive end day of the range. Defaults to `from`."),
+    to: DaySchema.optional().describe(
+      "Inclusive end day of the range; needs `from`. Defaults to `from`.",
+    ),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
-    if (params.from && params.to && params.to < params.from) {
-      return err(`to (${params.to}) is before from (${params.from})`);
-    }
+    const invalid = footprintParamsError(params);
+    if (invalid) return err(invalid);
     return ok(
       getFootprints(
         VAULT_ROOT,

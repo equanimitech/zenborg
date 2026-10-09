@@ -2,7 +2,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { footprintWindow, getFootprints } from "./attention.js";
+import {
+  footprintParamsError,
+  footprintWindow,
+  getFootprints,
+} from "./attention.js";
 import type { Area } from "./vault.js";
 
 const at = (day: string, h: number, m = 0) => {
@@ -82,5 +86,25 @@ describe("getFootprints", () => {
       idleCreditedMin: 0,
       unmappedMin: 0,
     });
+  });
+});
+
+describe("footprintParamsError", () => {
+  it("refuses `to` without `from`, both forms at once, and ranges over 31 days", () => {
+    expect(footprintParamsError({ to: "2026-10-11" })).toMatch(/needs `from`/);
+    expect(
+      footprintParamsError({ day: "2026-10-08", from: "2026-10-01" }),
+    ).toMatch(/not both/);
+    expect(
+      footprintParamsError({ from: "2026-10-11", to: "2026-10-01" }),
+    ).toMatch(/before/);
+    expect(
+      footprintParamsError({ from: "2026-09-01", to: "2026-10-01" }),
+    ).toBeNull(); // 31 days
+    expect(
+      footprintParamsError({ from: "2026-09-01", to: "2026-10-02" }),
+    ).toMatch(/32 days/);
+    expect(footprintParamsError({ day: "2026-10-08" })).toBeNull();
+    expect(footprintParamsError({})).toBeNull();
   });
 });
