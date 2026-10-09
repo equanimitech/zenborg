@@ -119,15 +119,15 @@ describe("areaRows", () => {
 describe("WeekReadbackView", () => {
   it("reads journal and comms as not drawn, never as zero", () => {
     renderView();
-    expect(screen.getAllByText(/Not drawn/)).toHaveLength(2);
+    expect(screen.getAllByText(/not drawn/)).toHaveLength(2);
   });
 
-  it("shows coverage beside every drawn surface", () => {
+  it("shows coverage beside every drawn surface, closed", () => {
     renderView();
-    expect(screen.getAllByText(/This week saw 40 h of the week/)).toHaveLength(
+    expect(screen.getAllByText(/^seen 40 h · 0 m through idle/)).toHaveLength(
       3,
     );
-    expect(screen.getByText(/Unmapped: cmux 10 h 59 m/)).toBeInTheDocument();
+    expect(screen.getByText(/unmapped: cmux 10 h 59 m/)).toBeInTheDocument();
   });
 
   it("marks an off-screen moment untraceable, not missed", () => {

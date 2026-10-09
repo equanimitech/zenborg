@@ -10,7 +10,7 @@ issues: ["#199", "#202", "#194", "#187", "#237"]
 
 # Pitch -- The week reads back: one mirror in the app, interpretation in conversation
 
-**Bet:** One pure function reads a week from the vault: what was planted, the footprints each surface left, and how much of the week each surface could see. The app's `/week` renders it with no network and no model. One MCP tool returns the same object, so the rituals become "fetch, then talk". Before any of it is trusted, the two sensor gaps that made viewing vanish get closed.
+**Bet:** One pure function reads a week from the vault: what was planted, the footprints each surface left, and how much of the week each surface could see. The app's Harvest opens on it, with no network and no model. One MCP tool returns the same object, so the rituals become "fetch, then talk". Before any of it is trusted, the two sensor gaps that made viewing vanish get closed.
 
 **Why it matters:** On 2026-10-09 `get_attention` reported Entertainment "doubled" (238 → 472 min). A recount from the desktop log found ~9–16 h of viewing in *both* weeks; only the source moved, from Stremio to YouTube. The mirror lied by a factor of two to four and said nothing about what it could not see. Today:
 - no skill reads footprints: `recap` was removed 2026-09-10 (`575dfe3`), and no skill calls `get_attention` or `get_day_trace`;
@@ -27,7 +27,7 @@ issues: ["#199", "#202", "#194", "#187", "#237"]
 
 **Out (no-gos):**
 - **No score.** No alignment %, no completion rate, no "doubled". Planted and footprints sit side by side in minutes. Week over week means two numbers, never a ratio or an arrow (`docs/principles.md`, Red Lines; `harvestViewModel.ts:22`).
-- **No push.** The snapshot is a file. Nothing notifies, emails or badges. You visit `/week`; it does not visit you.
+- **No push.** The snapshot is a file. Nothing notifies, emails or badges. You visit Harvest; it does not visit you.
 - **No scheduled LLM.** Interpretation happens only in a conversation you start.
 - **No number without its coverage.** Every footprint total carries the hours its surface saw, the minutes credited through idle, and the unmapped minutes. Moments off screen are marked untraceable, never "missed".
 - **No titles, messages or URLs** in any new spring. Repo + count; issue id + state. This keeps the privacy tier of `mcp-server/attention.ts:4`.
@@ -45,9 +45,11 @@ Slices ship in this order; each is one PR. **Must = 1–4. Should = 5–6. Nice 
    - Move `normalise` from `mcp-server/activity-log.ts` into the domain so the app and the MCP server parse lines the same way.
    - BCT lens: self-monitoring of behaviour (2.3) and feedback on behaviour (2.2). The discrepancy between plan and footprints (1.6) is *shown*, never computed. Reading it is the gardener's job.
 
-2. **`/week` renders it** (`src/app/week/page.tsx:9`, today `router.replace("/cultivate")`).
+2. **Harvest reads the week back** (`src/app/harvest/page.tsx`; `/week` redirects there). *Revised 2026-10-09: "week = harvest a little bit no? current harvest is unused."*
+   - Harvest opens on the current week (Monday → Sunday) and zooms out to the season: the existing banded-heatmap index and `SeasonReadback`. The nav stays Plant · Cultivate · Harvest; no new entry.
    - Add one Tauri command, `activity_read(from, to)`, that returns raw lines. Rust does no parsing, so the shape is not paid for twice. It implements the dormant `ActivityLogPort`.
-   - Gross → subtle: week totals per area first, then per surface, then the coverage line. Stone tones; colour only for areas. No modal.
+   - Add `garmin_habit_map_read`, so the app reads `integrations/garmin/habit-map.json` through the same `parseHabitMap` as the MCP tool. A fixture test pins that both resolve the same mapping.
+   - Gross → subtle: the week first (planted and footprints per area), then per surface, with each surface's coverage line on its closed row. Its areas, unmapped minutes and the board wait behind native disclosures. Stone tones; colour only for areas. No modal. No network, no model.
 
 3. **The rituals fetch, then talk** (`plugin/skills/weather/SKILL.md:30,40,165`; `plugin/skills/weekly-moments-review/`).
    - `weather` gains a week mode that makes one tool call, then renders and asks one question. Delete `weekly-moments-review`.
@@ -95,8 +97,8 @@ Slices ship in this order; each is one PR. **Must = 1–4. Should = 5–6. Nice 
 ## Acceptance
 
 1. `weekReadback` on a fixture week returns the board, the per-area planted count, and per-surface footprints. Every footprint total has `coverage: { seenHours, idleCreditedMin, unmappedMin }`. No field is a ratio.
-2. The MCP tool and `/week` render identical minutes for the same week, and both use the one domain function.
-3. `/week` opens in the app without a redirect and works offline. Journal and comms read "not drawn".
+2. The MCP tool and Harvest's week render identical minutes for the same week, and both use the one domain function (and the same Garmin habit map).
+3. Harvest opens on the current week and works offline; `/week` redirects to it. Journal and comms read "not drawn".
 4. `/weather week` makes one readback call. `weekly-moments-review` is gone, and no skill mentions `recap`.
 5. A 2-h film in Stremio with no input logs ≥ 110 min of desktop dwell. A Mac left awake overnight credits ≤ 3 h. A lock closes the span.
 6. A video in a cross-origin iframe on an observe-tier site writes `video_started`/`video_paused` credited to the top tab's domain.

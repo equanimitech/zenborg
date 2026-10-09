@@ -11,16 +11,19 @@ import { PhaseIcon } from "@/domain/value-objects/phaseStyles";
 import { formatCycleDateRange, getDateLabel } from "@/lib/dates";
 
 /**
- * WeekReadbackView — the week, read back.
+ * WeekReadbackView — the week, read back. Harvest's week scale.
  *
- * Gross → subtle: per area first (what was planted, where attention went),
- * then each surface, then what each surface could see, then the board day by
+ * Gross → subtle. The surface layer reads complete on its own: per area, what
+ * was planted beside where attention went; then each surface on one line with
+ * what it could see. The subtle layer waits behind a press (native
+ * `<details>`): a surface's areas and unmapped minutes, and the board day by
  * day. Every number sits beside last week's as a second plain number. There
  * is no score and no room for one: no ratio, no arrow, no bar against a plan.
  * Reading the gap is the gardener's job.
  *
- * Design: stone tones throughout; the one coloured thing is the area swatch.
- * Flat, square, no modals (`../DESIGN.md`).
+ * Design (`../DESIGN.md`): stone tones; the area swatch is the only colour.
+ * Sans says what a thing is; mono carries labels and numbers. Hairlines, not
+ * boxes. Flat, square, no modals.
  */
 
 export interface AreaStyle {
@@ -88,28 +91,44 @@ export function areaRows(readback: WeekReadback): AreaRow[] {
   return [...rows.entries()].map(([areaId, r]) => ({ areaId, ...r }));
 }
 
+/** "seen 62 h · 0 m through idle · 24 h 34 m unmapped". Coverage rides with every surface. */
+export function coverageLine(c: Coverage): string {
+  return `seen ${c.seenHours} h · ${formatMinutes(c.idleCreditedMin)} through idle · ${formatMinutes(c.unmappedMin)} unmapped`;
+}
+
+const label =
+  "font-mono text-xs uppercase tracking-[0.08em] text-stone-500 dark:text-stone-400";
+const ink = "text-stone-900 dark:text-stone-100";
+const muted = "text-stone-600 dark:text-stone-400";
+const faint = "text-stone-400 dark:text-stone-500";
+const number = "font-mono text-sm tabular-nums text-right";
+const rule = "border-stone-200 dark:border-stone-800";
+/** The disclosure row. The default triangle is hidden; `Marker` draws + and −. */
+const summary =
+  "flex cursor-pointer list-none items-baseline gap-3 py-2 [&::-webkit-details-marker]:hidden";
+
+function Marker() {
+  return (
+    <span
+      aria-hidden="true"
+      className={`w-3 shrink-0 font-mono text-xs ${faint}`}
+    >
+      <span className="group-open:hidden">+</span>
+      <span className="hidden group-open:inline">−</span>
+    </span>
+  );
+}
+
 function Swatch({ area }: { area?: AreaStyle }) {
-  if (!area) return <span aria-hidden="true" className="h-2 w-2 shrink-0" />;
   return (
     <span
       aria-hidden="true"
       className="h-2 w-2 shrink-0"
-      data-area-swatch
-      style={{ backgroundColor: area.color }}
+      data-area-swatch={area ? "" : undefined}
+      style={area ? { backgroundColor: area.color } : undefined}
     />
   );
 }
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-xs uppercase tracking-wider text-stone-400 dark:text-stone-500">
-      {children}
-    </h2>
-  );
-}
-
-const num = "tabular-nums text-right";
-const faint = "text-stone-400 dark:text-stone-500";
 
 export function WeekReadbackView({
   readback,
@@ -134,95 +153,89 @@ export function WeekReadbackView({
   const rows = areaRows(readback).sort(byOrder);
   const name = (id: string, fallback?: string) =>
     areas[id]?.name ?? fallback ?? id;
+  const plantedCount = readback.board.reduce(
+    (n, d) => n + d.phases.reduce((m, p) => m + p.moments.length, 0),
+    0,
+  );
+  const navButton = `${label} hover:text-stone-900 dark:hover:text-stone-100`;
 
   return (
     <article className="mx-auto max-w-3xl px-6 py-12">
-      <header className="flex flex-wrap items-baseline justify-between gap-4 border-b border-stone-200 pb-6 dark:border-stone-800">
+      <header
+        className={`flex flex-wrap items-baseline justify-between gap-4 border-b pb-6 ${rule}`}
+      >
         <div>
-          <h1 className="text-2xl font-medium tracking-tight text-stone-900 dark:text-stone-100">
+          <h1 className={`text-2xl font-medium tracking-tight ${ink}`}>
             The week
           </h1>
-          <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+          <p className={`mt-1 ${label}`}>
             {formatCycleDateRange(readback.window.from, readback.window.to)}
           </p>
         </div>
-        <nav aria-label="Weeks" className="flex gap-3 text-sm">
-          <button
-            className="text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
-            onClick={onPrevious}
-            type="button"
-          >
-            Previous week
+        <nav aria-label="Weeks" className="flex gap-4">
+          <button className={navButton} onClick={onPrevious} type="button">
+            Previous
           </button>
           {onThisWeek && (
-            <button
-              className="text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
-              onClick={onThisWeek}
-              type="button"
-            >
+            <button className={navButton} onClick={onThisWeek} type="button">
               This week
             </button>
           )}
           {onNext && (
-            <button
-              className="text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-100"
-              onClick={onNext}
-              type="button"
-            >
-              Next week
+            <button className={navButton} onClick={onNext} type="button">
+              Next
             </button>
           )}
         </nav>
       </header>
 
       {!logReadable && (
-        <p className="mt-6 text-sm text-stone-500 dark:text-stone-400">
+        <p className={`mt-6 max-w-[62ch] text-sm ${muted}`}>
           Footprints live in the desktop app's activity log. Here only what you
           planted reads back.
         </p>
       )}
 
-      <section className="pt-8">
-        <SectionTitle>Planted and walked</SectionTitle>
+      <section className="pt-10">
+        <h2 className={label}>Planted and walked</h2>
         {rows.length === 0 ? (
-          <p className="mt-4 text-sm text-stone-500 dark:text-stone-400">
+          <p className={`mt-4 text-sm ${muted}`}>
             Nothing planted and no footprints this week or last.
           </p>
         ) : (
           <table className="mt-4 w-full text-sm">
-            <thead className={faint}>
-              <tr className="text-xs">
-                <th className="pb-2 text-left font-normal">Area</th>
-                <th className={`pb-2 font-normal ${num}`}>Planted</th>
-                <th className={`pb-2 font-normal ${num}`}>last week</th>
-                <th className={`pb-2 pl-6 font-normal ${num}`}>Footprints</th>
-                <th className={`pb-2 font-normal ${num}`}>last week</th>
+            <thead>
+              <tr>
+                <th className={`pb-2 text-left font-normal ${label}`}>Area</th>
+                <th className={`pb-2 text-right font-normal ${label}`}>
+                  Planted
+                </th>
+                <th className={`pb-2 text-right font-normal ${label}`}>
+                  Last week
+                </th>
+                <th className={`pb-2 pl-6 text-right font-normal ${label}`}>
+                  Footprints
+                </th>
+                <th className={`pb-2 text-right font-normal ${label}`}>
+                  Last week
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr
-                  className="border-t border-stone-100 dark:border-stone-900"
-                  key={r.areaId}
-                >
-                  <td className="py-1.5">
-                    <span className="flex items-center gap-2 text-stone-800 dark:text-stone-200">
+                <tr className={`border-t ${rule}`} key={r.areaId}>
+                  <td className="py-2">
+                    <span className={`flex items-center gap-2 ${ink}`}>
                       <Swatch area={areas[r.areaId]} />
                       {name(r.areaId)}
                     </span>
                   </td>
-                  <td
-                    className={`py-1.5 text-stone-800 dark:text-stone-200 ${num}`}
-                  >
-                    {r.planted}
-                  </td>
-                  <td className={`py-1.5 ${faint} ${num}`}>{r.plantedLast}</td>
-                  <td
-                    className={`py-1.5 pl-6 text-stone-800 dark:text-stone-200 ${num}`}
-                  >
+                  <td className={`py-2 ${number} ${ink}`}>{r.planted}</td>
+                  <td className={`py-2 ${number} ${faint}`}>{r.plantedLast}</td>
+                  <td className={`py-2 pl-6 ${number} ${ink}`}>
                     {formatMinutes(r.minutes)}
                   </td>
-                  <td className={`py-1.5 ${faint} ${num}`}>
+                  <td className={`py-2 ${number} ${faint}`}>
                     {formatMinutes(r.minutesLast)}
                   </td>
                 </tr>
@@ -234,11 +247,11 @@ export function WeekReadbackView({
 
       {readback.wilting.length > 0 && (
         <section className="pt-10">
-          <SectionTitle>Wilting at the week's close</SectionTitle>
-          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+          <h2 className={label}>Wilting at the week's close</h2>
+          <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
             {readback.wilting.map((w) => (
               <li
-                className="flex items-center gap-2 text-stone-700 dark:text-stone-300"
+                className={`flex items-center gap-2 ${muted}`}
                 key={w.habitId}
               >
                 <Swatch area={areas[w.areaId]} />
@@ -250,83 +263,101 @@ export function WeekReadbackView({
       )}
 
       <section className="pt-10">
-        <SectionTitle>By surface</SectionTitle>
-        <div className="mt-4 space-y-8">
-          {readback.footprints.map((f) => (
-            <div key={f.surface}>
-              <h3 className="text-sm font-medium text-stone-800 dark:text-stone-200">
-                {SURFACE_LABEL[f.surface]}
-              </h3>
-              {f.status === "not drawn" ? (
-                <p className={`mt-1 text-sm ${faint}`}>
-                  Not drawn: no spring feeds this surface yet.
-                </p>
-              ) : (
-                <SurfaceDetail
-                  areas={areas}
-                  byOrder={byOrder}
-                  last={f.lastWeek}
-                  logReadable={logReadable}
-                  name={name}
-                  thisWeek={f.thisWeek}
-                />
-              )}
-            </div>
-          ))}
+        <h2 className={label}>By surface</h2>
+        <div className={`mt-3 border-t ${rule}`}>
+          {readback.footprints.map((f) =>
+            f.status === "not drawn" ? (
+              <div
+                className={`flex items-baseline gap-3 border-b py-2 ${rule}`}
+                key={f.surface}
+              >
+                <span className="w-3 shrink-0" />
+                <span className={`w-20 text-sm ${muted}`}>
+                  {SURFACE_LABEL[f.surface]}
+                </span>
+                <span className={`font-mono text-xs ${faint}`}>
+                  not drawn · no spring feeds it yet
+                </span>
+              </div>
+            ) : (
+              <details className={`group border-b ${rule}`} key={f.surface}>
+                <summary className={summary}>
+                  <Marker />
+                  <span className={`w-20 text-sm ${ink}`}>
+                    {SURFACE_LABEL[f.surface]}
+                  </span>
+                  <span className={`font-mono text-xs ${muted}`}>
+                    {logReadable
+                      ? coverageLine(f.thisWeek.coverage)
+                      : "not readable in this build"}
+                  </span>
+                </summary>
+                {logReadable && (
+                  <SurfaceDetail
+                    areas={areas}
+                    byOrder={byOrder}
+                    last={f.lastWeek}
+                    name={name}
+                    thisWeek={f.thisWeek}
+                  />
+                )}
+              </details>
+            ),
+          )}
         </div>
       </section>
 
       <section className="pt-10">
-        <SectionTitle>The board</SectionTitle>
-        <div className="mt-4 space-y-5">
-          {readback.board.map((day) => (
-            <div key={day.day}>
-              <h3 className={`text-xs ${faint}`}>{getDateLabel(day.day)}</h3>
-              {day.phases.length === 0 ? (
-                <p className="mt-1 text-sm text-stone-300 dark:text-stone-600">
-                  Nothing planted.
-                </p>
-              ) : (
-                <ul className="mt-1.5 space-y-1">
-                  {day.phases.flatMap((p) =>
-                    p.moments.map((m) => (
-                      <li
-                        className="flex items-baseline gap-2 text-sm"
-                        key={m.id}
-                      >
-                        <span className="w-4 shrink-0 text-stone-300 dark:text-stone-600">
-                          <PhaseIcon
-                            className="h-3 w-3"
-                            phase={p.phase as Phase}
-                          />
-                        </span>
-                        <Swatch area={areas[m.areaId]} />
-                        <span className="text-stone-800 dark:text-stone-200">
-                          {m.name}
-                        </span>
-                        {!m.traceable && (
-                          <span
-                            className={`text-xs ${faint}`}
-                            title="No surface can see this area or habit"
-                          >
-                            untraceable
+        <details className={`group border-y ${rule}`}>
+          <summary className={summary}>
+            <Marker />
+            <span className={label}>The board</span>
+            <span className={`font-mono text-xs ${faint}`}>
+              {plantedCount === 1 ? "1 moment" : `${plantedCount} moments`}
+            </span>
+          </summary>
+          <div className="space-y-5 pb-6 pl-6 pt-2">
+            {readback.board.map((day) => (
+              <div key={day.day}>
+                <h3 className={label}>{getDateLabel(day.day)}</h3>
+                {day.phases.length === 0 ? (
+                  <p className={`mt-1 text-sm ${faint}`}>Nothing planted.</p>
+                ) : (
+                  <ul className="mt-1.5 space-y-1">
+                    {day.phases.flatMap((p) =>
+                      p.moments.map((m) => (
+                        <li
+                          className="flex items-baseline gap-2 text-sm"
+                          key={m.id}
+                        >
+                          <span className={`w-4 shrink-0 ${faint}`}>
+                            <PhaseIcon
+                              className="h-3 w-3"
+                              phase={p.phase as Phase}
+                            />
                           </span>
-                        )}
-                      </li>
-                    )),
-                  )}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
+                          <Swatch area={areas[m.areaId]} />
+                          <span className={ink}>{m.name}</span>
+                          {!m.traceable && (
+                            <span
+                              className={`font-mono text-xs ${faint}`}
+                              title="No surface can see this area or habit"
+                            >
+                              untraceable
+                            </span>
+                          )}
+                        </li>
+                      )),
+                    )}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
       </section>
     </article>
   );
-}
-
-function coverageLine(c: Coverage): string {
-  return `saw ${c.seenHours} h of the week · ${formatMinutes(c.idleCreditedMin)} credited through idle · ${formatMinutes(c.unmappedMin)} unmapped`;
 }
 
 function SurfaceDetail({
@@ -335,41 +366,32 @@ function SurfaceDetail({
   areas,
   byOrder,
   name,
-  logReadable,
 }: {
   thisWeek: Footprint;
   last: Footprint;
   areas: Readonly<Record<string, AreaStyle>>;
   byOrder: (a: { areaId: string }, b: { areaId: string }) => number;
   name: (id: string, fallback?: string) => string;
-  logReadable: boolean;
 }) {
-  if (!logReadable) {
-    return (
-      <p className={`mt-1 text-sm ${faint}`}>Not readable in this build.</p>
-    );
-  }
+  const thisByArea = new Map(thisWeek.byArea.map((a) => [a.areaId, a]));
   const lastByArea = new Map(last.byArea.map((a) => [a.areaId, a.minutes]));
-  const ids = [
-    ...new Set([...thisWeek.byArea.map((a) => a.areaId), ...lastByArea.keys()]),
-  ]
+  const ids = [...new Set([...thisByArea.keys(), ...lastByArea.keys()])]
     .map((areaId) => ({ areaId }))
     .sort(byOrder);
-  const thisByArea = new Map(thisWeek.byArea.map((a) => [a.areaId, a]));
   return (
-    <div className="mt-1">
+    <div className="pb-4 pl-6">
       {ids.length > 0 && (
-        <ul className="space-y-0.5 text-sm">
+        <ul className="space-y-1 text-sm">
           {ids.map(({ areaId }) => (
             <li className="flex items-center gap-2" key={areaId}>
               <Swatch area={areas[areaId]} />
-              <span className="flex-1 text-stone-700 dark:text-stone-300">
+              <span className={`flex-1 ${muted}`}>
                 {name(areaId, thisByArea.get(areaId)?.areaName)}
               </span>
-              <span className="w-24 tabular-nums text-right text-stone-800 dark:text-stone-200">
+              <span className={`w-24 ${number} ${ink}`}>
                 {formatMinutes(thisByArea.get(areaId)?.minutes ?? 0)}
               </span>
-              <span className={`w-24 tabular-nums text-right ${faint}`}>
+              <span className={`w-24 ${number} ${faint}`}>
                 {formatMinutes(lastByArea.get(areaId) ?? 0)}
               </span>
             </li>
@@ -377,18 +399,15 @@ function SurfaceDetail({
         </ul>
       )}
       {thisWeek.unmapped.length > 0 && (
-        <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-          Unmapped:{" "}
+        <p className={`mt-3 font-mono text-xs ${muted}`}>
+          unmapped:{" "}
           {thisWeek.unmapped
             .map((u) => `${u.locator} ${formatMinutes(u.minutes)}`)
-            .join(", ")}
+            .join(" · ")}
         </p>
       )}
-      <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-        This week {coverageLine(thisWeek.coverage)}.
-      </p>
-      <p className={`text-xs ${faint}`}>
-        Last week {coverageLine(last.coverage)}.
+      <p className={`mt-1 font-mono text-xs ${faint}`}>
+        last week: {coverageLine(last.coverage)}
       </p>
     </div>
   );

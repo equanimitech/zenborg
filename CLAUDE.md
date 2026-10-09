@@ -94,7 +94,7 @@ their own surface; the MCP server reads footprints locally and never calls a spr
 `/new-spring` replaces `/oracle-wizard`.
 
 **Built:** the one reader. `get_footprints` (2026-10-09) replaced `get_attention` and
-`get_day_trace`. It and the app's `/week` are thin adapters over `weekReadback` in
+`get_day_trace`. It and Harvest's week scale are thin adapters over `weekReadback` in
 `src/domain/readback/` (the app reads `log/` raw through the `activity_read` Tauri command
 and parses with the same domain function), which
 groups the log's sensor surfaces into reading surfaces (body, screen, work, journal, comms)
