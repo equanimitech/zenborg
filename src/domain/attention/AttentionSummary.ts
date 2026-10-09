@@ -37,6 +37,8 @@ const locatorOf: Readonly<Record<ActivitySurface, LocatorOf>> = {
   browser: (e) =>
     e.kind === "tab_activated" ? str(e.payload.domain) : undefined,
   garmin: () => undefined,
+  // Counted, never dwelt in: a commit tally or a state change has no span.
+  git: () => undefined,
 };
 
 /**

@@ -43,6 +43,7 @@ import {
 import { resolveAddMoment } from "./moments.js";
 import { type RegistryPerson, selectPeopleToReach } from "./people.js";
 import { searchHabits, searchPeople, searchPlaces } from "./search.js";
+import { runSpring } from "./springs.js";
 import { buildTagIndex, buildTagProfile } from "./tags.js";
 import {
   areaHasMoments,
@@ -111,6 +112,10 @@ import {
 // ────────────────────────────────────────────────────────────────────────
 
 const vault = resolveVault();
+// `zenborg-mcp spring <name>`: a spring run by the daemon via jobs.json, not the server.
+if (process.argv[2] === "spring") {
+  process.exit(await runSpring(vault.root, process.argv.slice(3)));
+}
 logVaultBanner(vault);
 const VAULT_ROOT = vault.root;
 
