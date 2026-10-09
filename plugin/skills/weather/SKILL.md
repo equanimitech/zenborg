@@ -194,19 +194,24 @@ Call it again only when the gardener asks for another week.
 ```
 ### Week of Mon Oct 5 – Sun Oct 11
 
-| Area          | Planted | last week | Screen  | last week | Work      | last week |
-|---------------|---------|-----------|---------|-----------|-----------|-----------|
-| Themia        | 7       | 11        | 14 m    | 4 m       | 18 h 30 m | 19 h 24 m |
-| Entertainment | 2       | 4         | 7 h 3 m | 4 h 43 m  | —         | —         |
+| Area          | Planted | last week | Screen  | last week | Work      | last week | Body | last week |
+|---------------|---------|-----------|---------|-----------|-----------|-----------|------|-----------|
+| Studio        | 7       | 11        | 14 m    | 4 m       | 18 h 30 m | 19 h 24 m | —    | —         |
+| Entertainment | 2       | 4         | 7 h 3 m | 4 h 43 m  | —         | —         | —    | —         |
+| Movement      | 3       | 2         | —       | —         | —         | —         | 30 m | 1 h 10 m  |
 
-Screen  saw 62 h · 0 m credited through idle · 24 h 34 m unmapped (cmux 11 h, Brave Browser 8 h)
-Work    saw 55 h · 0 m credited through idle · 0 m unmapped
-Body    saw 89 h · 0 m credited through idle · 6 h 14 m unmapped (cycling 2 h 31 m, soccer 1 h 41 m)
-Journal not drawn · Comms not drawn
+Screen   this week  seen 31.9 h · 0 m through idle · 24 h 34 m unmapped (Terminal 11 h, Browser 8 h)
+         last week  seen 33 h · 0 m through idle · 28 h 10 m unmapped
+Work     this week  seen 18.5 h · 0 m through idle · 0 m unmapped
+         last week  seen 19.4 h · 0 m through idle · 0 m unmapped
+Body     this week  seen 4.7 h · 0 m through idle · 4 h 12 m unmapped (cycling 2 h 31 m, soccer 1 h 41 m)
+         last week  seen 1.2 h · 0 m through idle · 0 m unmapped
+Journal  not drawn · Comms not drawn
 
-Blind spots: 18 moments were off screen (untraceable, not missed). Idle
-after 120 s ends a screen span, so a film watched without input counts its
-first two minutes; embedded and DRM players emit no video events.
+Blind spots: 18 moments are untraceable, not missed: their areas declare no
+paths, hosts or apps and their habits have no Garmin mapping. Idle after
+120 s ends a screen span, so a film watched without input counts its first
+two minutes; embedded and DRM players emit no video events.
 
 Wilting: Sit · Mobility
 ```
@@ -214,15 +219,24 @@ Wilting: Sit · Mobility
 - Two numbers side by side, every time. Never a ratio, a percentage, an arrow,
   or a word like "doubled" or "halved". If the gardener asks "is that more?",
   give both numbers and the coverage behind each.
-- Every surface line carries its coverage. A footprint total without
-  `seenHours` and `unmappedMin` beside it is the failure this mode exists to
-  prevent.
-- `"not drawn"` is not zero: no spring feeds that surface yet.
-- `traceable: false` moments are untraceable, never missed.
+- Every surface carries its coverage for **both** weeks: this week's line and
+  last week's. A footprint total without `seenHours` and `unmappedMin` beside
+  it is the failure this mode exists to prevent; last week's number needs last
+  week's coverage just as much.
+- `seenHours` is the time the surface actually observed (the union of its
+  spans), not the hours it was switched on.
+- `—` means no minutes on that surface for that area. `"not drawn"` is not
+  zero: no spring feeds that surface yet.
+- `traceable: false` means no surface could ever see the moment: its area
+  declares no paths, hosts or apps, and its habit has no Garmin mapping. It is
+  untraceable, never missed. It does not mean "off screen": a run whose habit
+  maps to a watch activity is traceable on body.
 - The blind spots line comes from `plugin/surfaces/screen.md`. Name the ones
   that bear on this week's numbers; skip the rest.
 - Surfaces overlap (an agent run while its terminal is in front). Never sum
   surfaces into one total.
+- Areas render in the gardener's own order (as `planted` returns them), never
+  sorted by count.
 
 #### W4. Ask one question
 
@@ -230,7 +244,7 @@ Wilting: Sit · Mobility
 
 One open question, then follow the gardener. Likely turns:
 
-- "Map cmux to equanimi.tech" → `mcp__zenborg__map_area { kind: "app", key: "cmux", area: "equanimi.tech" }`
+- "Map Terminal to Studio" → `mcp__zenborg__map_area { kind: "app", key: "Terminal", area: "Studio" }`
 - "Plant two runs next week" → hand off to tend.
 - "Why is Entertainment so high?" → read the per-surface rows and the blind
   spots back. Do not speculate past what coverage saw.
@@ -240,6 +254,8 @@ Do not offer a verdict, a lesson, or a plan for next week unless asked.
 ## Rules
 
 - Do NOT compute completion rates, streaks, scores, ratios or percentages.
+- Do NOT gamify or rank: no badges, no "well done", no best or worst area, no
+  ordering by count.
 - Do NOT moralize. Silence is data, not failure.
 - Do NOT call `list_moments` without a `day` filter.
 - Day mode does not read footprints. Week mode reads them, through
@@ -252,3 +268,9 @@ Do not offer a verdict, a lesson, or a plan for next week unless asked.
 - **User invokes on Monday morning with nothing planted over the weekend:** lookback covers Sat+Sun. Offer to fill them in.
 - **Yesterday was fully planted:** render it, skip the correction prompt, go straight to beat 2.
 - **Tomorrow has no moments and no wilting habits:** just show the empty board and close. Don't force a planting.
+- **Week mode, the week crosses a cycle boundary:** read it as a week anyway.
+  If the gardener wants the season itself, route to
+  `mcp__zenborg__get_cycle_review` for the cycle that closed.
+- **Week mode, an empty window** (nothing planted, no footprints on any drawn
+  surface): still render the structure, lead with "Nothing planted and no
+  footprints this week", and ask whether to look further back.

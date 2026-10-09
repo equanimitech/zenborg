@@ -11,8 +11,8 @@ The **session close**. A session ends, its progress lands where that work is
 tracked, the intention is released, and he moves on. Several times a day is
 normal.
 
-Not a read (`weather` reads a day or a week back and writes nothing), not a
-compaction for another agent
+Not a catch-up (`weather` reads a day or a week back, and plants or corrects
+moments only when asked), not a compaction for another agent
 (`handoff` — that's one of the exits here, not the point).
 
 **This is not the day-close.** `sunset` owns that — the garden's day summary,
@@ -66,8 +66,7 @@ Find the issue before writing anything:
 Then draft a comment from §1's synthesis and show it. Propose a state change
 only when the session actually earned one.
 
-**Draft before write. Nothing reaches Linear before he approves** — the same
-rule `week-review` runs on. Post with `mcp__plugin_linear_linear__save_comment`
+**Draft before write. Nothing reaches Linear before he approves.** Post with `mcp__plugin_linear_linear__save_comment`
 / `save_issue` (fall back to `mcp__claude_ai_Linear__*` if that server is
 unauthenticated).
 
@@ -139,7 +138,7 @@ quiet.
   `mcp__claude_ai_Slack__slack_send_message_draft`. **No `|` characters, so no
   markdown tables** — he pastes these.
 - **Linear status update** — the session moved a whole *project*, not one issue.
-  `save_status_update`, draft-then-approve, same as `week-review`.
+  `save_status_update`, draft-then-approve, like the comment in §3a.
 - **`/handoff`** — he's stopping *mid-thread*, not at a clean edge. Invoke the
   skill; it writes to the OS temp dir, not the workspace.
 
@@ -171,11 +170,13 @@ couldn't run. Then stop.
 - **Session scope.** `close-up` closes a session, repeatedly through the day.
   The day belongs to `sunrise` · `sunset`; the week to `weather` (week mode).
   Hand off rather than absorb.
-- Sibling of `weather` (read-only, a day or a week); this is the write.
+- Sibling of `weather`, which reads a day or a week back and plants on
+  request; this one lands a session.
 - Delegates the journal write to the journal oracle chain (`oracles.json`),
   the message to `smart-brevity`, the mid-thread stop to `handoff`.
 - **zenborg is the only thing this skill writes.** The moment
   (`get_active_moment` · `update_moment` · `clear_active_moment`) and nothing
   else. Moments are planted, not completed — there is no done-flag to set, so
   releasing the pointer is the entire close.
-- Linear via `mcp__plugin_linear_linear__*`, matching `week-review`.
+- Linear via `mcp__plugin_linear_linear__*`, falling back to
+  `mcp__claude_ai_Linear__*` when that server is unauthenticated.

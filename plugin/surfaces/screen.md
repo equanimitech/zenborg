@@ -13,7 +13,7 @@ had the tab, which video was playing. One reading surface, two sensors.
 Profile of the browser half: `plugin/surfaces/browser.md`.
 
 Never read the JSONL by hand to answer "where did my week go". `get_footprints`
-is the one reader; the app's `/week` runs the same function.
+is the one reader; Harvest's week in the app runs the same function.
 
 ## Key fields
 
@@ -22,11 +22,12 @@ is the one reader; the app's `/week` runs the same function.
 - `thisWeek.byArea[]` / `lastWeek.byArea[]` — `{ areaId, areaName, minutes }`.
   Per area, desktop and browser spans are unioned, so a focused tab that is
   also playing counts once.
-- `thisWeek.unmapped[]` — the largest locators no area claims: app names
-  ("cmux", "Spotify") and hosts. An unmapped app only counts where no browser
+- `thisWeek.unmapped[]` / `lastWeek.unmapped[]` — the largest locators no
+  area claims: app names ("Terminal", "Spotify") and hosts. An unmapped app only counts where no browser
   span covers it, so "Brave Browser" in front of a resolved tab is not unmapped.
-- `coverage` — `{ seenHours, idleCreditedMin, unmappedMin }`:
-  - `seenHours` — clock hours in which either sensor left at least one event.
+- `thisWeek.coverage` / `lastWeek.coverage` — `{ seenHours, idleCreditedMin, unmappedMin }`:
+  - `seenHours` — hours the two sensors actually observed: the union of every
+    span they traced, mapped or not, to one decimal.
   - `idleCreditedMin` — minutes credited through idle. Always 0 for now (see
     blind spots).
   - `unmappedMin` — every unmapped minute, not just the listed ones.
@@ -43,9 +44,12 @@ Name these whenever screen minutes are read back. A number without what it
 could not see is the 2026-10-09 failure: Entertainment read "doubled" when
 viewing had only moved from Stremio to YouTube.
 
-- **Off-screen moments can't be traced.** A run, a dinner, a book: no screen
-  sensor sees them. The readback marks such moments `traceable: false` —
-  untraceable, never missed.
+- **Off-screen moments leave no screen footprint.** A dinner, a book: no
+  screen sensor sees them. The readback's `traceable: false` is narrower: no
+  surface could ever see the moment, because its area declares no paths,
+  hosts or apps and its habit has no Garmin mapping. That is untraceable,
+  never missed. A run whose habit maps to a watch activity is off screen but
+  traceable on body.
 - **Idle after 120 s ends a span** (until pitch slice 4). The desktop sensor
   closes the frontmost app's span at `idle_start`, so a film watched without
   touching the keyboard counts its first two minutes. `idleCreditedMin` stays

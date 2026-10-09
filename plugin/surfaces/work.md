@@ -21,11 +21,13 @@ work from agent sessions only.
 
 ### `get_footprints` → `footprints[surface="work"]`
 
-- `byArea[]` — minutes per area, from human `prompt` events resolved by `cwd`
-  (or the touched file) against the areas' `surfaces.paths`. Each prompt
-  dwells until the next human event, capped at 5 min.
-- `unmapped[]` — cwds no area path claims.
-- `coverage` — `{ seenHours, idleCreditedMin, unmappedMin }`.
+- `thisWeek.byArea[]` / `lastWeek.byArea[]` — minutes per area, from human
+  `prompt` events resolved by `cwd` (or the touched file) against the areas'
+  `surfaces.paths`. Each prompt dwells until the next human event, capped at
+  5 min.
+- `thisWeek.unmapped[]` / `lastWeek.unmapped[]` — cwds no area path claims.
+- `thisWeek.coverage` / `lastWeek.coverage` — `{ seenHours, idleCreditedMin,
+  unmappedMin }`; `seenHours` is the union of the agent spans traced.
 
 ### Git log
 
