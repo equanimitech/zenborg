@@ -8,7 +8,7 @@ The garden's Claude Code surface. Three concerns, each its own file:
 | `hooks/fences.mts` | PreToolUse | Fence enforcement — reads vault fences, escalation ladder |
 | `hooks/gap-practice.mts` | UserPromptSubmit | Breath practice offered in the AI-wait gap |
 
-Plus 9 skills that drive the garden from any session (sunrise, sunset, tend, weather, season, recap, close-up, onboarding, weekly-moments-review).
+Plus 10 skills that drive the garden from any session (sunrise, sunset, tend, weather, season, close-up, midday, onboarding, oracle-probe, oracle-wizard). `weather` reads a day or, in week mode, a whole week back through `get_footprints`.
 
 ## Privacy
 

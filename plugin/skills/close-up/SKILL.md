@@ -11,7 +11,8 @@ The **session close**. A session ends, its progress lands where that work is
 tracked, the intention is released, and he moves on. Several times a day is
 normal.
 
-Not a read (`recap` — writes nothing), not a compaction for another agent
+Not a read (`weather` reads a day or a week back and writes nothing), not a
+compaction for another agent
 (`handoff` — that's one of the exits here, not the point).
 
 **This is not the day-close.** `sunset` owns that — the garden's day summary,
@@ -25,8 +26,8 @@ closing up surfaces work, that's `/idea` or `/pain`, not this session.
 
 ## 1. Read the session
 
-The conversation is the session — you already hold it. Don't rebuild `recap`'s
-sweep.
+The conversation is the session — you already hold it. Don't sweep the
+activity log for it.
 
 Supplement with the diff only:
 
@@ -98,7 +99,7 @@ mcp__zenborg__get_active_moment
 
 - Produced a durable pointer (PR, issue, doc)? **Pin it first** —
   `mcp__zenborg__update_moment` with `refs`. The moment is the only place this
-  session stays findable from `recap` months later; the pointer is about to be
+  session stays findable months later; the pointer is about to be
   released and takes the association with it.
 - Then `mcp__zenborg__clear_active_moment`.
 
@@ -161,16 +162,16 @@ couldn't run. Then stop.
 - **The journal is never a repo.** The journal oracle (`routes.journal` in
   `~/.zenborg/oracles.json`) picks the sink; skills never hardcode one.
 - **Release the moment, don't fake a completion.** No done-flag exists.
-- **Don't rebuild `recap`.** The conversation plus a `git log` is the whole read.
+- **Don't sweep the log.** The conversation plus a `git log` is the whole read.
 - **No new work.** Findings become `/idea` · `/pain` · `/question`, or they wait.
 - **Exits are earned, not offered.** Silence is the common case.
 
 ## Composition
 
 - **Session scope.** `close-up` closes a session, repeatedly through the day.
-  The day belongs to `sunrise` · `sunset`; the week to `week-planning` ·
-  `week-review`. Hand off rather than absorb.
-- Sibling of `recap` (read-only, any window); this is the write.
+  The day belongs to `sunrise` · `sunset`; the week to `weather` (week mode).
+  Hand off rather than absorb.
+- Sibling of `weather` (read-only, a day or a week); this is the write.
 - Delegates the journal write to the journal oracle chain (`oracles.json`),
   the message to `smart-brevity`, the mid-thread stop to `handoff`.
 - **zenborg is the only thing this skill writes.** The moment

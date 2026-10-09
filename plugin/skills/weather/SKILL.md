@@ -1,20 +1,28 @@
 ---
 name: weather
 description: >-
-  Catch up on recent unplanted days and look ahead at the next 48 hours.
-  Primarily surfaces yesterday (or whichever days since the last check haven't
-  been planted), lets the user correct or fill them in, then shows today and
-  tomorrow's board. Use when the user says "weather", "catch me up", "what did I
-  miss", "yesterday", "plan today and tomorrow", "what's coming up", or invokes
-  "/weather". Do NOT trigger for single-moment capture (tend), the morning
-  ritual (sunrise), day close (sunset), cycle-level review (season), or the
-  heavy evidence-based lookback (recap).
+  Catch up on recent unplanted days and look ahead at the next 48 hours, or
+  read a whole week back. Day mode surfaces yesterday (or whichever days since
+  the last check haven't been planted), lets the user correct or fill them in,
+  then shows today and tomorrow's board. Week mode makes one get_footprints
+  call and shows what was planted beside where attention went, with what each
+  surface could not see, then asks one question. Use when the user says
+  "weather", "catch me up", "what did I miss", "yesterday", "plan today and
+  tomorrow", "what's coming up", or invokes "/weather"; for week mode, "/weather
+  week", "weekly review", "how was my week", "last week", "where did my
+  attention go", "compare what I planted with what I did". Do NOT trigger for
+  single-moment capture (tend), the morning ritual (sunrise), day close
+  (sunset), or cycle-level review (season).
 ---
 
 # Weather
 
-Catch up and look ahead. Two beats: land what happened recently, then show
-what's coming.
+Catch up and look ahead. Two modes:
+
+- **Day mode** (default): two beats — land what happened recently, then show
+  what's coming.
+- **Week mode**: read one Monday → Sunday week back in one call, then talk.
+  See [Week mode](#week-mode).
 
 ## When to invoke
 
@@ -22,14 +30,15 @@ Trigger phrases:
 - "/weather", "catch me up", "what did I miss"
 - "what happened yesterday", "fill in yesterday"
 - "plan today and tomorrow", "what's coming up"
+- Week mode: "/weather week", "weekly review", "how was my week", "last week",
+  "where did my attention go", "what did I plant this week"
 
 Do NOT trigger for:
 - Single moment capture (tend)
 - Morning ritual (sunrise) or day close (sunset)
 - Cycle-level review or planning (season)
-- Heavy evidence-based lookback with git/keel/garmin (recap)
 
-## Workflow
+## Workflow (day mode)
 
 ### Beat 1 — Look back (catch up)
 
@@ -37,7 +46,8 @@ Do NOT trigger for:
 
 Default: yesterday only. If today has zero moments, include today in the
 lookback too. If the user names a wider window ("last 3 days", "since Monday"),
-honor it. Never exceed 7 days — route to recap for longer.
+honor it. Never exceed 7 days. A whole week, or "where did my attention go",
+is week mode.
 
 #### 2. Fetch the lookback days
 
@@ -157,12 +167,83 @@ Route by shape:
 
 Optionally scan Someday if the user wants to go deeper.
 
+## Week mode
+
+One call, then a conversation. The interpretation is the gardener's; this
+mode lays the week out and asks.
+
+#### W1. Pick the week
+
+The week runs Monday → Sunday; days roll at 04:00. Default: the week holding
+today. On a Monday, default to last week, since this one has barely begun.
+Honor a named week ("last week", "the week of Sep 28").
+
+#### W2. Fetch it — once
+
+```
+mcp__zenborg__get_footprints { "day": "<any YYYY-MM-DD in the week>" }
+```
+
+That one call carries everything: the board, planted per area (this week and
+last), footprints per surface by area with coverage, wilting habits, and area
+names. Do not call `list_moments`, `list_areas` or `list_habits` on top of it.
+Call it again only when the gardener asks for another week.
+
+#### W3. Render, gross → subtle
+
+```
+### Week of Mon Oct 5 – Sun Oct 11
+
+| Area          | Planted | last week | Screen  | last week | Work      | last week |
+|---------------|---------|-----------|---------|-----------|-----------|-----------|
+| Themia        | 7       | 11        | 14 m    | 4 m       | 18 h 30 m | 19 h 24 m |
+| Entertainment | 2       | 4         | 7 h 3 m | 4 h 43 m  | —         | —         |
+
+Screen  saw 62 h · 0 m credited through idle · 24 h 34 m unmapped (cmux 11 h, Brave Browser 8 h)
+Work    saw 55 h · 0 m credited through idle · 0 m unmapped
+Body    saw 89 h · 0 m credited through idle · 6 h 14 m unmapped (cycling 2 h 31 m, soccer 1 h 41 m)
+Journal not drawn · Comms not drawn
+
+Blind spots: 18 moments were off screen (untraceable, not missed). Idle
+after 120 s ends a screen span, so a film watched without input counts its
+first two minutes; embedded and DRM players emit no video events.
+
+Wilting: Sit · Mobility
+```
+
+- Two numbers side by side, every time. Never a ratio, a percentage, an arrow,
+  or a word like "doubled" or "halved". If the gardener asks "is that more?",
+  give both numbers and the coverage behind each.
+- Every surface line carries its coverage. A footprint total without
+  `seenHours` and `unmappedMin` beside it is the failure this mode exists to
+  prevent.
+- `"not drawn"` is not zero: no spring feeds that surface yet.
+- `traceable: false` moments are untraceable, never missed.
+- The blind spots line comes from `plugin/surfaces/screen.md`. Name the ones
+  that bear on this week's numbers; skip the rest.
+- Surfaces overlap (an agent run while its terminal is in front). Never sum
+  surfaces into one total.
+
+#### W4. Ask one question
+
+> **What do you see?**
+
+One open question, then follow the gardener. Likely turns:
+
+- "Map cmux to equanimi.tech" → `mcp__zenborg__map_area { kind: "app", key: "cmux", area: "equanimi.tech" }`
+- "Plant two runs next week" → hand off to tend.
+- "Why is Entertainment so high?" → read the per-surface rows and the blind
+  spots back. Do not speculate past what coverage saw.
+
+Do not offer a verdict, a lesson, or a plan for next week unless asked.
+
 ## Rules
 
-- Do NOT compute completion rates, streaks, or scores.
+- Do NOT compute completion rates, streaks, scores, ratios or percentages.
 - Do NOT moralize. Silence is data, not failure.
 - Do NOT call `list_moments` without a `day` filter.
-- Do NOT reconcile against git, keel, or garmin — that is recap's job.
+- Day mode does not read footprints. Week mode reads them, through
+  `get_footprints` only — never the JSONL log by hand.
 - One correction prompt in the lookback, one planting offer in the lookahead. No nagging.
 - The gardener decides what to tend. Surface context; never prescribe.
 
