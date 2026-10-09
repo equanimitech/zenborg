@@ -150,9 +150,9 @@ import {
   validateRoutine,
 } from "./routines.js";
 import {
+  footprintParamsError,
+  getFootprints,
   getSurfaces,
-  getAttention,
-  getDayTrace,
   mapArea,
   migrateSurfaces,
   resolveWindow,
@@ -4066,42 +4066,51 @@ defineTool(server, {
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// ATTENTION — the plan ↔ trace bridge
+// FOOTPRINTS — the plan ↔ trace bridge
 // ────────────────────────────────────────────────────────────────────────
 
 const DaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 defineTool(server, {
-  name: "get_attention",
+  name: "get_footprints",
   description:
-    "Where did attention go? Dwell time by area per surface (desktop/agent/browser), " +
-    "unmapped locators (top 10), and agent sessions. Minutes, never ms. " +
-    "Coverage on every response — an empty surface means unrecorded, not idle.",
+    "The week read back: what was planted next to where attention went, and how much of it the garden could see. " +
+    "One call returns the board (per day and phase), planted moments per area (this week and last, two counts), " +
+    "footprints per surface (body, screen, work, journal, comms) by area in minutes with the largest unmapped locators, " +
+    "and the habits wilting at the week's close. " +
+    'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
+    "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
+    "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {
     day: DaySchema.optional().describe(
-      "One waking day (04:00 roll). Omit for today.",
+      "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week.",
     ),
     from: DaySchema.optional().describe(
-      "Inclusive start day. Use with `to` for a range.",
+      "Inclusive start day of an explicit range (at most 31 days), instead of a week. Last week becomes the same-length range before it.",
     ),
     to: DaySchema.optional().describe(
-      "Inclusive end day.",
+      "Inclusive end day of the range; needs `from`. Defaults to `from`.",
     ),
-    surfaces: z
-      .array(z.enum(["desktop", "agent", "browser"]))
-      .optional()
-      .describe("Surfaces to query. Default: all three."),
-    pathPrefix: z
-      .string()
-      .optional()
-      .describe(
-        "Agent surface only: restrict to cwds under this path (~ expands).",
-      ),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    return ok(getAttention(VAULT_ROOT, areas, params));
+    const invalid = footprintParamsError(params);
+    if (invalid) return err(invalid);
+    return ok(
+      getFootprints(
+        VAULT_ROOT,
+        {
+          areas: readCollection(VAULT_ROOT, "areas"),
+          habits: readCollection(VAULT_ROOT, "habits"),
+          moments: readCollection(VAULT_ROOT, "moments"),
+          phaseConfigs: readCollection(VAULT_ROOT, "phaseConfigs"),
+          cycles: readCollection(VAULT_ROOT, "cycles"),
+          cyclePlans: readCollection(VAULT_ROOT, "cyclePlans"),
+        },
+        params,
+        loadHabitMap(),
+      ),
+    );
   },
 });
 
@@ -4241,32 +4250,6 @@ defineTool(server, {
       })).filter((s) => s.points.length > 0);
     }
     return ok({ habitId: params.habitId, habitName: habit.name, series });
-  },
-});
-
-// ────────────────────────────────────────────────────────────────────────
-// DAY TRACE — plan vs actual
-// ────────────────────────────────────────────────────────────────────────
-
-defineTool(server, {
-  name: "get_day_trace",
-  description:
-    "How aligned was the day with the plan? For each planted moment: " +
-    "attention traced in its cell (same area), attention elsewhere (different area), " +
-    "and whether any trace was found. Also reports unplanted attention — " +
-    "spans in cells that planted nothing for that area. " +
-    "No alignment %, no score.",
-  schema: {
-    day: DaySchema.optional().describe("Waking day (04:00 roll). Omit for today."),
-    idleGapMin: z.number().int().positive().optional()
-      .describe("Idle gap in minutes for span derivation. Default 15."),
-  },
-  annotations: { readOnlyHint: true },
-  handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    const moments = readCollection(VAULT_ROOT, "moments");
-    const phaseConfigs = readCollection(VAULT_ROOT, "phaseConfigs");
-    return ok(getDayTrace(VAULT_ROOT, areas, moments, phaseConfigs, params));
   },
 });
 

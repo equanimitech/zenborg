@@ -91,8 +91,12 @@ They must stay in lockstep; they have drifted before.
 spring: how to reach it (commands), what it records (`records({from,to})` with a privacy
 tier), and where it belongs (area, habit). Drawing springs write into the activity log as
 their own surface; the MCP server reads footprints locally and never calls a spring live.
-One reader, `get_footprints`, replaces `get_attention` and `get_day_trace`. `/new-spring`
-replaces `/oracle-wizard`.
+`/new-spring` replaces `/oracle-wizard`.
+
+**Built:** the one reader. `get_footprints` (2026-10-09) replaced `get_attention` and
+`get_day_trace`. It is a thin adapter over `weekReadback` in `src/domain/readback/`, which
+groups the log's sensor surfaces into reading surfaces (body, screen, work, journal, comms)
+and puts coverage on every total.
 
 **Today** the concept is split across two files, documented below as they stand:
 `oracles.json` (how to reach a system) and `integrations.json` (source → area/habit

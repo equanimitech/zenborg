@@ -170,6 +170,8 @@ export interface Area {
   emoji: string;
   isDefault: boolean;
   order: number;
+  /** Paths, hosts and apps that resolve footprints here. Mirrors src/domain/entities/Area.ts. */
+  surfaces?: { paths?: string[]; hosts?: string[]; apps?: string[] };
   createdAt: string;
   updatedAt: string;
 }

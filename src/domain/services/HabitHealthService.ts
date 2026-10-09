@@ -14,6 +14,19 @@ import {
 } from "@/domain/value-objects/Rhythm";
 import { fromISODate } from "@/lib/dates";
 
+/** What health reads off a habit. Narrow on purpose: any record carrying these fields can be judged. */
+export type HealthSubject = Pick<
+  Habit,
+  "id" | "attitude" | "rhythm" | "updatedAt"
+>;
+/** What health reads off a moment. */
+export type HealthMoment = Pick<
+  Moment,
+  "habitId" | "personIds" | "day" | "status"
+>;
+/** What health reads off a cycle plan. */
+export type HealthPlan = Pick<CyclePlan, "rhythmOverride">;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const BUDDING_PERIOD_COUNT = 3;
 /**
@@ -33,14 +46,17 @@ const RETURNING_REENTRY_COUNT = 3;
  * Effective rhythm = cyclePlan.rhythmOverride ?? habit.rhythm ?? null.
  */
 export class HabitHealthService {
-  resolveRhythm(habit: Habit, cyclePlan: CyclePlan | null): Rhythm | null {
+  resolveRhythm(
+    habit: Pick<Habit, "rhythm">,
+    cyclePlan: HealthPlan | null,
+  ): Rhythm | null {
     return cyclePlan?.rhythmOverride ?? habit.rhythm ?? null;
   }
 
   computeHealth(
-    habit: Habit,
-    cyclePlan: CyclePlan | null,
-    moments: Moment[],
+    habit: HealthSubject,
+    cyclePlan: HealthPlan | null,
+    moments: readonly HealthMoment[],
     now: Date,
   ): Health {
     const attitude = habit.attitude;
@@ -76,13 +92,13 @@ export class HabitHealthService {
     }
   }
 
-  private computeBeginning(habitMoments: Moment[]): Health {
+  private computeBeginning(habitMoments: HealthMoment[]): Health {
     return habitMoments.length >= 5 ? "budding" : "seedling";
   }
 
   private computeKeeping(
     rhythm: Rhythm | null,
-    habitMoments: Moment[],
+    habitMoments: HealthMoment[],
     now: Date,
   ): Health {
     if (!rhythm) return "unstated";
@@ -109,13 +125,12 @@ export class HabitHealthService {
    */
   private computeReturning(
     rhythm: Rhythm | null,
-    habitMoments: Moment[],
+    habitMoments: HealthMoment[],
     now: Date,
   ): Health {
     if (!rhythm) return "unstated";
     const baseThreshold = rhythmSilenceThresholdDays(rhythm);
-    const extendedThreshold =
-      baseThreshold * RETURNING_THRESHOLD_MULTIPLIER;
+    const extendedThreshold = baseThreshold * RETURNING_THRESHOLD_MULTIPLIER;
 
     const lastAllocation = this.latestAllocationDate(habitMoments, now);
     if (lastAllocation === null) return "wilting";
@@ -124,8 +139,7 @@ export class HabitHealthService {
       (now.getTime() - lastAllocation.getTime()) / MS_PER_DAY;
     if (daysSinceLast > extendedThreshold) return "wilting";
 
-    const reEntryWindowDays =
-      extendedThreshold * RETURNING_REENTRY_PERIODS;
+    const reEntryWindowDays = extendedThreshold * RETURNING_REENTRY_PERIODS;
     const reEntryWindowStart = new Date(
       now.getTime() - reEntryWindowDays * MS_PER_DAY,
     );
@@ -140,9 +154,9 @@ export class HabitHealthService {
   }
 
   private computePaced(
-    habit: Habit,
+    habit: HealthSubject,
     rhythm: Rhythm | null,
-    habitMoments: Moment[],
+    habitMoments: HealthMoment[],
     now: Date,
     toleranceFraction: number,
   ): Health {
@@ -158,7 +172,9 @@ export class HabitHealthService {
     const periodStart = new Date(now.getTime() - periodDays * MS_PER_DAY);
     const countInPeriod = habitMoments.filter((m) => {
       if (m.day === null) return false;
-      const dayDate = new Date(m.day);
+      // Local midnight, like every other read of `day` here; `new Date(day)`
+      // parses as UTC and drifts a day at the edges.
+      const dayDate = fromISODate(m.day);
       return (
         dayDate.getTime() >= periodStart.getTime() &&
         dayDate.getTime() <= now.getTime()
@@ -176,7 +192,7 @@ export class HabitHealthService {
   }
 
   public latestAllocationDate(
-    habitMoments: Moment[],
+    habitMoments: HealthMoment[],
     now: Date | null = null,
   ): Date | null {
     let latest: Date | null = null;

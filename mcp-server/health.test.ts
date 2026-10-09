@@ -236,3 +236,19 @@ describe("tentative moments (spec D5)", () => {
     expect(daysSinceLast("h-1", moments, NOW)).toBe(10);
   });
 });
+
+describe("moments planted after now", () => {
+  // The domain's rule since mcp-server/health.ts stopped carrying its own copy
+  // (see the parity gate in git history): a future moment has not happened yet.
+  // A week read back from its close must not see the week after it.
+  it("do not keep a KEEPING habit blooming, nor shorten daysSinceLast", () => {
+    const keeping = habit({ attitude: "KEEPING", rhythm: WEEKLY });
+    const moments = [
+      moment({ day: dayBefore(NOW, 30) }),
+      moment({ id: "m-2", day: dayBefore(NOW, -2) }),
+    ];
+    for (const m of moments) m.habitId = keeping.id;
+    expect(computeHealth(keeping, null, moments, NOW)).toBe("wilting");
+    expect(daysSinceLast(keeping.id, moments, NOW)).toBe(30);
+  });
+});
