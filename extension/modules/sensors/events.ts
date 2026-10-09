@@ -13,6 +13,8 @@
  *     observe tier (`sensorAllowed`).
  */
 
+import { domainFromUrl } from "../activity/events";
+
 /** The key-action completions sensors may report. Open set per the
  * taxonomy, but each addition lands here deliberately. */
 export const SENSOR_KINDS = [
@@ -133,6 +135,80 @@ export function videoCompleted(
 export function isSponsoredLabel(text: string): boolean {
   const t = text.trim();
   return t === "Promoted" || t === "Sponsored";
+}
+
+/**
+ * The domain a sensor message is credited to: the TAB's, from the
+ * browser-attested `sender.tab.url`. A player in an iframe reports through
+ * its own frame (`sender.url` is the iframe host), but the attention belongs
+ * to the site the gardener opened, so the frame's own URL is never read.
+ */
+export function senderDomain(sender: { readonly tab?: { readonly url?: string } }): string | null {
+  const url = sender.tab?.url;
+  return url === undefined ? null : domainFromUrl(url);
+}
+
+/** Per tab: the frame that holds playback, and the frames refused while it did. */
+export interface TabPlayback {
+  readonly holder?: number;
+  readonly refused: readonly number[];
+}
+
+/** Playback holders, keyed by tab id. */
+export type PlaybackOwners = Readonly<Record<string, TabPlayback>>;
+
+const OPENS = new Set<SensorKind>(["video_started", "video_resumed"]);
+
+/**
+ * One frame per tab speaks for playback, so a page with players in several
+ * frames reads as one player, not two. The first frame to start or resume
+ * holds the tab; a start from any other frame is refused, and that frame's
+ * pauses and ends are dropped too, or the log would close a span it never
+ * opened. When the holder pauses or ends, the next frame to start takes over.
+ * With no state at all everything passes, which is how the sensor behaved
+ * before it ran in subframes. Non-video kinds always pass.
+ *
+ * ponytail: first-come holds. A muted autoplay ad in its own iframe that
+ * starts first holds the tab until it pauses, and the main player's minutes
+ * in the meantime are not written. Prefer the audible frame if that shows up.
+ */
+export function claimPlayback(
+  owners: PlaybackOwners,
+  tabId: number,
+  frameId: number,
+  kind: SensorKind
+): { owners: PlaybackOwners; write: boolean } {
+  if (!kind.startsWith("video_")) {
+    return { owners, write: true };
+  }
+  const key = String(tabId);
+  const tab = owners[key] ?? { refused: [] };
+  const set = (next: TabPlayback): PlaybackOwners => ({ ...owners, [key]: next });
+  const refused = tab.refused.filter((f) => f !== frameId);
+
+  if (OPENS.has(kind)) {
+    if (tab.holder === undefined || tab.holder === frameId) {
+      return { owners: set({ holder: frameId, refused }), write: true };
+    }
+    return { owners: set({ ...tab, refused: [...refused, frameId] }), write: false };
+  }
+  if (tab.holder === frameId) {
+    return { owners: set({ refused: tab.refused }), write: true };
+  }
+  if (tab.holder !== undefined || tab.refused.includes(frameId)) {
+    return { owners, write: false };
+  }
+  return { owners, write: true };
+}
+
+/** Forget a tab's playback state (tab closed or navigated). */
+export function releasePlayback(owners: PlaybackOwners, tabId: number): PlaybackOwners {
+  const key = String(tabId);
+  if (owners[key] === undefined) {
+    return owners;
+  }
+  const { [key]: _released, ...rest } = owners;
+  return rest;
 }
 
 /**

@@ -76,16 +76,20 @@ export function armVideoSense(): void {
     // play/seek/ad-transition storm to a single emission per element.
     // `seconds` is the start position (≈0 fresh, >0 on resume), not the
     // total length — duration is often NaN at this moment.
-    video.addEventListener(
-      "playing",
-      () => {
-        open.add(video);
-        sendSensorEvent("video_started", {
-          seconds: finiteSeconds(video.currentTime),
-        });
-      },
-      { once: true }
-    );
+    const started = (): void => {
+      open.add(video);
+      sendSensorEvent("video_started", {
+        seconds: finiteSeconds(video.currentTime),
+      });
+    };
+    // An embedded player usually autoplays before the arm handshake returns,
+    // so its `playing` has already fired by the time it is wired. Without
+    // this it would emit pauses and ends with no start.
+    if (!video.paused && !video.ended) {
+      started();
+    } else {
+      video.addEventListener("playing", started, { once: true });
+    }
 
     // Completion grammar: platform players rarely let native `ended` fire
     // (autoplay swaps the element; Shorts loop by resetting currentTime),

@@ -31,10 +31,14 @@ import {
 import { tabUuid, type TabMap } from "./tabs";
 import { appendEvent, countEvents, deleteOldestEvents } from "./log";
 import {
+  claimPlayback,
   isArmQuery,
   isGateQuery,
+  releasePlayback,
+  senderDomain,
   sensorAllowed,
   validateSensorMessage,
+  type PlaybackOwners,
 } from "../sensors/events";
 import { derivedObserveDomains } from "../watchlist/store";
 import { evaluateGates } from "../friction/gate/decide";
@@ -73,6 +77,30 @@ function fenceGatesFor(fences: Fences, host: string) {
 const tabMapItem = storage.defineItem<TabMap>("session:activity:tabMap", { fallback: {} });
 const focusSinceItem = storage.defineItem<number | null>("session:activity:focusSince", { fallback: null });
 const routeByTab = storage.defineItem<Record<number, string | null>>("session:activity:routeByTab", { fallback: {} });
+// Session storage, like the maps above: the service worker sleeps through a
+// film, and an in-memory holder would be forgotten mid-playback.
+const playbackOwnersItem = storage.defineItem<PlaybackOwners>("session:sensor:playbackOwners", { fallback: {} });
+
+// Read-modify-write of the holder map, one at a time: two frames starting in
+// the same tick must not both read "no holder".
+let playbackChain: Promise<unknown> = Promise.resolve();
+function updatePlaybackOwners<T>(
+  step: (owners: PlaybackOwners) => { owners: PlaybackOwners; result: T }
+): Promise<T> {
+  const next = playbackChain.then(async () => {
+    const owners = await playbackOwnersItem.getValue();
+    const { owners: updated, result } = step(owners);
+    if (updated !== owners) await playbackOwnersItem.setValue(updated);
+    return result;
+  });
+  playbackChain = next.catch(() => undefined);
+  return next;
+}
+const releaseTabPlayback = (tabId: number): void => {
+  void updatePlaybackOwners((owners) => ({ owners: releasePlayback(owners, tabId), result: undefined })).catch(
+    () => undefined
+  );
+};
 
 /**
  * Register all attention-event listeners. Must be called synchronously
@@ -200,6 +228,9 @@ export function startActivityWriter(): void {
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     if (changeInfo.url === undefined) return;
     const { domain: nextDomain, route: nextRoute } = routeFor(changeInfo.url);
+    // A navigated tab drops whatever frame held its playback: a holder whose
+    // frame vanished without a closing event would otherwise silence the tab.
+    releaseTabPlayback(tabId);
     const previousDomain = lastDomainByTab.get(tabId) ?? null;
 
     const map = await tabMapItem.getValue();
@@ -245,6 +276,7 @@ export function startActivityWriter(): void {
     }
     lastDomainByTab.delete(tabId);
     audibleSince.delete(tabId);
+    releaseTabPlayback(tabId);
   });
 
   // ── Focus span (browser holds OS focus) ───────────────────────
@@ -265,8 +297,9 @@ export function startActivityWriter(): void {
   // capped scalars, domain taken from the browser-attested sender tab,
   // and nothing persists unless the domain is on the observe tier.
   browser.runtime.onMessage.addListener((message: unknown, sender: Runtime.MessageSender) => {
-    const url = sender.tab?.url;
-    const domain = url === undefined ? null : domainFromUrl(url);
+    // The tab's domain, never the frame's: an embedded player is credited to
+    // the site it is embedded in.
+    const domain = senderDomain(sender);
 
     // Arm handshake: a content script asks whether to observe at all.
     if (isArmQuery(message)) {
@@ -367,6 +400,15 @@ export function startActivityWriter(): void {
           // The tab uuid lets the read side tell two playing tabs on one domain
           // apart. Browser-attested fields go last so the page cannot override them.
           const tabId = sender.tab?.id;
+          // Players in several frames of one tab read as one player.
+          if (tabId !== undefined && sender.frameId !== undefined) {
+            const frameId = sender.frameId;
+            const pass = await updatePlaybackOwners((owners) => {
+              const claim = claimPlayback(owners, tabId, frameId, validated.kind);
+              return { owners: claim.owners, result: claim.write };
+            });
+            if (!pass) return;
+          }
           const tab = tabId === undefined ? undefined : (await tabMapItem.getValue())[tabId];
           write(validated.kind, { ...validated.payload, domain, ...(tab ? { tab } : {}) });
           flashSensorBadge(sender.tab?.id);
