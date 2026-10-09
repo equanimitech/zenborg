@@ -191,6 +191,17 @@ function fixture(): ReadbackInput {
       { activityType: "running" },
       { durationMs: 30 * MIN },
     ),
+    // A night and the watch's all-day samples: not workouts, so neither
+    // footprints nor seen time on the body surface.
+    ev(
+      "garmin",
+      "sleep_recorded",
+      at("2026-10-08", 7),
+      { calendarDate: "2026-10-08" },
+      { durationMs: 7 * 60 * MIN },
+    ),
+    ev("garmin", "body_sampled", at("2026-10-08", 12), {}),
+    ev("garmin", "body_sampled", at("2026-10-08", 18), {}),
     // Two rides no habit claims: one unmapped locator, summed.
     ev(
       "garmin",
@@ -216,6 +227,8 @@ function fixture(): ReadbackInput {
     moment("proposal", "themia", "2026-10-07", Phase.EVENING, {
       status: "tentative",
     }),
+    // A day but no phase: on no board cell, so counted nowhere.
+    moment("loose", "themia", "2026-10-08", null as unknown as Phase),
   ];
   return {
     events,
@@ -327,7 +340,7 @@ describe("weekReadback", () => {
       { locator: "Voice Memos", minutes: 10 },
     ]);
     expect(screen.thisWeek.coverage).toEqual({
-      seenHours: 4,
+      seenHours: 1.6, // 95 observed minutes: Slack 25, Brave/YouTube 40, Voice Memos 10, Stremio 20
       idleCreditedMin: 0,
       unmappedMin: 10,
     });
@@ -352,7 +365,11 @@ describe("weekReadback", () => {
     expect(body.thisWeek.unmapped).toEqual([
       { locator: "cycling", minutes: 50 },
     ]);
-    expect(body.thisWeek.coverage.unmappedMin).toBe(50);
+    expect(body.thisWeek.coverage).toEqual({
+      seenHours: 1.3, // three workouts, 80 min; the night and the samples are not seen time
+      idleCreditedMin: 0,
+      unmappedMin: 50,
+    });
     expect(body.lastWeek.coverage).toEqual({
       seenHours: 0,
       idleCreditedMin: 0,
@@ -364,6 +381,41 @@ describe("weekReadback", () => {
     expect(read().wilting).toEqual([
       { habitId: "sit", name: "Sit", areaId: "wellness", areaName: "Wellness" },
     ]);
+  });
+
+  it("judges wilting at the close of a past week, not now", () => {
+    const base = fixture();
+    const input = {
+      ...base,
+      habits: [
+        habit("kept", "Kept", "wellness"), // tended Sat 10-10: blooming at the close
+        habit("late", "Late", "wellness"), // only rescued after the close
+      ],
+      moments: [
+        moment("k", "wellness", "2026-10-10", Phase.MORNING, {
+          habitId: "kept",
+        }),
+        moment("l1", "wellness", "2026-09-20", Phase.MORNING, {
+          habitId: "late",
+        }),
+        // Monday after the week: before 04:00 on the clock, but not this week.
+        moment("l2", "wellness", "2026-10-12", Phase.MORNING, {
+          habitId: "late",
+        }),
+      ],
+      now: new Date(at("2026-11-20", 12)), // six weeks on, "kept" has wilted by now
+    };
+    expect(
+      weekReadback(input, WEEK.from, WEEK.to).wilting.map((w) => w.habitId),
+    ).toEqual(["late"]);
+  });
+
+  it("keeps the board and the planted counts in agreement", () => {
+    const r = read();
+    const onBoard = r.board.flatMap((d) =>
+      d.phases.flatMap((p) => p.moments),
+    ).length;
+    expect(r.planted.reduce((n, p) => n + p.thisWeek, 0)).toBe(onBoard);
   });
 
   it("carries no ratio, share, percentage or direction anywhere", () => {

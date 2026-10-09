@@ -2,8 +2,8 @@
  * The week reads back — what was planted next to the footprints each surface
  * left, and how much of the week each surface could see.
  *
- * One pure function, read by the app's `/week` and by the MCP `get_footprints`
- * tool, so the two cannot disagree. No I/O: callers read the vault and the
+ * One pure function, read by the app and by the MCP `get_footprints` tool, so
+ * the two cannot disagree. No I/O: callers read the vault and the
  * activity log and pass them in.
  *
  * Information, never score (docs/principles.md). Planted and footprints sit
@@ -30,8 +30,11 @@ import type { Habit } from "../entities/Habit.ts";
 import { countsAsAllocation, type Moment } from "../entities/Moment.ts";
 import { workoutsOf } from "../garmin/BodyLog.ts";
 import type { GarminHabitMap } from "../garmin/GarminHabitMap.ts";
-import { habitHealthService } from "../services/HabitHealthService.ts";
-import type { PhaseConfig } from "../value-objects/Phase.ts";
+import {
+  type HealthMoment,
+  type HealthSubject,
+  habitHealthService,
+} from "../services/HabitHealthService.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -77,7 +80,11 @@ const UNMAPPED_SHOWN = 10;
 
 /** How much of the window a surface could see. Plain counts, never a share. */
 export interface Coverage {
-  /** Clock hours in which the surface left at least one event. */
+  /**
+   * Hours the surface actually observed: the union of every span it traced
+   * (mapped or not), to one decimal. It can never be smaller than the minutes
+   * reported beside it.
+   */
   readonly seenHours: number;
   /** Minutes credited through idle (a player holding the display awake). 0 until the daemon reports it. */
   readonly idleCreditedMin: number;
@@ -147,15 +154,35 @@ export interface WeekReadback {
   }[];
 }
 
+/*
+ * What the readback reads off each record. Narrow on purpose: the vault's
+ * records (MCP) and the store's (app) both fit without a cast, and a field
+ * renamed in either fails to compile here.
+ */
+export type ReadbackMoment = Pick<Moment, "id" | "name" | "areaId" | "order"> &
+  HealthMoment & { readonly phase: string | null };
+export type ReadbackHabit = Pick<Habit, "name" | "areaId" | "isArchived"> &
+  HealthSubject;
+export type ReadbackArea = Pick<Area, "id" | "name" | "order" | "surfaces">;
+export type ReadbackPhaseConfig = {
+  readonly phase: string;
+  readonly order: number;
+};
+export type ReadbackCycle = Pick<Cycle, "id" | "startDate" | "endDate">;
+export type ReadbackCyclePlan = Pick<
+  CyclePlan,
+  "habitId" | "cycleId" | "rhythmOverride"
+>;
+
 export interface ReadbackInput {
   /** Activity events covering both `readbackSpan(from, to)` windows. Extra events are ignored. */
   readonly events: readonly ActivityEvent[];
-  readonly moments: readonly Moment[];
-  readonly habits: readonly Habit[];
-  readonly areas: readonly Area[];
-  readonly phaseConfigs: readonly PhaseConfig[];
-  readonly cycles?: readonly Cycle[];
-  readonly cyclePlans?: readonly CyclePlan[];
+  readonly moments: readonly ReadbackMoment[];
+  readonly habits: readonly ReadbackHabit[];
+  readonly areas: readonly ReadbackArea[];
+  readonly phaseConfigs: readonly ReadbackPhaseConfig[];
+  readonly cycles?: readonly ReadbackCycle[];
+  readonly cyclePlans?: readonly ReadbackCyclePlan[];
   readonly garminHabitMap?: GarminHabitMap;
   readonly now: Date;
 }
@@ -220,24 +247,25 @@ function clip(
     .filter(([s, e]) => e > s);
 }
 
-function seenHours(events: readonly ActivityEvent[]): number {
-  return new Set(events.map((e) => Math.floor(e.ts / HOUR))).size;
-}
-
 interface Located {
   readonly locator: string;
   readonly areaId?: string;
   readonly ms: number;
 }
 
+/** One surface's rows, and every span it observed (the ground for `seenHours`). */
+interface Reading {
+  readonly rows: readonly Located[];
+  readonly observed: readonly Interval[];
+}
+
 function footprintOf(
-  located: readonly Located[],
-  events: readonly ActivityEvent[],
+  { rows, observed }: Reading,
   areaName: (id: string) => string,
 ): Footprint {
   const byArea = new Map<string, number>();
   const unmapped = new Map<string, number>();
-  for (const row of located) {
+  for (const row of rows) {
     if (row.areaId === undefined)
       unmapped.set(row.locator, (unmapped.get(row.locator) ?? 0) + row.ms);
     else byArea.set(row.areaId, (byArea.get(row.areaId) ?? 0) + row.ms);
@@ -257,7 +285,7 @@ function footprintOf(
       .sort((a, b) => b.minutes - a.minutes)
       .slice(0, UNMAPPED_SHOWN),
     coverage: {
-      seenHours: seenHours(events),
+      seenHours: Math.round((unionMs(observed) / HOUR) * 10) / 10,
       idleCreditedMin: 0,
       unmappedMin: toMin(
         [...unmapped.values()].reduce((sum, ms) => sum + ms, 0),
@@ -268,12 +296,18 @@ function footprintOf(
 
 type Resolver = (e: ActivityEvent) => string | undefined;
 
+interface ReadContext {
+  readonly events: readonly ActivityEvent[];
+  readonly resolve: Resolver;
+  readonly from: number;
+  readonly to: number;
+  readonly habitArea: (habitId: string) => string | undefined;
+  readonly garminHabitMap?: GarminHabitMap;
+}
+
 function spansOf(
-  events: readonly ActivityEvent[],
+  { events, resolve, from, to }: ReadContext,
   surface: ActivitySurface,
-  resolve: Resolver,
-  from: number,
-  to: number,
 ): DwellSpans[] {
   return dwellSpans(events, surface, resolve, {
     capMs: CAP_MS[surface] ?? 30 * MINUTE,
@@ -286,18 +320,13 @@ function spansOf(
  * Browser" in front while the browser surface resolved the tab is not
  * unmapped time, it is the browser's.
  */
-function screenLocated(
-  events: readonly ActivityEvent[],
-  resolve: Resolver,
-  from: number,
-  to: number,
-): Located[] {
-  const desktop = spansOf(events, "desktop", resolve, from, to);
-  const browser = spansOf(events, "browser", resolve, from, to);
+function readScreen(ctx: ReadContext): Reading {
+  const desktop = spansOf(ctx, "desktop");
+  const browser = spansOf(ctx, "browser");
   const browserCover = browser.flatMap((r) => r.spans);
 
   const areaSpans = new Map<string, Interval[]>();
-  const out: Located[] = [];
+  const rows: Located[] = [];
   for (const row of [...desktop, ...browser]) {
     if (row.areaId !== undefined) {
       areaSpans.set(row.areaId, [
@@ -305,51 +334,84 @@ function screenLocated(
         ...row.spans,
       ]);
     } else if (row.surface === "browser") {
-      out.push({ locator: row.locator, ms: unionMs(row.spans) });
+      rows.push({ locator: row.locator, ms: unionMs(row.spans) });
     } else {
       // |A \ B| = |A ∪ B| − |B|
       const ms =
         unionMs([...row.spans, ...browserCover]) - unionMs(browserCover);
-      out.push({ locator: row.locator, ms });
+      rows.push({ locator: row.locator, ms });
     }
   }
   for (const [areaId, spans] of areaSpans) {
-    out.push({ locator: areaId, areaId, ms: unionMs(spans) });
+    rows.push({ locator: areaId, areaId, ms: unionMs(spans) });
   }
-  return out;
+  return {
+    rows,
+    observed: [...desktop, ...browser].flatMap((r) => r.spans),
+  };
 }
 
-function workLocated(
-  events: readonly ActivityEvent[],
-  resolve: Resolver,
-  from: number,
-  to: number,
-): Located[] {
-  return spansOf(events, "agent", resolve, from, to).map((r) => ({
-    locator: r.locator,
-    ...(r.areaId !== undefined ? { areaId: r.areaId } : {}),
-    ms: unionMs(r.spans),
-  }));
+function readWork(ctx: ReadContext): Reading {
+  const agent = spansOf(ctx, "agent");
+  return {
+    rows: agent.map((r) => ({
+      locator: r.locator,
+      ...(r.areaId !== undefined ? { areaId: r.areaId } : {}),
+      ms: unionMs(r.spans),
+    })),
+    observed: agent.flatMap((r) => r.spans),
+  };
 }
 
-function bodyLocated(
-  events: readonly ActivityEvent[],
-  habitArea: (habitId: string) => string | undefined,
-  map: GarminHabitMap | undefined,
-): Located[] {
-  return workoutsOf(events, map).map((w) => {
-    const areaId = w.habitId !== undefined ? habitArea(w.habitId) : undefined;
-    return {
-      locator: w.activityType,
-      ...(areaId !== undefined ? { areaId } : {}),
-      ms: w.elapsedMs,
-    };
-  });
+/**
+ * Workouts only. Sleep is not attention placed in an area, so it is neither a
+ * footprint nor counted as seen here; `get_body` reads it back on its own.
+ * The watch's all-day samples are not observed spans either.
+ */
+function readBody({
+  events,
+  habitArea,
+  garminHabitMap,
+  from,
+  to,
+}: ReadContext): Reading {
+  const workouts = workoutsOf(events, garminHabitMap);
+  return {
+    rows: workouts.map((w) => {
+      const areaId = w.habitId !== undefined ? habitArea(w.habitId) : undefined;
+      return {
+        locator: w.activityType,
+        ...(areaId !== undefined ? { areaId } : {}),
+        ms: w.elapsedMs,
+      };
+    }),
+    observed: clip(
+      workouts.map((w) => [w.start, w.start + w.elapsedMs] as const),
+      from,
+      to,
+    ),
+  };
 }
+
+const NOTHING: Reading = { rows: [], observed: [] };
+
+/**
+ * How each reading surface is read. A record, not a chain of ternaries, so a
+ * surface added later must name its reader, and journal and comms can never
+ * fall through into the Garmin parser.
+ */
+const READERS: Readonly<Record<ReadingSurface, (ctx: ReadContext) => Reading>> =
+  {
+    body: readBody,
+    screen: readScreen,
+    work: readWork,
+    journal: () => NOTHING,
+    comms: () => NOTHING,
+  };
 
 // ── The readback ───────────────────────────────────────────────────────────
 
-function hasSurfaces(area: Area | undefined): boolean {
+function hasSurfaces(area: ReadbackArea | undefined): boolean {
   const s = area?.surfaces;
   return Boolean(s?.paths?.length || s?.hosts?.length || s?.apps?.length);
 }
@@ -378,19 +440,19 @@ export function weekReadback(
   const garminHabits = new Set(
     Object.values(input.garminHabitMap?.mappings ?? {}).map((m) => m.habitId),
   );
+  // Planted = a day and a phase. A moment with a day but no phase sits on no
+  // board cell, so it is counted nowhere, keeping the board and `planted` equal.
   const allocated = input.moments.filter(
-    (m) => countsAsAllocation(m) && m.day !== null,
+    (m) => countsAsAllocation(m) && m.day !== null && m.phase !== null,
   );
   const phaseOrder = [...input.phaseConfigs].sort((a, b) => a.order - b.order);
   const board: BoardDay[] = days.map((day) => {
-    const dayMoments = allocated.filter(
-      (m) => m.day === day && m.phase !== null,
-    );
+    const dayMoments = allocated.filter((m) => m.day === day);
     return {
       day,
       phases: phaseOrder
         .map((pc) => ({
-          phase: pc.phase as string,
+          phase: pc.phase,
           moments: dayMoments
             .filter((m) => m.phase === pc.phase)
             .sort((a, b) => a.order - b.order)
@@ -425,18 +487,22 @@ export function weekReadback(
     const fromMs = wakingDayWindow(window.from).from;
     const toMs = wakingDayWindow(window.to).to;
     const inWindow = input.events.filter((e) => e.ts >= fromMs && e.ts < toMs);
-    const of = (surface: ReadingSurface) =>
-      inWindow.filter((e) => READING_SOURCES[surface].includes(e.surface));
-    return (surface: ReadingSurface): Footprint => {
-      const events = of(surface);
-      const located =
-        surface === "screen"
-          ? screenLocated(events, resolve, fromMs, toMs)
-          : surface === "work"
-            ? workLocated(events, resolve, fromMs, toMs)
-            : bodyLocated(events, habitArea, input.garminHabitMap);
-      return footprintOf(located, events, areaName);
-    };
+    return (surface: ReadingSurface): Footprint =>
+      footprintOf(
+        READERS[surface]({
+          events: inWindow.filter((e) =>
+            READING_SOURCES[surface].includes(e.surface),
+          ),
+          resolve,
+          from: fromMs,
+          to: toMs,
+          habitArea,
+          ...(input.garminHabitMap
+            ? { garminHabitMap: input.garminHabitMap }
+            : {}),
+        }),
+        areaName,
+      );
   };
   const thisRead = read({ from, to });
   const lastRead = read(last);
@@ -451,9 +517,9 @@ export function weekReadback(
         },
   );
 
-  // Wilting, as of the window's close or now, whichever is earlier
-  const close = parseDay(to);
-  close.setHours(23, 59, 59, 999);
+  // Wilting, as of the window's close (the last waking day's end) or now,
+  // whichever is earlier. Moments planted after the window cannot rescue it.
+  const close = new Date(wakingDayWindow(to).to);
   const asOf = input.now < close ? input.now : close;
   const asOfDay = localDate(asOf.getTime());
   const cyclesById = new Map((input.cycles ?? []).map((c) => [c.id, c]));
@@ -467,7 +533,7 @@ export function weekReadback(
         (!c.endDate || c.endDate >= asOfDay)
       );
     }) ?? null;
-  const moments = [...input.moments];
+  const moments = input.moments.filter((m) => m.day === null || m.day <= to);
   const wilting = input.habits
     .filter((h) => !h.isArchived)
     .filter(

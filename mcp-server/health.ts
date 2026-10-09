@@ -1,9 +1,10 @@
-import type { CyclePlan as DomainCyclePlan } from "../src/domain/entities/CyclePlan.ts";
-import type { Habit as DomainHabit } from "../src/domain/entities/Habit.ts";
-import type { Moment as DomainMoment } from "../src/domain/entities/Moment.ts";
-import { habitHealthService } from "../src/domain/services/HabitHealthService.ts";
+import {
+  type HealthSubject,
+  habitHealthService,
+} from "../src/domain/services/HabitHealthService.ts";
+import { Attitude as DomainAttitude } from "../src/domain/value-objects/Attitude.ts";
 import type { Health } from "../src/domain/value-objects/Health.ts";
-import type { CyclePlan, Habit, Moment, Rhythm } from "./vault.js";
+import type { Attitude, CyclePlan, Habit, Moment, Rhythm } from "./vault.js";
 
 export type { Health };
 
@@ -36,9 +37,32 @@ export function resolveRhythm(
 }
 
 /**
+ * The vault spells attitudes as literals, the domain as an enum. A total map,
+ * so an attitude added on either side without the other fails to compile.
+ */
+const ATTITUDE: Record<Attitude, DomainAttitude> = {
+  BEGINNING: DomainAttitude.BEGINNING,
+  RETURNING: DomainAttitude.RETURNING,
+  KEEPING: DomainAttitude.KEEPING,
+  BUILDING: DomainAttitude.BUILDING,
+  PUSHING: DomainAttitude.PUSHING,
+  PRUNING: DomainAttitude.PRUNING,
+  BEING: DomainAttitude.BEING,
+};
+
+/** A vault habit as the domain's health reads it. Every other field passes structurally. */
+export function toHealthSubject<H extends Habit>(
+  habit: H,
+): Omit<H, "attitude"> & HealthSubject {
+  return {
+    ...habit,
+    attitude: habit.attitude === null ? null : ATTITUDE[habit.attitude],
+  };
+}
+
+/**
  * Health is the domain's (`HabitHealthService`), so the app, the MCP server
- * and the week readback cannot disagree. The vault types differ from the
- * domain's only in enum-vs-literal spelling, hence the casts at this edge.
+ * and the week readback cannot disagree.
  */
 export function computeHealth(
   habit: Habit,
@@ -47,9 +71,9 @@ export function computeHealth(
   now: Date,
 ): Health {
   return habitHealthService.computeHealth(
-    habit as unknown as DomainHabit,
-    plan as unknown as DomainCyclePlan | null,
-    moments as unknown as DomainMoment[],
+    toHealthSubject(habit),
+    plan,
+    moments,
     now,
   );
 }

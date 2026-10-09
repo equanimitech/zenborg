@@ -78,7 +78,7 @@ describe("getFootprints", () => {
       { areaId: "ent", areaName: "Entertainment", minutes: 25 },
     ]);
     expect(screen.thisWeek.coverage).toEqual({
-      seenHours: 1,
+      seenHours: 0.4, // the 25 minutes Stremio was in front
       idleCreditedMin: 0,
       unmappedMin: 0,
     });
