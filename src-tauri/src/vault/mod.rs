@@ -13,6 +13,7 @@
 //!       ↓
 //!   SelfWriteTracker (suppresses echo from our own writes)
 
+pub mod activity;
 pub mod fs;
 pub mod watcher;
 pub mod write_tracker;
@@ -59,6 +60,19 @@ pub fn vault_write_collection(
     state: State<'_, VaultState>,
 ) -> Result<(), String> {
     write_collection(&collection, &json, &state.tracker)
+}
+
+/// Raw activity-log files for local days `from..=to` (`YYYY-MM-DD`).
+/// The TS side parses; see `activity.rs`.
+#[tauri::command]
+pub fn activity_read(from: String, to: String) -> Result<Vec<activity::ActivityFile>, String> {
+    activity::read_activity_files(&vault_root()?.join("log"), &from, &to)
+}
+
+/// `integrations/garmin/habit-map.json`, raw, or null when absent.
+#[tauri::command]
+pub fn garmin_habit_map_read() -> Result<Option<String>, String> {
+    activity::read_garmin_habit_map(&vault_root()?)
 }
 
 #[tauri::command]
