@@ -7,10 +7,12 @@
  * (`./derived.ts`). Domains on that set get DEEP sensors (key-action
  * completions); everything else gets coarse activity-writer logging only.
  *
- * `observeDomains` itself stays as a raw mirror the host still pushes to
- * (`replaceObserveDomains`, called from the relay) for backwards compat, but
- * nothing in the sensor arm flow reads it anymore — read `derivedObserveDomains()`
- * instead.
+ * `observeDomains` is the mirror the host pushes on every flush
+ * (`replaceObserveDomains`, called from the relay): the vault's mapped hosts
+ * (`areas[].surfaces.hosts`, written by `map_area`) plus browser fence domains.
+ * It joins the derived set, so a host mapped to an area in the vault is
+ * observed without touching the extension. Read `derivedObserveDomains()`,
+ * never this directly.
  *
  * Self-authored like the voice: zenborg never ships entries. The one standing
  * exception is explicitly-consented and now lives in `~/.zenborg/keel/rules/*.json`,
@@ -30,14 +32,18 @@ export const observeDomains = storage.defineItem<string[]>(
 );
 
 /**
- * The live observe tier: fence domains ∪ area-map domains, read fresh from
+ * The live observe tier: fence domains ∪ area-map domains ∪ vault hosts, read fresh from
  * storage on every call. Replaces `observeDomains.getValue()` everywhere the
  * sensor arm flow decides what to watch — the gate itself stays in code, only
  * the membership list is now automatic.
  */
 export async function derivedObserveDomains(): Promise<readonly string[]> {
-  const [fences, map] = await Promise.all([fenceCache.getValue(), areaMap.getValue()]);
-  return deriveObserveSet(fences, map);
+  const [fences, map, vault] = await Promise.all([
+    fenceCache.getValue(),
+    areaMap.getValue(),
+    observeDomains.getValue(),
+  ]);
+  return deriveObserveSet(fences, map, vault);
 }
 
 /** Replace the whole observe list from the relay (config.json is source of
