@@ -154,6 +154,13 @@ interval or file-watch triggers, read once at daemon start. The daemon is the on
 the gardener edits it by hand. See
 [`docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md`](docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md).
 
+The daemon is also the desktop sensor (`log/<day>.desktop.jsonl`). Besides focus and idle, it
+logs which app holds the Mac awake (`wake_held_start`/`_end { app_name, assertion }`, from the
+per-process list of `pmset -g assertions`, never the system-wide counters) and the screen lock
+(`idle_start { state: "locked" }`). The readback credits idle minutes to the holding app, not
+the frontmost one, until the lock, capped at 3 h per stretch (`heldIdleSpans` in
+`src/domain/attention/AttentionSummary.ts`).
+
 ## Area sidecar folders
 
 Unstructured, area-scoped content lives beside the JSON, never inside it:
