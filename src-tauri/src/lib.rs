@@ -81,6 +81,7 @@ pub fn run() {
             vault::vault_write_collection,
             vault::vault_root_path,
             vault::vault_nudge,
+            vault::activity_read,
             mcp_integrations_status,
             rewire_mcp_integrations,
             daemon_status,
