@@ -17,9 +17,13 @@
 
   "mappings": {
     "yoga": {
+      "habitId": "REPLACE-WITH-YOUR-YOGA-HABIT-UUID",
+      "habitName": "yoga",
+      "note": "Until 2026-08-09 the watch had no meditation activity and sits were logged as yoga; since then yoga is yoga, so treat older yoga entries as sits when analysing history."
+    },
+    "meditation": {
       "habitId": "REPLACE-WITH-YOUR-MEDITATION-HABIT-UUID",
-      "habitName": "Vipassana",
-      "note": "DELIBERATE AND COUNTER-INTUITIVE. Garmin has no meditation activity, so seated practice is logged on the watch as 'Yoga'. Do not 'correct' this to a habit literally named yoga. Verified over a 50-day sample: avg HR 60-75, 8-62 kcal, 13-27 min, steps always 0 — a seated profile, not a moving one. If you also do physical yoga on the watch, these two collapse into one type and you must disambiguate on duration/HR before trusting it."
+      "habitName": "Vipassana"
     },
     "soccer": {
       "habitId": "REPLACE-WITH-YOUR-FOOTBALL-HABIT-UUID",
