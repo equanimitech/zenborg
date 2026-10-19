@@ -23,7 +23,7 @@
     },
     "meditation": {
       "habitId": "REPLACE-WITH-YOUR-MEDITATION-HABIT-UUID",
-      "habitName": "Vipassana"
+      "habitName": "meditation"
     },
     "soccer": {
       "habitId": "REPLACE-WITH-YOUR-FOOTBALL-HABIT-UUID",
