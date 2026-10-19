@@ -15,10 +15,10 @@
  *
  * Area surfaces are `string[]` on each area — they can afford opaque
  * UUIDs because the surface index resolves names live from `areas.json`.
- * This map cannot. Its single most important entry is counter-intuitive
- * (`yoga → Vipassana`, NOT either habit literally named "yoga"), and a bare
- * UUID invites a future reader — human or agent — to "correct" it. The name
- * travels inline so the mapping can be audited by eye.
+ * This map cannot. An activity type and its habit need not share a name
+ * (`soccer → footy`), and a bare UUID gives a future reader — human or
+ * agent — nothing to check it against. The name travels inline so each
+ * mapping can be audited by eye.
  *
  * Everything here is pure. Nothing reads the filesystem or the network.
  */
