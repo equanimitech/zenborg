@@ -109,12 +109,13 @@ writing moments.
 
 The map carries `habitName` inline next to `habitId`. `area-map.json` gets away with
 bare UUIDs because keel resolves names live at render time; this one cannot afford to.
-Its most important entry is deliberately counter-intuitive:
+A type and its habit need not share a name (`soccer` → `footy`), so the name travels
+inline and each entry can be audited by eye.
 
-> **`yoga` → Vipassana.** Garmin has no meditation activity, so seated practice is
-> logged on the watch as "Yoga". It maps to the meditation habit, **not** to either
-> habit literally named `yoga`. Verified over 46 activities: avg HR 60–75, 8–62 kcal,
-> 13–27 min, steps always 0. Do not "correct" this.
+> **`yoga` has a history.** Until 2026-08-09 the watch had no meditation activity, so
+> sits were logged as `yoga`. That day it gained `meditation`, and since then `yoga`
+> maps to yoga. A type-level map cannot express a date: when analysing older data,
+> treat pre-2026-08-09 `yoga` as a sit.
 
 `checkMapIntegrity` cross-checks every id against `habits.json` on each run and reports
 dangling ids, archived habits, and renames — so the audit name cannot rot.
