@@ -58,6 +58,12 @@ export interface RuleSpec {
    */
   readonly deliveryProbability: number;
   readonly primitives: readonly Primitive[];
+  /**
+   * False means paused: the record stays, nothing enforces it. Absent reads as
+   * true. Every reader (extension, plugin hook, garden advisory) skips a paused
+   * rule; `set_fence_enabled` is the writer that flips it, never deleting.
+   */
+  readonly defaultEnabled?: boolean;
 }
 
 /**
@@ -80,6 +86,16 @@ function triggerProblems(primitives: readonly Primitive[]): readonly string[] {
       continue;
     }
     if (primitive.kind !== "gate") continue;
+    const friction = primitive.frictionType;
+    if (friction.type === "intention" && friction.prompt.trim() === "") {
+      problems.push("gate.frictionType.prompt must ask something");
+    }
+    if (
+      (friction.type === "delay" && !(friction.seconds > 0)) ||
+      (friction.type === "breath" && !(friction.cycles > 0))
+    ) {
+      problems.push(`gate.frictionType ${friction.type} must be positive`);
+    }
     if (primitive.trigger.type === "click") {
       // A click gate with no selector stands in front of nothing: a rule that
       // validates and never fires, which is the silently-dead failure.

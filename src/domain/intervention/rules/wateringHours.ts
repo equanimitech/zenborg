@@ -2,6 +2,7 @@ import type { AreaId, Duration, RuleId } from "../../attention/ids";
 import type { Phase } from "../../value-objects/Phase";
 import type { Weekday } from "../../value-objects/Schedule";
 import type {
+  BlockReach,
   CooldownSpec,
   GateSpec,
   Primitive,
@@ -49,6 +50,12 @@ export interface WateringHoursInput {
   readonly prompt?: string;
   readonly unlockNote?: string;
   readonly windowMs?: Duration;
+  /**
+   * What a `dry` browser block stops. `navigation` refuses page loads but
+   * keeps a page already open alive (a live game is not cut at the hour).
+   * Browser rules only; absent means `all`.
+   */
+  readonly reach?: BlockReach;
 }
 
 const TEN_MINUTES: Duration = 10 * 60_000;
@@ -104,11 +111,15 @@ function regularRungs(
 function dryRung(
   window: WateringHoursWindow,
   unlockNote: string,
+  reach: BlockReach | undefined,
 ): readonly Primitive[] {
   const cooldown: CooldownSpec = {
     kind: "cooldown",
     duration: { type: "standing" },
     unlockPath: { type: "out_of_band", note: unlockNote },
+    ...(reach === "navigation"
+      ? { enforcement: { at: "browser" as const, reach } }
+      : {}),
   };
   return [
     { kind: "schedule", window, outsideWindow: "inactive", wraps: cooldown },
@@ -154,7 +165,10 @@ function byHandRungs(
   return [wrap(first), wrap(second)];
 }
 
-function primitivesFor(input: WateringHoursInput): readonly Primitive[] {
+function primitivesFor(
+  input: WateringHoursInput,
+  browser = false,
+): readonly Primitive[] {
   switch (input.mode) {
     case "regular":
       return regularRungs(
@@ -166,6 +180,7 @@ function primitivesFor(input: WateringHoursInput): readonly Primitive[] {
       return dryRung(
         input.window,
         input.unlockNote || "Re-declare watering hours to lift.",
+        browser ? input.reach : undefined,
       );
     case "by_hand":
       return byHandRungs(input.window, input.prompt || "");
@@ -233,7 +248,7 @@ export function wateringHoursRules(input: WateringHoursInput): RuleSpec[] {
           domain: host,
           matches: [`*://${host}/*`, `*://*.${host}/*`],
         },
-        primitives: primitivesFor(input),
+        primitives: primitivesFor(input, true),
       });
     }
   }
