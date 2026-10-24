@@ -34,6 +34,8 @@ export type GateFriction =
 export interface DwellRung {
   readonly everyMinutes: number;
   readonly friction: GateFriction;
+  /** Click-trigger selectors for this rung; absent means a dwell rung. */
+  readonly click?: readonly string[];
   readonly proceed: DwellGate["proceed"];
   readonly abort: DwellGate["abort"];
 }
@@ -52,6 +54,14 @@ export interface DwellGate {
       | { readonly type: "abort" };
   };
   readonly abort: { readonly label: string };
+  /**
+   * Click trigger: the selectors of the controls this gate stands in front of.
+   * Present, the gate fires on a click on a match (`evaluateClickGate`) and never
+   * on dwell; absent, it is a dwell gate.
+   */
+  readonly click?: readonly string[];
+  /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click firing. */
+  readonly deliveryProbability?: number;
   /** Ladder: two or more rungs, indexed by today's crossings. Top-level fields mirror rung 0. */
   readonly rungs?: readonly DwellRung[];
   /** @deprecated Pre-2026-08-08 mirror shape. Read only by `normalizeGate`. */
@@ -180,6 +190,10 @@ export async function evaluateGate(
     base,
     crossingsOf(await gateCrossings.getValue(), today, base.ruleId)
   );
+  // A click rung never fires on dwell: that is the mid-game interruption it exists to end.
+  if (g.click !== undefined) {
+    return { fire: false, dwellMs: 0 };
+  }
   const dwellMs = await dwellTodayFor(g.domains, now);
   const fired = await gateFiredAt.getValue();
   const reading: GateReading = {
@@ -195,6 +209,39 @@ export async function evaluateGate(
   return {
     fire: true,
     dwellMs,
+    ruleId: g.ruleId,
+    friction: g.friction,
+    proceed: g.proceed,
+    abort: g.abort,
+    rung,
+    everyMinutes: g.everyMinutes,
+  };
+}
+
+/**
+ * The verdict for a click on one of `gate`'s controls.
+ *
+ * The click itself is the decision point, so there is no interval to check: the
+ * rung is today's crossings, and the only reason not to fire is the delivery
+ * draw. `draw` is injectable so a test can pin it. A withheld delivery writes
+ * nothing; the click goes through as if no gate were there.
+ */
+export async function evaluateClickGate(
+  gate: DwellGate,
+  now: number = Date.now(),
+  draw: number = Math.random()
+): Promise<GateVerdict> {
+  const base = normalizeGate(gate);
+  const { gate: g, rung } = gateAtRung(
+    base,
+    crossingsOf(await gateCrossings.getValue(), dayKey(now), base.ruleId)
+  );
+  if (g.click === undefined || draw >= (g.deliveryProbability ?? 1)) {
+    return { fire: false, dwellMs: 0 };
+  }
+  return {
+    fire: true,
+    dwellMs: await dwellTodayFor(g.domains, now),
     ruleId: g.ruleId,
     friction: g.friction,
     proceed: g.proceed,

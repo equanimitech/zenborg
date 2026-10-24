@@ -43,6 +43,9 @@ export type FenceEnforcement =
       readonly kind: "gate";
       readonly everyMinutes: number;
       readonly friction: GateFriction;
+      /** A click trigger's selectors, primary first. Present means the gate fires
+       * on a click on a match, never on dwell. */
+      readonly click?: readonly string[];
     };
 
 /**
@@ -76,6 +79,7 @@ export interface ScheduleWindow {
 export interface GateRungSpec {
   readonly everyMinutes: number;
   readonly friction: GateFriction;
+  readonly click?: readonly string[];
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
 }

@@ -31,13 +31,20 @@ import {
 import { tabUuid, type TabMap } from "./tabs";
 import { appendEvent, countEvents, deleteOldestEvents } from "./log";
 import {
+  clickGateQuery,
   isArmQuery,
   isGateQuery,
   sensorAllowed,
   validateSensorMessage,
 } from "../sensors/events";
 import { derivedObserveDomains } from "../watchlist/store";
-import { evaluateGates, recordProceed } from "../friction/gate/decide";
+import {
+  evaluateClickGate,
+  evaluateGates,
+  recordProceed,
+  type GateVerdict,
+} from "../friction/gate/decide";
+import { clickGatesOf } from "../friction/gate/click";
 import { evaluateMomentGate } from "../friction/gate/moment";
 import { fencesFor, gatesFrom } from "../fence/parse";
 import { fenceCache } from "../fence/store";
@@ -271,18 +278,20 @@ export function startActivityWriter(): void {
     // Arm handshake: a content script asks whether to observe at all.
     if (isArmQuery(message)) {
       return derivedObserveDomains()
-        .then(async (observe) => ({
-          observed: sensorAllowed(domain, observe),
+        .then(async (observe) => {
           // The fence cache is consulted here as well as in the poll, or a
           // fence would never gate its page in the first place. One store since
           // migration step 5: the policy mirror's gate list came from
           // `~/.zenborg/keel/rules/*.json`, which is retired.
-          gate:
-            domain === null
-              ? null
-              : (fenceGatesFor(await fenceCache.getValue(), domain)[0] ?? null),
-        }))
-        .catch(() => ({ observed: false, gate: null }));
+          const gates = domain === null ? [] : fenceGatesFor(await fenceCache.getValue(), domain);
+          return {
+            observed: sensorAllowed(domain, observe),
+            gate: gates[0] ?? null,
+            // Selectors only: the page learns which controls to hold, never a verdict.
+            clickGates: clickGatesOf(gates),
+          };
+        })
+        .catch(() => ({ observed: false, gate: null, clickGates: [] }));
     }
 
     // "Close the tab" from a gate. The page cannot close a tab it did not
@@ -337,6 +346,34 @@ export function startActivityWriter(): void {
               ruleId: verdict.ruleId,
               primitive: "gate",
               ..."rung" in verdict && verdict.rung !== undefined ? { rung: verdict.rung } : {},
+            });
+          }
+          return verdict;
+        })
+        .catch(() => ({ fire: false }));
+    }
+
+    // A click on a gated control. Decided and recorded here for the same reason
+    // the dwell poll is; the page names a rule, the domain is the attested one,
+    // and a rule not in force on that domain answers "no".
+    const clickRule = clickGateQuery(message);
+    if (clickRule !== null) {
+      if (domain === null) {
+        return Promise.resolve({ fire: false });
+      }
+      return fenceCache
+        .getValue()
+        .then((fences): Promise<GateVerdict> | GateVerdict => {
+          const gate = fenceGatesFor(fences, domain).find((g) => g.ruleId === clickRule);
+          return gate ? evaluateClickGate(gate) : { fire: false, dwellMs: 0 };
+        })
+        .then((verdict) => {
+          if (verdict.fire && verdict.ruleId !== undefined) {
+            writeDelivery("intervention_shown", {
+              domain,
+              ruleId: verdict.ruleId,
+              primitive: "gate",
+              ...(verdict.rung !== undefined ? { rung: verdict.rung } : {}),
             });
           }
           return verdict;

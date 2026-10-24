@@ -13,6 +13,7 @@
  * cost.
  */
 
+import { clickGateHit, createReplay, type ClickGate } from "./click";
 import { safeRedirect, type GateFriction } from "./decide";
 import { showGate } from "./overlay";
 
@@ -116,4 +117,74 @@ export function armDwellGate(): void {
       void check();
     }
   });
+}
+
+/**
+ * Arm the click gates in a page: the gate before a new round starts.
+ *
+ * One capture-phase listener on `window`, so it runs before any handler the
+ * page attached, and it lives as long as the document, which is what makes it
+ * survive an SPA's route changes: nothing re-renders `window`. The selectors
+ * come from the arm handshake; the background still decides every firing (rung,
+ * friction, labels, the delivery draw), exactly as the dwell poll does.
+ *
+ * On proceed the click is replayed once on the control that was clicked, with a
+ * one-shot bypass, so the round starts as the person asked. On abort nothing
+ * happens: the click is simply not delivered and the page stays where it was.
+ */
+export function armClickGate(gates: readonly ClickGate[]): void {
+  if (gates.length === 0) return;
+  const { bypassing, replay } = createReplay();
+  let pending = false;
+
+  const ask = async (ruleId: string, element: Element): Promise<void> => {
+    let verdict: GateVerdictMessage;
+    try {
+      verdict = ((await browser.runtime.sendMessage({ type: "kairos-gate-click", ruleId })) ??
+        {}) as GateVerdictMessage;
+    } catch {
+      // Background asleep or reloading. Fail open: a gate that silently eats the
+      // click is a broken button, not a stopping cue.
+      verdict = { fire: false };
+    }
+    let proceeded = true;
+    if (verdict.fire === true && verdict.friction !== undefined) {
+      proceeded = await showGate({
+        friction: verdict.friction,
+        dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
+        proceedLabel: verdict.proceed?.label ?? "Continue",
+        abortLabel: verdict.abort?.label ?? "Not now",
+      });
+      // Settled exactly as a dwell gate is, so the crossing counts and the ladder climbs.
+      if (verdict.ruleId !== undefined) {
+        void browser.runtime
+          .sendMessage({ type: "kairos-intervention-settled", ruleId: verdict.ruleId, proceeded })
+          .catch(() => {});
+      }
+    }
+    if (proceeded && element.isConnected) {
+      replay(() =>
+        element.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true, composed: true, view: window })
+        )
+      );
+    }
+  };
+
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (bypassing()) return;
+      const hit = clickGateHit<Element>(event.composedPath(), gates);
+      if (hit === null) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (pending) return; // A second click while the question is on its way.
+      pending = true;
+      void ask(hit.ruleId, hit.element).finally(() => {
+        pending = false;
+      });
+    },
+    true
+  );
 }

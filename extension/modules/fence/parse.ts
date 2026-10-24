@@ -180,6 +180,15 @@ function domainsFromScope(scope: unknown): readonly string[] {
   return [];
 }
 
+/** A selector chain, primary first, as a flat list. A missing primary empties it. */
+function readSelectors(raw: unknown): readonly string[] {
+  if (!isRecord(raw)) return [];
+  const primary = text(raw.primary);
+  if (primary === "") return [];
+  const fallbacks = Array.isArray(raw.fallbacks) ? raw.fallbacks.map(text).filter((s) => s !== "") : [];
+  return [...new Set([primary, ...fallbacks])];
+}
+
 function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement | null {
   if (p.kind === "cooldown") {
     const at = isRecord(p.enforcement) ? p.enforcement.at : undefined;
@@ -198,10 +207,18 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
     const frictionType = isRecord(p.frictionType) ? p.frictionType : null;
     const friction = frictionType ? readFriction(frictionType) : null;
     if (friction === null) return null;
+    let click: readonly string[] | undefined;
+    if (trigger?.type === "click") {
+      click = readSelectors(trigger.selectors);
+      // No selector, nothing to stand in front of. Refused rather than read as a
+      // dwell gate, which would fire mid-game: the exact failure this trigger fixes.
+      if (click.length === 0) return null;
+    }
     return {
       kind: "gate",
       everyMinutes: Number.isFinite(everyMinutes) && everyMinutes > 0 ? Math.round(everyMinutes) : 1,
       friction,
+      ...(click ? { click } : {}),
     };
   }
   return null;
@@ -344,6 +361,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
         built.push({
           everyMinutes: e.everyMinutes,
           friction: e.friction,
+          ...(e.click ? { click: e.click } : {}),
           proceed: pr,
           ...(label === "" ? {} : { abort: { label } }),
         });
@@ -522,14 +540,20 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
     if (entry.enforcement.kind !== "gate") {
       continue;
     }
+    // `click` is set on every rung, even when undefined, so laying a dwell rung
+    // over a click rung 0 (`gateAtRung`) clears the trigger rather than keeping it.
     const rungs = entry.rungs?.map((r) => ({
       everyMinutes: r.everyMinutes,
       friction: r.friction,
+      click: r.click,
       proceed: { label: r.proceed.label, action: gateAction(r.proceed) },
       abort: r.abort ?? { label: "Close the tab" },
     }));
+    const { click } = entry.enforcement;
     out.push({
       ...(rungs ? { rungs } : {}),
+      ...(click ? { click } : {}),
+      ...(entry.deliveryProbability < 1 ? { deliveryProbability: entry.deliveryProbability } : {}),
       ruleId: entry.id,
       domains: entry.domains,
       everyMinutes: entry.enforcement.everyMinutes,

@@ -46,6 +46,48 @@ describe("gate ladders", () => {
     expect(f.rungs?.map((r) => r.everyMinutes)).toEqual([40, 50]);
   });
 
+  it("parses a click-trigger ladder: selectors per rung, carried to the gate", () => {
+    const click = (friction: Record<string, unknown>) => ({
+      ...gate(0, friction, "One more"),
+      trigger: {
+        type: "click",
+        selectors: { primary: "button.play", fallbacks: [".row button", "", "button.play"] },
+      },
+    });
+    const parsed = parseFences({
+      chess: {
+        id: "chess",
+        scope: { surface: "browser", domain: "chess.com" },
+        deliveryProbability: 0.7,
+        primitives: [click({ type: "intention", prompt: "Another?" }), click({ type: "delay", seconds: 15 })],
+      },
+    })!;
+    const f = parsed.fences.chess;
+    expect(f.enforcement).toMatchObject({ kind: "gate", click: ["button.play", ".row button"] });
+    expect(f.rungs?.map((r) => r.click)).toEqual([
+      ["button.play", ".row button"],
+      ["button.play", ".row button"],
+    ]);
+    const g = gatesFrom(parsed.fences)[0];
+    expect(g.click).toEqual(["button.play", ".row button"]);
+    expect(g.deliveryProbability).toBe(0.7);
+    expect(g.rungs?.[1].friction).toEqual({ type: "delay", seconds: 15 });
+  });
+
+  it("a dwell gate carries no click and no draw at probability 1", () => {
+    const g = gatesFrom(parseFences(record([gate(40, { type: "confirmation" }, "Go")]))!.fences)[0];
+    expect(g.click).toBeUndefined();
+    expect(g.deliveryProbability).toBeUndefined();
+  });
+
+  it("refuses a click trigger with no primary selector rather than reading it as dwell", () => {
+    const noSel = {
+      ...gate(0, { type: "confirmation" }, "Go"),
+      trigger: { type: "click", selectors: { primary: " ", fallbacks: [".x"] } },
+    };
+    expect(parseFences(record([noSel]))!.refused).toEqual([{ id: "cinejoy", reason: "unactuatable" }]);
+  });
+
   it("refuses a ladder with an exit-less rung", () => {
     const bad = { ...gate(60, { type: "confirmation" }, "x"), proceedAffordance: undefined };
     const parsed = parseFences(record([gate(40, { type: "confirmation" }, "Go"), bad]));

@@ -16,13 +16,29 @@ import { armFeedSense } from "@/modules/sensors/senses/feed";
 import { armGameSense } from "@/modules/sensors/senses/game";
 import { armShoppingSense } from "@/modules/sensors/senses/shopping";
 import { armVideoSense } from "@/modules/sensors/senses/video";
-import { armDwellGate } from "@/modules/friction/gate/arm";
+import { armClickGate, armDwellGate } from "@/modules/friction/gate/arm";
+import type { ClickGate } from "@/modules/friction/gate/click";
+
+/** The arm reply's click gates, reduced to well-formed entries. */
+function readClickGates(raw: unknown): readonly ClickGate[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((g: unknown) => {
+    const r = (g ?? {}) as Record<string, unknown>;
+    const selectors = Array.isArray(r.selectors)
+      ? r.selectors.filter((s): s is string => typeof s === "string" && s !== "")
+      : [];
+    return typeof r.ruleId === "string" && selectors.length > 0
+      ? [{ ruleId: r.ruleId, selectors }]
+      : [];
+  });
+}
 
 export default defineContentScript({
   matches: ["http://*/*", "https://*/*"],
   async main() {
     let observed = false;
     let gated = false;
+    let clickGates: readonly ClickGate[] = [];
     try {
       const answer: unknown = await browser.runtime.sendMessage({
         type: "kairos-sensor-arm",
@@ -30,6 +46,7 @@ export default defineContentScript({
       const reply = (answer ?? {}) as Record<string, unknown>;
       observed = reply.observed === true;
       gated = reply.gate !== null && reply.gate !== undefined;
+      clickGates = readClickGates(reply.clickGates);
     } catch {
       return; // Background unavailable — stay dormant, fail-open.
     }
@@ -40,6 +57,7 @@ export default defineContentScript({
     if (gated) {
       armDwellGate();
     }
+    armClickGate(clickGates);
 
     if (!observed) {
       return;

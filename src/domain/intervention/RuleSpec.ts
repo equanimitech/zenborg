@@ -80,6 +80,14 @@ function triggerProblems(primitives: readonly Primitive[]): readonly string[] {
       continue;
     }
     if (primitive.kind !== "gate") continue;
+    if (primitive.trigger.type === "click") {
+      // A click gate with no selector stands in front of nothing: a rule that
+      // validates and never fires, which is the silently-dead failure.
+      if (primitive.trigger.selectors.primary.trim() === "") {
+        problems.push("gate.trigger.selectors.primary must name a selector");
+      }
+      continue;
+    }
     if (primitive.trigger.type !== "dwell") continue;
     const every = primitive.trigger.everyMinutes;
     if (!Number.isFinite(every) || every <= 0) {

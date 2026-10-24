@@ -83,10 +83,17 @@ export interface TransformSpec {
  * session-surface rules in `rules/` would each have had to declare one falsely.
  * `entry` is the same shape of thing said at the surface-neutral altitude.
  *
- * `element_click` and `session_end` are deliberately absent rather than
- * overlooked. Nothing here arms them, keel wires neither, and vocabulary no
- * consumer agrees on is the optional escape hatch this field exists not to be.
- * They are one variant away the day a rule needs one.
+ * `click` is keel's `element_click`, arrived the day a rule needed it: a dwell
+ * gate on a chess site fired mid-game with the clock running. The decision
+ * point there is the control that STARTS the next game, so the gate stands in
+ * front of that click and nowhere else: a move, a resignation, a chat line
+ * never match. `selectors` is a chain like `TransformSpec.targets`, every
+ * selector matched together, and a click on the target or any ancestor of it
+ * counts. The browser surface is the only one that arms it.
+ *
+ * `session_end` is deliberately absent rather than overlooked. Nothing here
+ * arms it, and vocabulary no consumer agrees on is the optional escape hatch
+ * this field exists not to be. It is one variant away the day a rule needs one.
  *
  * `everyMinutes` counts *attended* dwell, not wall-clock: a backgrounded tab or
  * an idle person does not accrue it. That is keel's contract for the same
@@ -94,7 +101,14 @@ export interface TransformSpec {
  */
 export type GateTrigger =
   | { readonly type: "entry" }
-  | { readonly type: "dwell"; readonly everyMinutes: number };
+  | { readonly type: "dwell"; readonly everyMinutes: number }
+  | {
+      readonly type: "click";
+      readonly selectors: {
+        readonly primary: string;
+        readonly fallbacks?: readonly string[];
+      };
+    };
 
 /**
  * Interrupt an action with a surface the user must engage with to proceed.

@@ -28,7 +28,7 @@ extension/
 │   ├── watchlist/                   # DERIVED observe tier (fence domains ∪ area-map domains, not manual)
 │   ├── fence/                       # Fence parsing, projection, cache — the standing state
 │   ├── friction/
-│   │   ├── gate/                    # dwell gate: state.ts + decide.ts (pure) + overlay.ts + arm.ts
+│   │   ├── gate/                    # dwell + click gates: state.ts, ladder.ts, click.ts (pure) + decide.ts + overlay.ts + arm.ts
 │   │   ├── policy/                  # store.ts — areas, area map, transforms from the host
 │   │   ├── transform/               # CSS hiding rules applied per-page
 │   │   └── areas/                   # scope.ts + days.ts — which areas a rule applies to, when
