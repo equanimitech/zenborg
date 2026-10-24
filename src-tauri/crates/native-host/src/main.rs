@@ -456,7 +456,10 @@ fn main() {
             "request_active_moment" => handle_request_active_moment(&vault),
             "request_today_moments" => handle_request_today_moments(&vault),
             "request_events" => handle_request_events(&msg, &vault),
-            _ => {}
+            // Never drop silently: a stale extension speaking a retired
+            // message name (request_armed, before f0eb615) must hear why it
+            // gets nothing back.
+            other => write_message(&json!({"type": "error", "error": "unknown_type", "received": other})),
         }
     }
 }

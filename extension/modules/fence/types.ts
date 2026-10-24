@@ -77,7 +77,7 @@ export interface Fence {
   readonly enforcement: FenceEnforcement;
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
-  /** When set, the fence is active only outside this window. */
+  /** When set, the fence holds inside this window (and outside it only on `passthrough`). */
   readonly schedule?: ScheduleWindow;
   /**
    * From `RuleSpec.deliveryProbability`. `1` means the rule never withholds;

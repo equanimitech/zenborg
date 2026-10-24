@@ -313,6 +313,7 @@ export async function flushToHost(): Promise<void> {
           }
         });
       } else if (msg.type === "area_set") void flushToHost(); // re-pull so every surface agrees
+      else if (msg.type === "error") console.error("[zenborg relay] host refused:", msg);
     });
     const events = await readAllEvents();
     console.debug("[zenborg relay] flushing", events.length, "buffered events to", HOST_NAME);

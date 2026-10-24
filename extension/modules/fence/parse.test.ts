@@ -5,6 +5,7 @@ import {
   fencesFor,
   gatesFrom,
   isScheduleActive,
+  nextScheduleBoundary,
   parseFences,
   standingBlockHosts,
 } from "./parse";
@@ -376,10 +377,22 @@ describe("parseFences — vault format (primitives[] + scope)", () => {
 });
 
 describe("isScheduleActive — time window evaluation", () => {
-  it("active outside the window when outsideWindow=inactive", () => {
+  it("active inside the window when outsideWindow=inactive", () => {
     const sched = { fromHour: 6, toHour: 12, outsideWindow: "inactive" as const };
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 9, 0))).toBe(true);
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 14, 0))).toBe(false);
+  });
+
+  it("2→7 holds at 03h and lifts at 15h", () => {
+    const sched = { fromHour: 2, toHour: 7, outsideWindow: "inactive" as const };
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 3, 0))).toBe(true);
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 15, 0))).toBe(false);
+  });
+
+  it("passthrough holds outside the window too", () => {
+    const sched = { fromHour: 6, toHour: 12, outsideWindow: "passthrough" as const };
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 9, 0))).toBe(true);
     expect(isScheduleActive(sched, new Date(2026, 0, 5, 14, 0))).toBe(true);
-    expect(isScheduleActive(sched, new Date(2026, 0, 5, 9, 0))).toBe(false);
   });
 
   it("respects weekday filter", () => {
@@ -392,9 +405,9 @@ describe("isScheduleActive — time window evaluation", () => {
 
   it("handles overnight windows (fromHour > toHour)", () => {
     const sched = { fromHour: 22, toHour: 6, outsideWindow: "inactive" as const };
-    expect(isScheduleActive(sched, new Date(2026, 0, 5, 23, 0))).toBe(false);
-    expect(isScheduleActive(sched, new Date(2026, 0, 5, 3, 0))).toBe(false);
-    expect(isScheduleActive(sched, new Date(2026, 0, 5, 14, 0))).toBe(true);
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 23, 0))).toBe(true);
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 3, 0))).toBe(true);
+    expect(isScheduleActive(sched, new Date(2026, 0, 5, 14, 0))).toBe(false);
   });
 
   it("fencesFor filters out inactive scheduled fences", () => {
@@ -421,5 +434,52 @@ describe("isScheduleActive — time window evaluation", () => {
     // Can't test fencesFor's time filtering without injecting time, but the fence
     // is parsed with the schedule attached.
     expect(all["w"].schedule).toBeDefined();
+  });
+});
+
+describe("nextScheduleBoundary", () => {
+  const fence = (id: string, schedule?: Fence["schedule"]): Fence => ({
+    id,
+    label: id,
+    domains: ["chess.com"],
+    enforcement: { kind: "block", standing: true, enforcement: "browser" },
+    proceed: { label: "Later", action: { type: "wait" } },
+    ...(schedule ? { schedule } : {}),
+    deliveryProbability: 1,
+  });
+  const at = (d: number, h: number, m = 0) => new Date(2026, 0, d, h, m);
+
+  it("is null when no fence is scheduled", () => {
+    expect(nextScheduleBoundary({ a: fence("a") }, at(5, 10))).toBeNull();
+  });
+
+  it("is null for passthrough and all-day windows, which never change", () => {
+    const fences = {
+      p: fence("p", { fromHour: 2, toHour: 7, outsideWindow: "passthrough" }),
+      d: fence("d", { fromHour: 0, toHour: 24, outsideWindow: "inactive" }),
+    };
+    expect(nextScheduleBoundary(fences, at(5, 10))).toBeNull();
+  });
+
+  it("lands on the window's start when outside it, and its end when inside", () => {
+    const fences = { w: fence("w", { fromHour: 2, toHour: 7, outsideWindow: "inactive" }) };
+    expect(nextScheduleBoundary(fences, at(5, 15, 30))).toBe(at(6, 2).getTime());
+    expect(nextScheduleBoundary(fences, at(6, 3, 10))).toBe(at(6, 7).getTime());
+  });
+
+  it("takes the soonest edge across fences", () => {
+    const fences = {
+      night: fence("night", { fromHour: 22, toHour: 2, outsideWindow: "inactive" }),
+      noon: fence("noon", { fromHour: 13, toHour: 16, outsideWindow: "inactive" }),
+    };
+    expect(nextScheduleBoundary(fences, at(5, 10))).toBe(at(5, 13).getTime());
+    expect(nextScheduleBoundary(fences, at(5, 17))).toBe(at(5, 22).getTime());
+  });
+
+  it("crosses days for a weekday filter (0→0 MON)", () => {
+    // 2026-01-05 is a Monday: on until Tue 00h, then off until next Mon 00h.
+    const fences = { m: fence("m", { fromHour: 0, toHour: 0, weekdays: ["MON"], outsideWindow: "inactive" }) };
+    expect(nextScheduleBoundary(fences, at(5, 15))).toBe(at(6, 0).getTime());
+    expect(nextScheduleBoundary(fences, at(7, 15))).toBe(at(12, 0).getTime());
   });
 });
