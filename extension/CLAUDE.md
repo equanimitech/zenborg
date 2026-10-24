@@ -11,7 +11,7 @@ Part of zenborg. Run locally with `pnpm dev` from `extension/`.
 ```
 extension/
 ├── entrypoints/
-│   ├── background.ts                # SW — activity writer + DNR sync + cooldown lapse alarm
+│   ├── background.ts                # SW — activity writer + DNR sync + cooldown-lapse and schedule-edge alarms
 │   ├── popup/                       # Status (event count, fences) + cooldown button
 │   ├── manage/                      # Fence dashboard + area map + log export
 │   ├── newtab/                      # New-tab override

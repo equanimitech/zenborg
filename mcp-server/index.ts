@@ -160,6 +160,7 @@ import {
 import { logDir, readActivityLog } from "./activity-log.js";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
+import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 
 function nowIso(): string {
@@ -3602,10 +3603,6 @@ function wateringHoursAdvisory(
   try {
     const fences = readFencesFile(VAULT_ROOT);
     const now = new Date();
-    const hour = now.getHours();
-    const weekday = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][
-      now.getDay()
-    ];
 
     for (const rule of Object.values(fences)) {
       if (rule.scope.surface !== "garden") continue;
@@ -3619,20 +3616,7 @@ function wateringHoursAdvisory(
           weekdays?: string[];
           cutFrom?: string;
         };
-
-        if (
-          w.weekdays &&
-          w.weekdays.length > 0 &&
-          !w.weekdays.includes(weekday)
-        ) {
-          continue;
-        }
-
-        const inWindow =
-          w.toHour <= w.fromHour
-            ? hour >= w.fromHour || hour < w.toHour
-            : hour >= w.fromHour && hour < w.toHour;
-        if (!inWindow) continue;
+        if (!isInScheduleWindow(w, now)) continue;
 
         return `${rule.name}: this area is restricted during ${w.cutFrom || "this window"}`;
       }

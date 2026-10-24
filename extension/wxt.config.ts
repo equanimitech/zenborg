@@ -1,5 +1,18 @@
 import { defineConfig } from "wxt";
 import tailwindcss from "@tailwindcss/vite";
+import pkg from "./package.json" with { type: "json" };
+
+// A version per build. package.json stays at 0.2.0, so every rebuild used to
+// ship the same manifest version and a stale service worker was
+// indistinguishable from a fresh one (that is how a pre-f0eb615 worker kept
+// asking for the retired `request_armed` without anyone seeing it).
+// major.minor from package.json, then days since 2026-01-01 and minute of the
+// UTC day: monotonic, unique per minute, each part well under Chrome's 65535.
+const built = new Date();
+const [major, minor] = pkg.version.split(".");
+const days = Math.floor((built.getTime() - Date.UTC(2026, 0, 1)) / 86_400_000);
+const minuteOfDay = built.getUTCHours() * 60 + built.getUTCMinutes();
+const buildVersion = `${major}.${minor}.${days}.${minuteOfDay}`;
 
 export default defineConfig({
   outDir: "dist",
@@ -28,6 +41,8 @@ export default defineConfig({
   }),
   manifest: {
     name: "zenborg",
+    version: buildVersion,
+    version_name: `${pkg.version} (built ${built.toISOString().slice(0, 16)}Z)`,
     // Stable extension ID: Chromium derives a deterministic ID from this
     // public key, so chrome.storage contents and granted permissions survive
     // every rebuild, reload, and browser restart. Public key is safe to commit;

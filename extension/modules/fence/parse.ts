@@ -26,6 +26,7 @@
  */
 
 import { normalizeDomain } from "../domains";
+import { isInScheduleWindow } from "./scheduleWindow";
 import type { DwellGate, GateFriction } from "../friction/gate/decide";
 import type {
   Fence,
@@ -348,19 +349,36 @@ function covers(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
-/** Whether a scheduled fence is currently active (outside the watering window). */
+/**
+ * Whether a scheduled fence holds at `now`. Canonical reading, shared with the
+ * domain, plugin and MCP (`scheduleWindow.ts`): the wrapped primitive applies
+ * INSIDE the window; outside it, `inactive` lifts it and `passthrough` keeps it.
+ */
 export function isScheduleActive(schedule: ScheduleWindow, now: Date = new Date()): boolean {
-  if (schedule.weekdays && schedule.weekdays.length > 0) {
-    const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-    const today = dayNames[now.getDay()];
-    if (!schedule.weekdays.includes(today)) return false;
+  return schedule.outsideWindow === "inactive" ? isInScheduleWindow(schedule, now) : true;
+}
+
+/**
+ * The next instant any scheduled fence turns on or off, or null if none will.
+ *
+ * Windows are whole local hours, so the answer is always a top of the hour:
+ * walk forward hour by hour (a week and a day covers every weekday filter)
+ * and return the first one where some fence's state differs from now's.
+ * Stepping with `setHours` keeps it on local wall-clock hours across DST.
+ */
+export function nextScheduleBoundary(fences: Fences, now: Date = new Date()): number | null {
+  const scheduled = Object.values(fences)
+    .map((f) => f.schedule)
+    .filter((s): s is ScheduleWindow => s !== undefined && s.outsideWindow === "inactive");
+  if (scheduled.length === 0) return null;
+  const current = scheduled.map((s) => isScheduleActive(s, now));
+  for (let i = 1; i <= 24 * 8; i++) {
+    const t = new Date(now);
+    t.setMinutes(0, 0, 0);
+    t.setHours(t.getHours() + i);
+    if (scheduled.some((s, k) => isScheduleActive(s, t) !== current[k])) return t.getTime();
   }
-  const hour = now.getHours();
-  const { fromHour, toHour } = schedule;
-  const inWindow = fromHour <= toHour
-    ? hour >= fromHour && hour < toHour
-    : hour >= fromHour || hour < toHour;
-  return schedule.outsideWindow === "inactive" ? !inWindow : true;
+  return null;
 }
 
 /** Whether a fence is currently active, considering its schedule. */

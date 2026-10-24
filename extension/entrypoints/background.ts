@@ -4,10 +4,12 @@ import { syncFenceRules } from "@/modules/fence/project";
 import { cooldownNextLapse, cooldowns } from "@/modules/friction/cooldown/store";
 import { armBreak } from "@/modules/friction/cooldown/arm";
 import { fenceCache } from "@/modules/fence/store";
+import { nextScheduleBoundary } from "@/modules/fence/parse";
 import { writeInspection } from "@/modules/fence/inspect";
 import { flushToHost } from "@/modules/relay/client";
 
 const COOLDOWN_ALARM = "zenborg-cooldown-lapse";
+const SCHEDULE_ALARM = "zenborg-schedule-edge";
 
 /**
  * Re-project DNR when the soonest cooldown lapses.
@@ -22,6 +24,22 @@ async function scheduleCooldownLapse(): Promise<void> {
   await browser.alarms.clear(COOLDOWN_ALARM);
   if (next !== null) {
     browser.alarms.create(COOLDOWN_ALARM, { when: next });
+  }
+}
+
+/**
+ * Re-project DNR at the next watering-hours window edge.
+ *
+ * A scheduled fence turns on or off with the clock, not with any storage
+ * change, so nothing else would re-run the projection. Same shape as the
+ * cooldown lapse: one one-shot alarm at the soonest edge, re-armed on fire,
+ * on startup and whenever the fence cache changes.
+ */
+async function scheduleWindowEdge(): Promise<void> {
+  const next = nextScheduleBoundary(await fenceCache.getValue());
+  await browser.alarms.clear(SCHEDULE_ALARM);
+  if (next !== null) {
+    browser.alarms.create(SCHEDULE_ALARM, { when: next });
   }
 }
 
@@ -49,7 +67,11 @@ export default defineBackground(() => {
   // There used to be a second watcher here, on the policy mirror's standing
   // list. Migration step 5 retired that store, so one watcher covers it.
   void syncFenceRules();
-  fenceCache.watch(() => void syncFenceRules());
+  void scheduleWindowEdge();
+  fenceCache.watch(() => {
+    void syncFenceRules();
+    void scheduleWindowEdge();
+  });
 
   // Any cooldown change re-projects the rules and re-arms the lapse alarm.
   void scheduleCooldownLapse();
@@ -79,6 +101,10 @@ export default defineBackground(() => {
       // Re-projection drops the lapsed rule; the sites come back on their own.
       void syncFenceRules();
       void scheduleCooldownLapse();
+    }
+    if (alarm.name === SCHEDULE_ALARM) {
+      void syncFenceRules();
+      void scheduleWindowEdge();
     }
   });
 });
