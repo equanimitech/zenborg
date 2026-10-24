@@ -27,6 +27,7 @@
 
 import { normalizeDomain } from "../domains";
 import { isInScheduleWindow } from "./scheduleWindow";
+import { ALLOWANCE_KIND, OPENING_KIND, readAllowance, readOpening, type Opening, type PassAllowance } from "./lifts";
 import type { DwellGate, GateFriction } from "../friction/gate/decide";
 import type {
   Fence,
@@ -304,13 +305,15 @@ function readProbability(raw: unknown): number {
  * never read as "nothing is fenced" — but an explicitly empty record is the
  * person taking a fence down, and it has to land.
  */
-export function parseFences(raw: unknown): ParsedFences | null {
+export function parseFences(raw: unknown, now: number = Date.now()): ParsedFences | null {
   if (!isRecord(raw)) {
     return null;
   }
 
   const fences: Record<string, Fence> = {};
   const refused: Refusal[] = [];
+  const openings: Opening[] = [];
+  let allowance: PassAllowance | undefined;
 
   for (const [key, value] of Object.entries(raw)) {
     if (!isRecord(value)) {
@@ -318,6 +321,18 @@ export function parseFences(raw: unknown): ParsedFences | null {
     }
     const id = (text(value.id) || key).slice(0, MAX_ID);
     if (id === "") {
+      continue;
+    }
+
+    // Not fences: a planned opening lifts, the allowance prices a pass. Neither
+    // is refused, and an expired opening simply stops being read.
+    if (value.kind === OPENING_KIND) {
+      const opening = readOpening(id, value, now);
+      if (opening !== null) openings.push(opening);
+      continue;
+    }
+    if (value.kind === ALLOWANCE_KIND) {
+      allowance = readAllowance(value) ?? undefined;
       continue;
     }
 
@@ -409,7 +424,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
     };
   }
 
-  return { fences, refused };
+  return { fences, refused, openings, ...(allowance ? { allowance } : {}) };
 }
 
 /** Does `host` fall under `domain`? Exact match or a true subdomain, which is

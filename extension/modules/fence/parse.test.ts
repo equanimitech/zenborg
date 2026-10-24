@@ -54,7 +54,7 @@ describe("parseFences — malformed input never clears the cache", () => {
   });
 
   it("honours an explicitly empty record — a deliberate lift must land", () => {
-    expect(parseFences({})).toEqual({ fences: {}, refused: [] });
+    expect(parseFences({})).toEqual({ fences: {}, refused: [], openings: [] });
   });
 });
 

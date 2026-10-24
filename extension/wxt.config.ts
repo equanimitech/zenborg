@@ -74,7 +74,11 @@ export default defineConfig({
     //     runs from the extension's own log, so the permission had nothing left to
     //     justify it. An unused permission on a manifest that calls itself the
     //     privacy statement is worse than a missing feature.
-    permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon"],
+    //   • webNavigation (2026-10-24) hears one thing: a top-level load that DNR
+    //     blocked (net::ERR_BLOCKED_BY_CLIENT), so the tab can show zenborg's block
+    //     page and its pass instead of the browser's error page. Same warning as
+    //     `tabs`, nothing written from it but the redirect.
+    permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon", "webNavigation"],
     // Single shared instance in incognito so the porn Drogue's block holds
     // there too (where porn is most often browsed). The user must still flip
     // "Allow in incognito" once — see README. Shared storage = one source of

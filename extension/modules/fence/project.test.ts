@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 // environment (no `browser.runtime`). `buildDnrRules` never touches it, so this
 // mock exists only to keep the import graph loadable in plain vitest — see `../drogues/blocklist/sync.test.ts`
 // for the same pattern against the modules this one replaces.
-vi.mock("./store", () => ({ fenceCache: { getValue: async () => ({}) } }));
+vi.mock("./store", () => ({ liveFences: async () => ({}) }));
 
 const { buildDnrRules } = await import("./project");
 

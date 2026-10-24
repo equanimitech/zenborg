@@ -1,8 +1,11 @@
 import { browser } from "wxt/browser";
 import { startActivityWriter } from "@/modules/activity/writer";
 import { syncFenceRules } from "@/modules/fence/project";
-import { fenceCache } from "@/modules/fence/store";
+import { allLifts, fenceCache, liveFences, openingsCache, passLifts } from "@/modules/fence/store";
 import { nextScheduleBoundary } from "@/modules/fence/parse";
+import { nextLiftEdge } from "@/modules/fence/lifts";
+import { blockingFences, settleLifts } from "@/modules/fence/pass";
+import { domainFromUrl } from "@/modules/activity/events";
 import { flushToHost } from "@/modules/relay/client";
 
 const SCHEDULE_ALARM = "zenborg-schedule-edge";
@@ -16,7 +19,12 @@ const SCHEDULE_ALARM = "zenborg-schedule-edge";
  * changes.
  */
 async function scheduleWindowEdge(): Promise<void> {
-  const next = nextScheduleBoundary(await fenceCache.getValue());
+  // Lift edges ride the same alarm: a pass or an opening starting or ending
+  // is the same event for DNR as a window edge.
+  const now = Date.now();
+  const edges = [nextScheduleBoundary(await fenceCache.getValue()), nextLiftEdge(await allLifts(), now)];
+  const due = edges.filter((t): t is number => t !== null);
+  const next = due.length === 0 ? null : Math.min(...due);
   await browser.alarms.clear(SCHEDULE_ALARM);
   if (next !== null) {
     browser.alarms.create(SCHEDULE_ALARM, { when: next });
@@ -33,7 +41,7 @@ async function scheduleWindowEdge(): Promise<void> {
  */
 export default defineBackground(() => {
   // Registered synchronously so MV3 event wakeups re-attach listeners.
-  startActivityWriter();
+  const write = startActivityWriter();
 
   // The fence cache is the source of truth for what is blocked — the `fences`
   // collection, pushed by the native host. Project it onto DNR dynamic rules on
@@ -43,11 +51,32 @@ export default defineBackground(() => {
   //
   // There used to be a second watcher here, on the policy mirror's standing
   // list. Migration step 5 retired that store, so one watcher covers it.
-  void syncFenceRules();
-  void scheduleWindowEdge();
-  fenceCache.watch(() => {
+  const resync = (): void => {
     void syncFenceRules();
     void scheduleWindowEdge();
+    void settleLifts(write);
+  };
+  resync();
+  fenceCache.watch(resync);
+  openingsCache.watch(resync);
+  passLifts.watch(resync);
+
+  // A DNR `block` leaves the browser's own error page, where nothing of ours can
+  // run. A blocked top-level load is sent to the block page instead, which shows
+  // the unlock note and, on a time block, the pass. Domains only on the way: the
+  // URL stays in the tab's own address so a pass can return to it.
+  browser.webNavigation.onErrorOccurred.addListener((nav) => {
+    // Chrome carries `error`; the shim's types (Firefox-shaped) do not declare it.
+    const error = (nav as { error?: string }).error ?? "";
+    if (nav.frameId !== 0 || !error.includes("ERR_BLOCKED_BY_CLIENT")) return;
+    const host = domainFromUrl(nav.url);
+    if (host === null) return;
+    void liveFences().then((fences) => {
+      if (blockingFences(fences, host).length === 0) return;
+      const page = browser.runtime.getURL("/block.html");
+      const query = new URLSearchParams({ host, u: nav.url });
+      return browser.tabs.update(nav.tabId, { url: `${page}?${query}` });
+    });
   });
 
   // Flush buffered events to the native host on cold start and on a periodic
@@ -58,9 +87,6 @@ export default defineBackground(() => {
     if (alarm.name === "zenborg-relay-flush") {
       void flushToHost();
     }
-    if (alarm.name === SCHEDULE_ALARM) {
-      void syncFenceRules();
-      void scheduleWindowEdge();
-    }
+    if (alarm.name === SCHEDULE_ALARM) resync();
   });
 });

@@ -19,7 +19,7 @@
  */
 
 import { standingBlockHosts } from "./parse";
-import { fenceCache } from "./store";
+import { liveFences } from "./store";
 
 // Standing blocks, from the fence cache. Slice E had to give the fence record a
 // THIRD rule id, because the policy mirror carried a second list of blocked
@@ -120,7 +120,10 @@ export async function syncFenceRules(): Promise<void> {
   // lift a standing block and a fence taken down still comes down. The uncovered
   // case is the same as before — a fresh profile that has never been pushed to
   // blocks nothing until the relay first answers.
-  const fences = await fenceCache.getValue();
+  //
+  // Lifts (a pass, a planned opening) are applied here: a lifted host is
+  // projected out, and the edge alarm re-runs this when the lift ends.
+  const fences = await liveFences();
   const domains = standingBlockHosts(fences, "all");
   const navigation = standingBlockHosts(fences, "navigation");
 

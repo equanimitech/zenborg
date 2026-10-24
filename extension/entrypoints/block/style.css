@@ -1,93 +1,91 @@
-/* zenborg block page — calm, structural, not punitive.
-   Tokens from ../../styles (stone + clay, Inter), imported in main.ts. */
+/* zenborg block page. Calm, structural, not punitive.
+   The stone tokens of the gate overlay (modules/friction/gate/overlay.ts):
+   flat, 2px radius, clay focus ring, light/dark by the system. */
 
-html,
-body {
-  margin: 0;
-  height: 100%;
+:root {
+  --stone-50: oklch(0.985 0.003 60); --stone-100: oklch(0.97 0.004 60);
+  --stone-200: oklch(0.923 0.005 60); --stone-300: oklch(0.869 0.006 60);
+  --stone-400: oklch(0.709 0.008 60); --stone-600: oklch(0.444 0.010 60);
+  --stone-700: oklch(0.374 0.010 60); --stone-800: oklch(0.268 0.007 60);
+  --stone-900: oklch(0.216 0.007 60); --stone-950: oklch(0.147 0.005 60);
+  --clay: oklch(0.62 0.100 60);
+  --ground: var(--stone-50); --ink: var(--stone-900);
+  --muted: var(--stone-600); --rule: var(--stone-300);
+  --faint: var(--stone-400); --ink-hover: var(--stone-700);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: var(--stone-950); --ink: var(--stone-50);
+    --muted: var(--stone-400); --rule: var(--stone-700);
+    --faint: var(--stone-600); --ink-hover: var(--stone-200);
+  }
 }
 
+html, body { margin: 0; height: 100%; }
 body {
-  display: grid;
-  place-items: center;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+  display: grid; place-items: center;
+  background: var(--ground); color: var(--ink);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
+::selection { background: color-mix(in oklch, var(--clay) 30%, transparent); }
 
-.block {
-  text-align: center;
-  max-width: 32rem;
-  padding: 2.5rem 1.5rem;
-}
+.block { text-align: center; width: min(30rem, 100%); padding: 2.5rem 1.5rem; box-sizing: border-box; }
 
-.mark {
-  display: block;
-  width: 3rem;
-  height: 3rem;
-  margin: 0 auto 1rem;
-  color: var(--primary);
+.mark { display: block; width: 2.5rem; height: 2.5rem; margin: 0 auto 1.618rem; color: var(--muted); }
+.mark svg { display: block; width: 100%; height: 100%; }
+
+.host, .why-label, .back, .foot {
+  font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em;
+  text-transform: uppercase; font-variant-numeric: tabular-nums;
 }
-.mark svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
+.host { color: var(--muted); margin: 0 0 0.5rem; min-height: 1.2em; }
 
 .title {
-  font-size: 1.5rem;
-  font-weight: 500;
-  letter-spacing: -0.015em;
-  margin: 0 0 0.75rem;
+  font-size: 1.618rem; line-height: 1.3; font-weight: 500;
+  letter-spacing: -0.012em; margin: 0 0 1rem;
+}
+.note {
+  color: var(--muted); white-space: pre-line; text-wrap: balance;
+  max-width: 34ch; margin: 0 auto 2.618rem;
 }
 
-.line {
-  color: var(--foreground);
-  max-width: 32ch;
-  margin: 0 auto 1.5rem;
+.pass { display: grid; gap: 0.75rem; margin: 0 auto 2rem; max-width: 22rem; text-align: left; }
+.pass[hidden], .none[hidden] { display: none; }
+.why-label { color: var(--muted); }
+.why {
+  font: inherit; font-size: 0.9375rem; color: var(--ink);
+  background: transparent; border: 1px solid var(--rule); border-radius: 2px;
+  padding: 0.7rem 0.85rem;
+}
+.why:hover { border-color: var(--faint); }
+
+button {
+  font: inherit; font-size: 0.9375rem; font-variant-numeric: tabular-nums;
+  padding: 0.75rem 1.25rem; border-radius: 2px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.use { background: var(--ink); border-color: var(--ink); color: var(--ground); }
+.use:hover { background: var(--ink-hover); border-color: var(--ink-hover); }
+.use[disabled], .use[disabled]:hover {
+  background: transparent; border-color: var(--rule); color: var(--faint); cursor: default;
 }
 
-.meta {
-  font-family: var(--font-mono);
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.8125rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin: 0 0 2rem;
-}
-
-.meta .f {
-  color: var(--primary);
-  font-weight: 600;
-}
+.none { color: var(--ink); max-width: 30ch; margin: 0 auto 2rem; text-wrap: balance; }
 
 .back {
-  appearance: none;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--foreground);
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 0.6rem 1.4rem;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  background: transparent; border-color: var(--rule); color: var(--muted);
+  padding: 0.6rem 1.25rem;
 }
+.back:hover { border-color: var(--ink); color: var(--ink); }
 
-.back:hover {
-  border-color: var(--primary);
-  color: var(--primary);
-}
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; }
 
-.foot {
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  margin: 1.75rem 0 0;
-  min-height: 1.2em;
+.foot { color: var(--faint); margin: 1.75rem 0 0; min-height: 1.2em; text-transform: none; letter-spacing: 0.02em; }
+
+@media (prefers-reduced-motion: no-preference) {
+  button, .why { transition: background-color 150ms cubic-bezier(.4,0,.2,1), border-color 150ms cubic-bezier(.4,0,.2,1), color 150ms cubic-bezier(.4,0,.2,1); }
 }

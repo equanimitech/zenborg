@@ -47,7 +47,9 @@ import {
 import { clickGatesOf } from "../friction/gate/click";
 import { evaluateMomentGate } from "../friction/gate/moment";
 import { fencesFor, gatesFrom } from "../fence/parse";
-import { fenceCache } from "../fence/store";
+import { liveFences } from "../fence/store";
+import { blockInfo, usePass } from "../fence/pass";
+import { readBlockInfoRequest, readPassRequest } from "../fence/lifts";
 import type { Fence, Fences } from "../fence/types";
 import {
   decisionPointEvent,
@@ -86,7 +88,7 @@ const routeByTab = storage.defineItem<Record<number, string | null>>("session:ac
  * Register all attention-event listeners. Must be called synchronously
  * from the background entrypoint so MV3 event-driven wakeups re-attach.
  */
-export function startActivityWriter(): void {
+export function startActivityWriter(): WriteFn {
   const sessionId = crypto.randomUUID();
 
   /**
@@ -294,7 +296,7 @@ export function startActivityWriter(): void {
           // fence would never gate its page in the first place. One store since
           // migration step 5: the policy mirror's gate list came from
           // `~/.zenborg/keel/rules/*.json`, which is retired.
-          const gates = domain === null ? [] : fenceGatesFor(await fenceCache.getValue(), domain);
+          const gates = domain === null ? [] : fenceGatesFor(await liveFences(), domain);
           return {
             observed: sensorAllowed(domain, observe),
             gate: gates[0] ?? null,
@@ -344,7 +346,7 @@ export function startActivityWriter(): void {
           // policy mirror because the two carried different rules from different
           // files; step 5 retired the second file, so the union has nothing left
           // to add. The read is local, so the hot path makes no round trip.
-          return evaluateGates(fenceGatesFor(await fenceCache.getValue(), domain));
+          return evaluateGates(fenceGatesFor(await liveFences(), domain));
         })
         .then((verdict) => {
           // The delivery, recorded here rather than in the page for the same
@@ -373,8 +375,7 @@ export function startActivityWriter(): void {
       if (domain === null) {
         return Promise.resolve({ fire: false });
       }
-      return fenceCache
-        .getValue()
+      return liveFences()
         .then((fences): Promise<GateVerdict> | GateVerdict => {
           const gate = fenceGatesFor(fences, domain).find((g) => g.ruleId === clickRule);
           return gate ? evaluateClickGate(gate) : { fire: false, dwellMs: 0 };
@@ -403,8 +404,7 @@ export function startActivityWriter(): void {
         // untrusted. Only a rule that actually gates this host counts: the page
         // may lie about the id, but not into inflating one that is not in force.
         if (message.proceeded) {
-          void fenceCache
-            .getValue()
+          void liveFences()
             .then((fences) => {
               if (fenceGatesFor(fences, domain).some((g) => g.ruleId === message.ruleId)) {
                 return recordProceed(message.ruleId);
@@ -419,6 +419,15 @@ export function startActivityWriter(): void {
         });
       }
       return;
+    }
+
+    // The block page: what holds on a host, and spending a pass. Only our own
+    // block page may ask; the checks and the writes are all on this side.
+    const pass = readPassRequest(message);
+    const infoHost = readBlockInfoRequest(message);
+    if (pass !== null || infoHost !== null) {
+      if (!sender.url?.startsWith(browser.runtime.getURL("/block.html"))) return;
+      return pass !== null ? usePass(pass.host, pass.reason, write) : blockInfo(infoHost as string);
     }
 
     const validated = validateSensorMessage(message);
@@ -454,6 +463,8 @@ export function startActivityWriter(): void {
       write(t.kind, undefined, t.durationMs);
     }
   });
+
+  return write;
 }
 
 /**

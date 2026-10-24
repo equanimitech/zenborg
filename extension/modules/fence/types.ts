@@ -18,6 +18,7 @@
  */
 
 import type { GateFriction } from "../friction/gate/decide";
+import type { Opening, PassAllowance } from "./lifts";
 
 /**
  * The desugared primitive, narrowed to what a browser can actuate.
@@ -125,4 +126,8 @@ export interface ParsedFences {
   readonly fences: Fences;
   /** Entries the door turned away. Reported, never silently dropped. */
   readonly refused: readonly Refusal[];
+  /** Planned openings, active or upcoming. Expired ones are dropped here. */
+  readonly openings: readonly Opening[];
+  /** The `pass-allowance` record; absent means the defaults. */
+  readonly allowance?: PassAllowance;
 }

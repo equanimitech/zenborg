@@ -82,7 +82,11 @@ export async function setArea(domain: string, areaId: string): Promise<boolean> 
  *
  * Nothing is persisted. The page computes, renders, and discards.
  */
-export async function queryEvents(since: number): Promise<readonly ActivityEvent[]> {
+export async function queryEvents(
+  since: number,
+  /** Only these kinds. An older host ignores the filter, so it is applied here too. */
+  kinds?: readonly string[]
+): Promise<readonly ActivityEvent[]> {
   let port: ReturnType<typeof browser.runtime.connectNative>;
   try {
     port = browser.runtime.connectNative(HOST_NAME);
@@ -120,7 +124,7 @@ export async function queryEvents(since: number): Promise<readonly ActivityEvent
         return;
       }
       if (Array.isArray(msg.events)) {
-        collected.push(...msg.events);
+        collected.push(...(kinds ? msg.events.filter((e) => kinds.includes(e.kind)) : msg.events));
       }
       if (msg.done === true) {
         clearTimeout(timer);
@@ -129,7 +133,7 @@ export async function queryEvents(since: number): Promise<readonly ActivityEvent
     });
 
     try {
-      port.postMessage({ type: "request_events", since });
+      port.postMessage({ type: "request_events", since, ...(kinds ? { kinds } : {}) });
     } catch {
       clearTimeout(timer);
       finish();
