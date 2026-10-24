@@ -12,8 +12,15 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { CooldownSpec, Primitive, ScheduleSpec } from "../../src/domain/intervention/Primitive.ts";
-import type { RuleSpec, RuleScope } from "../../src/domain/intervention/RuleSpec.ts";
+import type {
+  CooldownSpec,
+  Primitive,
+  ScheduleSpec,
+} from "../../src/domain/intervention/Primitive.ts";
+import type {
+  RuleScope,
+  RuleSpec,
+} from "../../src/domain/intervention/RuleSpec.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -121,7 +128,8 @@ export function syncRules(
  * through `schedule` the same way `carriesExit` does (Primitive.ts:237-247).
  */
 function hasBlockingCooldown(p: Primitive): boolean {
-  if (p.kind === "schedule") return hasBlockingCooldown((p as ScheduleSpec).wraps);
+  if (p.kind === "schedule")
+    return hasBlockingCooldown((p as ScheduleSpec).wraps);
   if (p.kind !== "cooldown") return false;
   const cd = p as CooldownSpec;
   return cd.duration.type === "standing";
@@ -146,9 +154,7 @@ export function collectResolverHosts(
 
     if (!rule.primitives.some(hasBlockingCooldown)) continue;
 
-    const domains = Array.isArray(scope.domain)
-      ? scope.domain
-      : [scope.domain];
+    const domains = Array.isArray(scope.domain) ? scope.domain : [scope.domain];
     for (const d of domains) {
       if (d.trim()) hosts.add(d);
     }
@@ -244,14 +250,19 @@ function healthPath(vaultRoot: string): string {
 function writeHealth(vaultRoot: string, health: ResolverHealth): void {
   const dir = path.dirname(healthPath(vaultRoot));
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(healthPath(vaultRoot), JSON.stringify(health, null, 2), "utf8");
+  fs.writeFileSync(
+    healthPath(vaultRoot),
+    JSON.stringify(health, null, 2),
+    "utf8",
+  );
 }
 
 /** Read the last resolver sync outcome. Fail-soft: missing/garbled = null. */
 export function readResolverHealth(vaultRoot: string): ResolverHealth | null {
   try {
     const raw = JSON.parse(fs.readFileSync(healthPath(vaultRoot), "utf8"));
-    if (typeof raw?.reachable !== "boolean" || typeof raw?.at !== "string") return null;
+    if (typeof raw?.reachable !== "boolean" || typeof raw?.at !== "string")
+      return null;
     return raw as ResolverHealth;
   } catch {
     return null;
@@ -283,7 +294,11 @@ export async function syncResolverFences(
     const reachable = await adapter.checkReachable();
     if (!reachable) {
       console.error("[adguard] resolver unreachable, skipping fence sync");
-      if (vaultRoot) writeHealth(vaultRoot, { reachable: false, at: new Date().toISOString() });
+      if (vaultRoot)
+        writeHealth(vaultRoot, {
+          reachable: false,
+          at: new Date().toISOString(),
+        });
       return;
     }
 
@@ -294,11 +309,17 @@ export async function syncResolverFences(
     const newRules = syncRules(existing, desiredHosts);
 
     await setUserRules(newRules);
-    if (vaultRoot) writeHealth(vaultRoot, { reachable: true, at: new Date().toISOString() });
+    if (vaultRoot)
+      writeHealth(vaultRoot, { reachable: true, at: new Date().toISOString() });
   } catch (e) {
     const msg = (e as Error).message;
     console.error("[adguard] fence sync failed:", msg);
-    if (vaultRoot) writeHealth(vaultRoot, { reachable: false, at: new Date().toISOString(), error: msg });
+    if (vaultRoot)
+      writeHealth(vaultRoot, {
+        reachable: false,
+        at: new Date().toISOString(),
+        error: msg,
+      });
   } finally {
     syncing = false;
   }

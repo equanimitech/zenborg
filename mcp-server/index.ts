@@ -25,7 +25,11 @@ import {
   fenceReport,
   seedHostBlocks,
 } from "../src/application/use-cases/fences.ts";
-import { collectResolverHosts, readResolverHealth, syncResolverFences } from "./adapters/adguard.js";
+import {
+  collectResolverHosts,
+  readResolverHealth,
+  syncResolverFences,
+} from "./adapters/adguard.js";
 import {
   crossingTally,
   expandHome,
@@ -92,9 +96,9 @@ import {
   type Relationship,
   RelationshipDirectionSchema,
   type Rhythm,
+  RhythmSchema,
   type Routine,
   type RoutineEntry,
-  RhythmSchema,
   readActiveMoment,
   readCollection,
   resolveVault,
@@ -129,7 +133,29 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
+import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
+import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
+import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
+import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
+import { logDir, readActivityLog } from "./activity-log.js";
+import {
+  getAttention,
+  getDayTrace,
+  getSurfaces,
+  mapArea,
+  migrateSurfaces,
+  resolveWindow,
+} from "./attention.js";
 import { paginate } from "./paging.js";
+import {
+  boundaryKey,
+  conciseRoutine,
+  planMaterialization,
+  resolveBoundaries,
+  VALID_BOUNDARIES,
+  validateRoutine,
+} from "./routines.js";
+import { conciseRuleEfficacy, getRuleEfficacy } from "./rule-efficacy.js";
 import {
   conciseArea,
   conciseCycle,
@@ -140,30 +166,8 @@ import {
   conciseRelationship,
   stripNulls,
 } from "./serialize.js";
-import { defineTool, err, ok, type ToolResult } from "./tooling.js";
-import {
-  boundaryKey,
-  conciseRoutine,
-  planMaterialization,
-  resolveBoundaries,
-  VALID_BOUNDARIES,
-  validateRoutine,
-} from "./routines.js";
-import {
-  getSurfaces,
-  getAttention,
-  getDayTrace,
-  mapArea,
-  migrateSurfaces,
-  resolveWindow,
-} from "./attention.js";
-import { logDir, readActivityLog } from "./activity-log.js";
-import { conciseRuleEfficacy, getRuleEfficacy } from "./rule-efficacy.js";
 import { conciseSiteMinutes, getSiteMinutes } from "./site-minutes.js";
-import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
-import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
-import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
-import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
+import { defineTool, err, ok, type ToolResult } from "./tooling.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -291,15 +295,13 @@ Your life is the garden. You are the gardener. Zenborg is the toolshed.
 
 defineTool(server, {
   name: "list_areas",
-  description:
-    "List all areas, sorted by order.",
+  description: "List all areas, sorted by order.",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((a) => conciseArea(a as Area)),
   handler: async () => {
     const areas = readCollection(VAULT_ROOT, "areas");
-    const list = Object.values(areas)
-      .sort((a, b) => a.order - b.order);
+    const list = Object.values(areas).sort((a, b) => a.order - b.order);
     return ok(list);
   },
 });
@@ -370,11 +372,16 @@ defineTool(server, {
     order: z.number().int().nonnegative().optional(),
     attitude: AttitudeSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
-    surfaces: z.object({
-      paths: z.array(z.string()).optional(),
-      hosts: z.array(z.string()).optional(),
-      apps: z.array(z.string()).optional(),
-    }).optional().describe("Where this area lives: filesystem paths, browser hosts, app names."),
+    surfaces: z
+      .object({
+        paths: z.array(z.string()).optional(),
+        hosts: z.array(z.string()).optional(),
+        apps: z.array(z.string()).optional(),
+      })
+      .optional()
+      .describe(
+        "Where this area lives: filesystem paths, browser hosts, app names.",
+      ),
   },
   concise: (p) => conciseArea((p as any).updated),
   handler: async (params) => {
@@ -570,8 +577,20 @@ defineTool(server, {
     rhythm: RhythmSchema.optional(),
     schedule: ScheduleInputSchema.optional(),
     placeIds: z.array(z.string()).optional(),
-    parentHabitId: z.string().optional().describe("ID of the parent habit — makes this a variant (e.g. 'guided meditation' under 'Vipassana')."),
-    durationMin: z.number().int().positive().optional().describe("Default duration in minutes for moments spawned from this habit."),
+    parentHabitId: z
+      .string()
+      .optional()
+      .describe(
+        "ID of the parent habit — makes this a variant (e.g. 'guided meditation' under 'Vipassana').",
+      ),
+    durationMin: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "Default duration in minutes for moments spawned from this habit.",
+      ),
   },
   concise: (p) => conciseHabit((p as any).created),
   handler: async (params) => {
@@ -586,9 +605,11 @@ defineTool(server, {
 
     if (params.parentHabitId) {
       const parent = habits[params.parentHabitId];
-      if (!parent) return err(`Parent habit not found: ${params.parentHabitId}`);
+      if (!parent)
+        return err(`Parent habit not found: ${params.parentHabitId}`);
       if (parent.isArchived) return err("Parent habit is archived.");
-      if ((parent as any).parentHabitId) return err("Variants cannot nest — parent is already a variant.");
+      if ((parent as any).parentHabitId)
+        return err("Variants cannot nest — parent is already a variant.");
     }
 
     let schedule: Schedule | undefined;
@@ -635,7 +656,9 @@ defineTool(server, {
           }
         : {}),
       ...(params.parentHabitId ? { parentHabitId: params.parentHabitId } : {}),
-      ...(params.durationMin && params.durationMin > 0 ? { durationMin: params.durationMin } : {}),
+      ...(params.durationMin && params.durationMin > 0
+        ? { durationMin: params.durationMin }
+        : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -664,8 +687,18 @@ defineTool(server, {
     rhythm: RhythmSchema.nullable().optional(),
     schedule: ScheduleInputSchema.nullable().optional(),
     placeIds: z.array(z.string()).nullable().optional(),
-    parentHabitId: z.string().nullable().optional().describe("Set parent habit ID to make this a variant; null to detach."),
-    durationMin: z.number().int().positive().nullable().optional().describe("Default duration in minutes; null to clear."),
+    parentHabitId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Set parent habit ID to make this a variant; null to detach."),
+    durationMin: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .optional()
+      .describe("Default duration in minutes; null to clear."),
     archived: z
       .boolean()
       .optional()
@@ -693,10 +726,13 @@ defineTool(server, {
 
     if ("parentHabitId" in updates && updates.parentHabitId !== null) {
       const parent = habits[updates.parentHabitId!];
-      if (!parent) return err(`Parent habit not found: ${updates.parentHabitId}`);
+      if (!parent)
+        return err(`Parent habit not found: ${updates.parentHabitId}`);
       if (parent.isArchived) return err("Parent habit is archived.");
-      if ((parent as any).parentHabitId) return err("Variants cannot nest — parent is already a variant.");
-      if (updates.parentHabitId === id) return err("A habit cannot be its own parent.");
+      if ((parent as any).parentHabitId)
+        return err("Variants cannot nest — parent is already a variant.");
+      if (updates.parentHabitId === id)
+        return err("A habit cannot be its own parent.");
     }
 
     const nextName =
@@ -983,13 +1019,15 @@ defineTool(server, {
     const places = readPlaces();
     const rels = Object.values(readCollection(VAULT_ROOT, "relationships"));
     const basePlaceMap = buildBasePlaceKeyMap(rels, people, places);
-    const registryPeople: RegistryPerson[] = Object.values(people).filter((p) => !p.isArchived).map((p) => ({
-      key: p.key,
-      cadence: p.cadence,
-      tags: p.tags,
-      favorite: false,
-      basePlace: basePlaceMap.get(p.id) ?? p.basePlace,
-    }));
+    const registryPeople: RegistryPerson[] = Object.values(people)
+      .filter((p) => !p.isArchived)
+      .map((p) => ({
+        key: p.key,
+        cadence: p.cadence,
+        tags: p.tags,
+        favorite: false,
+        basePlace: basePlaceMap.get(p.id) ?? p.basePlace,
+      }));
     const moments = Object.values(readCollection(VAULT_ROOT, "moments"));
     return ok(
       selectPeopleToReach(registryPeople, moments, new Date(), {
@@ -1010,10 +1048,14 @@ const CadenceSchema = z.enum(["weekly", "monthly", "quarterly", "yearly"]);
 
 defineTool(server, {
   name: "list_people",
-  description: "List all people in the registry. Filter by tag. Archived people are hidden by default; pass includeArchived=true to show them.",
+  description:
+    "List all people in the registry. Filter by tag. Archived people are hidden by default; pass includeArchived=true to show them.",
   schema: {
     tag: z.string().optional(),
-    includeArchived: z.boolean().optional().describe("Include archived people (default false)"),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe("Include archived people (default false)"),
   },
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((x) => concisePerson(x as Person)),
@@ -1129,7 +1171,10 @@ defineTool(server, {
     basePlace: z.string().nullable().optional(),
     emoji: z.string().nullable().optional(),
     isSelf: z.boolean().optional(),
-    archived: z.boolean().optional().describe("true to archive, false to restore"),
+    archived: z
+      .boolean()
+      .optional()
+      .describe("true to archive, false to restore"),
   },
   concise: (p) => concisePerson((p as any).updated),
   handler: async ({ idOrKey, ...updates }) => {
@@ -1166,8 +1211,13 @@ defineTool(server, {
       const existingRel = Object.values(rels).find(
         (r) =>
           r.label === BASED_IN_LABEL &&
-          ((r.fromType === "person" && r.fromId === id && r.toType === "place") ||
-           (r.toType === "person" && r.toId === id && r.fromType === "place" && r.direction === "mutual")),
+          ((r.fromType === "person" &&
+            r.fromId === id &&
+            r.toType === "place") ||
+            (r.toType === "person" &&
+              r.toId === id &&
+              r.fromType === "place" &&
+              r.direction === "mutual")),
       );
       if (existingRel) delete rels[existingRel.id];
       if (updates.basePlace) {
@@ -1237,9 +1287,13 @@ defineTool(server, {
 
 defineTool(server, {
   name: "list_places",
-  description: "List all places in the registry. Archived places are hidden by default; pass includeArchived=true to show them.",
+  description:
+    "List all places in the registry. Archived places are hidden by default; pass includeArchived=true to show them.",
   schema: {
-    includeArchived: z.boolean().optional().describe("Include archived places (default false)"),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe("Include archived places (default false)"),
   },
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((x) => concisePlace(x as Place)),
@@ -1318,7 +1372,8 @@ defineTool(server, {
 
 defineTool(server, {
   name: "update_place",
-  description: "Update a place by id or key. Only provided fields are changed. Set archived: true to archive, archived: false to restore.",
+  description:
+    "Update a place by id or key. Only provided fields are changed. Set archived: true to archive, archived: false to restore.",
   schema: {
     idOrKey: z.string(),
     name: z.string().optional(),
@@ -1332,7 +1387,10 @@ defineTool(server, {
       .optional(),
     emoji: z.string().nullable().optional(),
     url: z.string().nullable().optional(),
-    archived: z.boolean().optional().describe("true to archive, false to restore"),
+    archived: z
+      .boolean()
+      .optional()
+      .describe("true to archive, false to restore"),
   },
   concise: (p) => concisePlace((p as any).updated),
   handler: async ({ idOrKey, ...updates }) => {
@@ -1501,8 +1559,7 @@ defineTool(server, {
     "List all routines. Each routine is an ordered sequence of habits that carries the day across a phase boundary.",
   schema: {},
   annotations: { readOnlyHint: true },
-  concise: (p) =>
-    (p as unknown[]).map((x) => conciseRoutine(x as Routine)),
+  concise: (p) => (p as unknown[]).map((x) => conciseRoutine(x as Routine)),
   handler: async () => {
     const list = Object.values(readCollection(VAULT_ROOT, "routines"));
     list.sort(
@@ -1516,8 +1573,7 @@ defineTool(server, {
 
 defineTool(server, {
   name: "get_routine",
-  description:
-    'Get a routine by id or boundary key (e.g. "NIGHT->MORNING").',
+  description: 'Get a routine by id or boundary key (e.g. "NIGHT->MORNING").',
   schema: { idOrBoundary: z.string() },
   annotations: { readOnlyHint: true },
   concise: (p) => conciseRoutine(p as Routine),
@@ -1525,9 +1581,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const routine =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!routine) return err(`Routine not found: ${idOrBoundary}`);
     return ok(routine);
   },
@@ -1548,11 +1602,7 @@ defineTool(server, {
   handler: async ({ name, from, to, entries }) => {
     const routines = readCollection(VAULT_ROOT, "routines");
     const habits = readCollection(VAULT_ROOT, "habits");
-    const problems = validateRoutine(
-      { from, to, entries },
-      habits,
-      routines,
-    );
+    const problems = validateRoutine({ from, to, entries }, habits, routines);
     if (problems.length > 0) return err(problems.join("; "));
     const id = crypto.randomUUID();
     const now = nowIso();
@@ -1589,9 +1639,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const found =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!found) return err(`Routine not found: ${idOrBoundary}`);
     const habits = readCollection(VAULT_ROOT, "habits");
     const patched = { ...found };
@@ -1599,12 +1647,14 @@ defineTool(server, {
     if (updates.from !== undefined) patched.from = updates.from;
     if (updates.to !== undefined) patched.to = updates.to;
     if (updates.entries !== undefined) {
-      patched.entries = [...updates.entries].sort(
-        (a, b) => a.order - b.order,
-      );
+      patched.entries = [...updates.entries].sort((a, b) => a.order - b.order);
     }
     const problems = validateRoutine(
-      { from: patched.from, to: patched.to, entries: patched.entries as RoutineEntry[] },
+      {
+        from: patched.from,
+        to: patched.to,
+        entries: patched.entries as RoutineEntry[],
+      },
       habits,
       routines,
       found.id,
@@ -1626,9 +1676,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const found =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!found) return err(`Routine not found: ${idOrBoundary}`);
     delete routines[found.id];
     writeCollection(VAULT_ROOT, "routines", routines);
@@ -1648,19 +1696,15 @@ defineTool(server, {
       .optional()
       .describe("Boundary key, e.g. 'NIGHT->MORNING'."),
     routineId: z.string().optional().describe("Routine id."),
-    day: z
-      .string()
-      .optional()
-      .describe("YYYY-MM-DD. Defaults to today."),
+    day: z.string().optional().describe("YYYY-MM-DD. Defaults to today."),
   },
   handler: async ({ boundary, routineId, day }) => {
     const routines = readCollection(VAULT_ROOT, "routines");
     const habits = readCollection(VAULT_ROOT, "habits");
     const moments = readCollection(VAULT_ROOT, "moments");
-    const targetDay =
-      day ?? new Date().toISOString().slice(0, 10);
+    const targetDay = day ?? new Date().toISOString().slice(0, 10);
 
-    let targets: typeof routines[string][];
+    let targets: (typeof routines)[string][];
     if (routineId) {
       const r = routines[routineId];
       if (!r) return err(`Routine not found: ${routineId}`);
@@ -1680,12 +1724,7 @@ defineTool(server, {
     const errors: string[] = [];
 
     for (const routine of targets) {
-      const planned = planMaterialization(
-        routine,
-        moments,
-        habits,
-        targetDay,
-      );
+      const planned = planMaterialization(routine, moments, habits, targetDay);
       for (const p of planned) {
         const result = runAddMoment({
           habitId: p.habitId,
@@ -1693,9 +1732,7 @@ defineTool(server, {
           phase: p.phase,
         });
         if ("err" in result) {
-          errors.push(
-            `${habits[p.habitId]?.name ?? p.habitId}: ${result.err}`,
-          );
+          errors.push(`${habits[p.habitId]?.name ?? p.habitId}: ${result.err}`);
         } else {
           moments[result.created.id] = result.created;
           created.push(result.created.name);
@@ -1747,9 +1784,7 @@ defineTool(server, {
   },
   annotations: { readOnlyHint: true },
   handler: async ({ wakeAnchor, onsetAnchor }) => {
-    const configs = Object.values(
-      readCollection(VAULT_ROOT, "phaseConfigs"),
-    );
+    const configs = Object.values(readCollection(VAULT_ROOT, "phaseConfigs"));
     const anchors =
       wakeAnchor != null && onsetAnchor != null
         ? { wakeAnchor, onsetAnchor }
@@ -2107,7 +2142,11 @@ function buildBasePlaceKeyMap(
     if (r.fromType === "person" && r.toType === "place") {
       personId = r.fromId;
       placeId = r.toId;
-    } else if (r.toType === "person" && r.fromType === "place" && r.direction === "mutual") {
+    } else if (
+      r.toType === "person" &&
+      r.fromType === "place" &&
+      r.direction === "mutual"
+    ) {
       personId = r.toId;
       placeId = r.fromId;
     }
@@ -3468,7 +3507,7 @@ defineTool(server, {
           name: r.person.name,
           emoji: r.person.emoji,
           tags: r.person.tags,
-            matchedOn: r.matchedOn,
+          matchedOn: r.matchedOn,
           matchedValue: r.matchedValue,
           matchMethod: r.method,
         })),
@@ -3645,8 +3684,10 @@ const fenceDeps: FenceDeps = {
   tally: crossingTally(VAULT_ROOT),
   garden: {
     async areas() {
-      return Object.values(readCollection(VAULT_ROOT, "areas"))
-        .map((a) => ({ id: a.id, name: a.name }));
+      return Object.values(readCollection(VAULT_ROOT, "areas")).map((a) => ({
+        id: a.id,
+        name: a.name,
+      }));
     },
     async activeCycleId() {
       const today = new Date();
@@ -4070,9 +4111,7 @@ defineTool(server, {
     from: DaySchema.optional().describe(
       "Inclusive start day. Use with `to` for a range.",
     ),
-    to: DaySchema.optional().describe(
-      "Inclusive end day.",
-    ),
+    to: DaySchema.optional().describe("Inclusive end day."),
     surfaces: z
       .array(z.enum(["desktop", "agent", "browser"]))
       .optional()
@@ -4137,18 +4176,23 @@ defineTool(server, {
     "side by side (a before/after table). Days with no browser log are listed as missing " +
     "and left out of the means. Concise omits the daily rows; full includes them.",
   schema: {
-    hosts: z.array(z.string().min(1)).min(1)
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
       .describe('Hosts, e.g. ["youtube.com", "chess.com"].'),
     from: DaySchema.describe("Inclusive start day (local)."),
     to: DaySchema.describe("Inclusive end day (local)."),
-    compare: z.object({ from: DaySchema, to: DaySchema }).optional()
+    compare: z
+      .object({ from: DaySchema, to: DaySchema })
+      .optional()
       .describe("A second period to set beside the first."),
   },
   annotations: { readOnlyHint: true },
   concise: conciseSiteMinutes,
   handler: async (params) => {
     for (const p of [params, params.compare]) {
-      if (p && p.from > p.to) return err(`from (${p.from}) is after to (${p.to})`);
+      if (p && p.from > p.to)
+        return err(`from (${p.from}) is after to (${p.to})`);
     }
     return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
   },
@@ -4182,7 +4226,12 @@ defineTool(server, {
 // ────────────────────────────────────────────────────────────────────────
 
 function loadHabitMap() {
-  const mapPath = path.join(VAULT_ROOT, "integrations", "garmin", "habit-map.json");
+  const mapPath = path.join(
+    VAULT_ROOT,
+    "integrations",
+    "garmin",
+    "habit-map.json",
+  );
   if (!fs.existsSync(mapPath)) return parseHabitMap(null);
   try {
     return parseHabitMap(JSON.parse(fs.readFileSync(mapPath, "utf8")));
@@ -4198,14 +4247,18 @@ defineTool(server, {
     "Nights report the morning woken (calendarDate describes the night before that day's work). " +
     "Workouts resolve to habits via the garmin habit map when mapped.",
   schema: {
-    day: DaySchema.optional().describe("One waking day (04:00 roll). Omit for today."),
+    day: DaySchema.optional().describe(
+      "One waking day (04:00 roll). Omit for today.",
+    ),
     from: DaySchema.optional().describe("Inclusive start day."),
     to: DaySchema.optional().describe("Inclusive end day."),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
     const window = resolveWindow(params);
-    const events = readActivityLog(logDir(VAULT_ROOT), window.from, window.to, ["garmin"]);
+    const events = readActivityLog(logDir(VAULT_ROOT), window.from, window.to, [
+      "garmin",
+    ]);
     const habitMap = loadHabitMap();
     const habits = readCollection(VAULT_ROOT, "habits");
     const habitName = (id: string) => habits[id]?.name ?? id;
@@ -4225,15 +4278,22 @@ defineTool(server, {
         start: `${p(d.getHours())}:${p(d.getMinutes())}`,
         activityType: w.activityType,
         elapsedMin: Math.round(w.elapsedMs / 60_000),
-        ...(w.movingS !== undefined ? { movingMin: Math.round(w.movingS / 60) } : {}),
+        ...(w.movingS !== undefined
+          ? { movingMin: Math.round(w.movingS / 60) }
+          : {}),
         ...(w.calories !== undefined ? { calories: w.calories } : {}),
         ...(w.avgHrBpm !== undefined ? { avgHrBpm: w.avgHrBpm } : {}),
-        ...(w.habitId ? { habitId: w.habitId, habitName: habitName(w.habitId) } : {}),
+        ...(w.habitId
+          ? { habitId: w.habitId, habitName: habitName(w.habitId) }
+          : {}),
       };
     });
     const garminEvents = events.filter((e) => e.surface === "garmin");
     const first = garminEvents.length > 0 ? garminEvents[0].ts : undefined;
-    const last = garminEvents.length > 0 ? garminEvents[garminEvents.length - 1].ts : undefined;
+    const last =
+      garminEvents.length > 0
+        ? garminEvents[garminEvents.length - 1].ts
+        : undefined;
     const localDate = (ts: number) => {
       const d = new Date(ts);
       const p = (n: number) => String(n).padStart(2, "0");
@@ -4270,10 +4330,12 @@ defineTool(server, {
 
     let series = metricSeries(params.habitId, moments, logs, params.metricName);
     if (params.since) {
-      series = series.map((s) => ({
-        ...s,
-        points: s.points.filter((p) => p.date >= params.since!),
-      })).filter((s) => s.points.length > 0);
+      series = series
+        .map((s) => ({
+          ...s,
+          points: s.points.filter((p) => p.date >= params.since!),
+        }))
+        .filter((s) => s.points.length > 0);
     }
     return ok({ habitId: params.habitId, habitName: habit.name, series });
   },
@@ -4292,8 +4354,14 @@ defineTool(server, {
     "spans in cells that planted nothing for that area. " +
     "No alignment %, no score.",
   schema: {
-    day: DaySchema.optional().describe("Waking day (04:00 roll). Omit for today."),
-    idleGapMin: z.number().int().positive().optional()
+    day: DaySchema.optional().describe(
+      "Waking day (04:00 roll). Omit for today.",
+    ),
+    idleGapMin: z
+      .number()
+      .int()
+      .positive()
+      .optional()
       .describe("Idle gap in minutes for span derivation. Default 15."),
   },
   annotations: { readOnlyHint: true },
@@ -4318,11 +4386,21 @@ defineTool(server, {
     'Use when the gardener says "I have time" or a gap is detected. ' +
     "Returns 2–3 habits sorted by thirst (highest first), filtered by duration and place.",
   schema: {
-    durationMinutes: z.number().positive().optional()
+    durationMinutes: z
+      .number()
+      .positive()
+      .optional()
       .describe("Max available time in minutes. Omit for open-ended."),
-    place: z.string().optional()
+    place: z
+      .string()
+      .optional()
       .describe("Where the gardener is (city/place key). Omit if unknown."),
-    maxResults: z.number().int().min(1).max(5).optional()
+    maxResults: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .optional()
       .describe("How many proposals to return. Default 3."),
   },
   annotations: { readOnlyHint: true },
@@ -4334,9 +4412,17 @@ defineTool(server, {
     const now = new Date();
     const withinMs = durationMinutes ? durationMinutes * 60_000 : undefined;
     const proposals = proposeGap(
-      habits, moments, cycles, cyclePlans, now, withinMs, place, maxResults ?? 3,
+      habits,
+      moments,
+      cycles,
+      cyclePlans,
+      now,
+      withinMs,
+      place,
+      maxResults ?? 3,
     );
-    if (proposals.length === 0) return ok({ proposals: [], message: "No gap habits fit the window." });
+    if (proposals.length === 0)
+      return ok({ proposals: [], message: "No gap habits fit the window." });
     return ok({ proposals });
   },
 });
@@ -4351,7 +4437,9 @@ defineTool(server, {
   const m = migrateSurfaces(VAULT_ROOT, areas);
   if (m.migrated > 0) {
     writeCollection(VAULT_ROOT, "areas", areas);
-    process.stderr.write(`[zenborg-mcp] migrated ${m.migrated} area-map rules to area surfaces\n`);
+    process.stderr.write(
+      `[zenborg-mcp] migrated ${m.migrated} area-map rules to area surfaces\n`,
+    );
   }
 }
 
