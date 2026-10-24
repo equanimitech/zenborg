@@ -1,5 +1,6 @@
 import type { AreaId, RuleId } from "../../domain/attention/ids";
 import {
+  type BlockReach,
   carriesExit,
   type Primitive,
 } from "../../domain/intervention/Primitive.ts";
@@ -7,7 +8,10 @@ import {
   type RuleSpec,
   validateRuleSpec,
 } from "../../domain/intervention/RuleSpec.ts";
-import { browserDwellGateRule } from "../../domain/intervention/rules/browserGate.ts";
+import {
+  browserGateRule,
+  type GateRung,
+} from "../../domain/intervention/rules/browserGate.ts";
 import type {
   BrowserTransformInput,
   TransformReplacement,
@@ -22,9 +26,9 @@ import {
   sessionFenceRule,
 } from "../../domain/intervention/rules/sessionFence.ts";
 import {
-  wateringHoursRules,
   type WateringHoursMode,
   type WateringHoursWindow,
+  wateringHoursRules,
 } from "../../domain/intervention/rules/wateringHours.ts";
 import type { Phase } from "../../domain/value-objects/Phase.ts";
 import type { Weekday } from "../../domain/value-objects/Schedule.ts";
@@ -49,8 +53,8 @@ import type {
  * Construction and validation stay in the domain (`sessionFenceRule`,
  * `validateRuleSpec`); what lives here is orchestration: resolving the names
  * the principal speaks in ("Themia") to the ids the rule needs, pointing
- * `serves` at the running season, and refusing a declaration the domain would
- * turn into a rule that cannot work. The MCP tool handler above this is a
+ * `serves` at a season (`servedSeason`), and refusing a declaration the domain
+ * would turn into a rule that cannot work. The MCP tool handler above this is a
  * thin adapter and adds nothing.
  */
 
@@ -65,8 +69,88 @@ export interface FenceDeclaration {
 }
 
 export type DeclareFenceResult =
-  | { readonly declared: RuleSpec; readonly standing: number }
+  | {
+      readonly declared: RuleSpec;
+      readonly standing: number;
+      readonly note?: string;
+    }
   | { readonly problems: readonly string[] };
+
+export type DeclareFencesResult =
+  | {
+      readonly declared: readonly RuleSpec[];
+      readonly standing: number;
+      readonly note?: string;
+    }
+  | { readonly problems: readonly string[] };
+
+/**
+ * The season a new fence serves.
+ *
+ * Fences outlive seasons: enforcement never reads `serves`, it is the pointer
+ * the outcome loop settles against. So between seasons a fence points at the
+ * last one by end date and says so, rather than refusing a boundary the
+ * gardener needs tonight. Only a garden with no cycle at all refuses. Every
+ * writer below goes through here.
+ */
+export async function servedSeason(
+  deps: FenceDeps,
+): Promise<
+  | { readonly cycleId: string; readonly note?: string }
+  | { readonly problem: string }
+> {
+  const running = await deps.garden.activeCycleId();
+  if (running !== null) return { cycleId: running };
+  const [last] = [...(await deps.garden.cycles())].sort((a, b) =>
+    (b.endDate ?? "").localeCompare(a.endDate ?? ""),
+  );
+  if (!last) {
+    return {
+      problem:
+        "no season exists — a fence serves a season's intention, so plan a cycle first",
+    };
+  }
+  return {
+    cycleId: last.id,
+    note: last.endDate
+      ? `serving the last season, '${last.name}', ended ${last.endDate}`
+      : `no season is running — serving '${last.name}'`,
+  };
+}
+
+/**
+ * Replace-by-id that keeps what this build does not know about.
+ *
+ * A record re-declared under the same id keeps its unknown fields (vault rule:
+ * an older writer must not delete a newer one's data), `defaultEnabled`
+ * included, so re-declaring a paused fence leaves it paused and says so.
+ */
+function upsert(
+  all: Record<RuleId, RuleSpec>,
+  rules: readonly RuleSpec[],
+): { readonly next: Record<RuleId, RuleSpec>; readonly paused: string[] } {
+  const next = { ...all };
+  const paused: string[] = [];
+  for (const rule of rules) {
+    const merged = { ...all[rule.id], ...rule };
+    if (merged.defaultEnabled === false) paused.push(rule.id);
+    next[rule.id] = merged;
+  }
+  return { next, paused };
+}
+
+function joinNotes(...notes: readonly (string | undefined)[]): {
+  readonly note?: string;
+} {
+  const note = notes.filter(Boolean).join("; ");
+  return note ? { note } : {};
+}
+
+function pausedNote(paused: readonly string[]): string | undefined {
+  return paused.length > 0
+    ? `still paused: ${paused.join(", ")} (set_fence_enabled to resume)`
+    : undefined;
+}
 
 export type ClearFencesTarget =
   | { readonly id: RuleId }
@@ -163,20 +247,13 @@ export async function declareFence(
     else enclosed.push(resolved.id);
   }
 
-  // `serves` points at the season's intention already declared in cycle
-  // planning — a pointer, not a second declaration — so a fence needs a
-  // running season to point at. Refusing here is more honest than inventing
-  // a placeholder the outcome loop would later try to settle against.
-  const cycleId = await deps.garden.activeCycleId();
-  if (cycleId === null) {
-    problems.push(
-      "no season is running — a fence serves the season's intention, so open a cycle first",
-    );
-  }
+  const season = await servedSeason(deps);
+  if ("problem" in season) problems.push(season.problem);
 
-  if (problems.length > 0 || cycleId === null || enclosed.length === 0) {
+  if (problems.length > 0 || "problem" in season || enclosed.length === 0) {
     return { problems };
   }
+  const { cycleId } = season;
 
   const label = input.label.trim();
   const fence = sessionFenceRule({
@@ -195,7 +272,11 @@ export async function declareFence(
 
   const all = await deps.store.read();
   await deps.store.write({ ...all, [fence.id]: fence });
-  return { declared: fence, standing: Object.keys(all).length + 1 };
+  return {
+    declared: fence,
+    standing: Object.keys(all).length + 1,
+    ...joinNotes(season.note),
+  };
 }
 
 // ── Watering hours ────────────────────────────────────────────────────
@@ -222,11 +303,15 @@ export interface WateringHoursDeclaration {
   };
   readonly prompt?: string;
   readonly unlockNote?: string;
+  /**
+   * What a `dry` browser block stops. Omitted on a re-declaration, the reach
+   * the policy's browser rules already carry is kept; omitted on a first
+   * declaration, `all`.
+   */
+  readonly reach?: BlockReach;
 }
 
-export type DeclareWateringHoursResult =
-  | { readonly declared: readonly RuleSpec[]; readonly standing: number }
-  | { readonly problems: readonly string[] };
+export type DeclareWateringHoursResult = DeclareFencesResult;
 
 export async function declareWateringHours(
   deps: FenceDeps,
@@ -263,12 +348,8 @@ export async function declareWateringHours(
     else restrictedAreaIds.push(resolved.id);
   }
 
-  const cycleId = await deps.garden.activeCycleId();
-  if (cycleId === null) {
-    problems.push(
-      "no season is running — watering hours serve the season's intention, so open a cycle first",
-    );
-  }
+  const season = await servedSeason(deps);
+  if ("problem" in season) problems.push(season.problem);
 
   let window: WateringHoursWindow;
   if (input.window.phases && input.window.phases.length > 0) {
@@ -301,9 +382,14 @@ export async function declareWateringHours(
     window = { fromHour: 0, toHour: 24 };
   }
 
-  if (problems.length > 0 || cycleId === null || returnsTo.length === 0) {
+  if (problems.length > 0 || "problem" in season || returnsTo.length === 0) {
     return { problems };
   }
+  const { cycleId } = season;
+
+  const all = await deps.store.read();
+  const prefix = `watering:${input.name.trim()}:`;
+  const reach = input.reach ?? priorReach(all, `${prefix}browser:`);
 
   const rules = wateringHoursRules({
     policyName: input.name.trim(),
@@ -319,6 +405,7 @@ export async function declareWateringHours(
     },
     prompt: input.prompt,
     unlockNote: input.unlockNote,
+    ...(reach ? { reach } : {}),
   });
 
   for (const rule of rules) {
@@ -327,15 +414,38 @@ export async function declareWateringHours(
   }
   if (problems.length > 0) return { problems };
 
-  const all = await deps.store.read();
-  const prefix = `watering:${input.name.trim()}:`;
-  const next: Record<string, RuleSpec> = {};
-  for (const [id, rule] of Object.entries(all)) {
-    if (!id.startsWith(prefix)) next[id] = rule;
-  }
-  for (const rule of rules) next[rule.id] = rule;
+  // Re-declaring replaces the policy: rules it no longer emits go, and a rule
+  // re-emitted under the same id keeps its unknown fields (`upsert`).
+  const emitted = new Set(rules.map((r) => r.id));
+  const { next: upserted, paused } = upsert(all, rules);
+  const next = Object.fromEntries(
+    Object.entries(upserted).filter(
+      ([id]) => !id.startsWith(prefix) || emitted.has(id),
+    ),
+  );
   await deps.store.write(next);
-  return { declared: rules, standing: Object.keys(next).length };
+  return {
+    declared: rules,
+    standing: Object.keys(next).length,
+    ...joinNotes(season.note, pausedNote(paused)),
+  };
+}
+
+/** The block reach a policy's browser rules already carry, if any says one. */
+function priorReach(
+  all: Record<RuleId, RuleSpec>,
+  browserPrefix: string,
+): BlockReach | undefined {
+  for (const [id, rule] of Object.entries(all)) {
+    if (!id.startsWith(browserPrefix)) continue;
+    for (const p of rule.primitives) {
+      const inner = p.kind === "schedule" ? p.wraps : p;
+      if (inner.kind === "cooldown" && inner.enforcement?.at === "browser") {
+        return inner.enforcement.reach;
+      }
+    }
+  }
+  return undefined;
 }
 
 // ── Browser-scoped fences ──────────────────────────────────────────────
@@ -448,7 +558,11 @@ async function resolveReturn(
   deps: FenceDeps,
   returnsTo: readonly string[],
 ): Promise<
-  | { readonly areaIds: AreaId[]; readonly cycleId: string }
+  | {
+      readonly areaIds: AreaId[];
+      readonly cycleId: string;
+      readonly note?: string;
+    }
   | { readonly problems: string[] }
 > {
   const problems: string[] = [];
@@ -466,30 +580,46 @@ async function resolveReturn(
     else areaIds.push(resolved.id);
   }
 
-  const cycleId = await deps.garden.activeCycleId();
-  if (cycleId === null) {
-    problems.push(
-      "no season is running — a fence serves the season's intention, so open a cycle first",
-    );
-  }
+  const season = await servedSeason(deps);
+  if ("problem" in season) problems.push(season.problem);
 
-  if (problems.length > 0 || cycleId === null || areaIds.length === 0) {
+  if (problems.length > 0 || "problem" in season || areaIds.length === 0) {
     return { problems };
   }
-  return { areaIds, cycleId };
+  return { areaIds, ...season };
 }
 
 /** Validate, then write. One place, so no caller can skip the check. */
 async function writeFence(
   deps: FenceDeps,
   rule: RuleSpec,
+  seasonNote?: string,
 ): Promise<DeclareFenceResult> {
-  const problems = [...validateRuleSpec(rule), ...exitProblems(rule)];
+  const result = await writeFences(deps, [rule], seasonNote);
+  if ("problems" in result) return result;
+  return { ...result, declared: result.declared[0] };
+}
+
+/** Validate every rule, then write them in one read-modify-write. */
+async function writeFences(
+  deps: FenceDeps,
+  rules: readonly RuleSpec[],
+  seasonNote?: string,
+): Promise<DeclareFencesResult> {
+  const problems = rules.flatMap((rule) => [
+    ...validateRuleSpec(rule),
+    ...exitProblems(rule),
+  ]);
   if (problems.length > 0) return { problems };
 
   const all = await deps.store.read();
-  await deps.store.write({ ...all, [rule.id]: rule });
-  return { declared: rule, standing: Object.keys(all).length + 1 };
+  const { next, paused } = upsert(all, rules);
+  await deps.store.write(next);
+  return {
+    declared: rules,
+    standing: Object.keys(next).length,
+    ...joinNotes(seasonNote, pausedNote(paused)),
+  };
 }
 
 export interface HostBlockDeclaration {
@@ -506,6 +636,8 @@ export interface HostBlockDeclaration {
    * Absent means the browser enforces it, which is the surface this app reaches.
    */
   readonly resolverProfile?: string;
+  /** Browser blocks only: `navigation` refuses page loads, keeps open pages. */
+  readonly reach?: BlockReach;
 }
 
 /**
@@ -547,21 +679,80 @@ export async function declareHostBlock(
       returnsTo: resolved.areaIds,
       unlockNote: input.unlockNote.trim(),
       ...(input.resolverProfile === undefined
-        ? { enforcement: { at: "browser" as const } }
+        ? {
+            enforcement: {
+              at: "browser" as const,
+              ...(input.reach === "navigation" ? { reach: input.reach } : {}),
+            },
+          }
         : { resolverProfile: input.resolverProfile }),
     }),
+    resolved.note,
   );
 }
 
 export interface BrowserGateDeclaration {
-  readonly host: string;
+  /** One host. `hosts` names several; both may be given. */
+  readonly host?: string;
+  readonly hosts?: readonly string[];
   readonly returnsTo: readonly string[];
-  /** Accumulated attended dwell between firings. */
-  readonly everyMinutes: number;
-  /** What the gate asks. */
-  readonly prompt: string;
+  /** Flat shape: accumulated attended dwell between firings. */
+  readonly everyMinutes?: number;
+  /** Flat shape: what the gate asks. */
+  readonly prompt?: string;
+  /** Full shape, instead of `everyMinutes` + `prompt`. Several rungs = ladder. */
+  readonly rungs?: readonly GateRung[];
+  /**
+   * The rule id. One host: used as is (default a fresh uuid). Several hosts:
+   * the base of each derived id, `<id>:<host>` (default the name's slug).
+   */
+  readonly id?: string;
+  readonly deliveryProbability?: number;
+  readonly windowMs?: number;
   readonly name?: string;
   readonly description?: string;
+}
+
+function slug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function frictionWords(f: GateRung["friction"]): string {
+  switch (f.type) {
+    case "intention":
+      return "a question";
+    case "delay":
+      return `a ${f.seconds} s pause`;
+    case "breath":
+      return `${f.cycles} breaths`;
+    case "confirmation":
+      return "a confirmation";
+  }
+}
+
+function triggerWords(t: GateRung["trigger"]): string {
+  switch (t.type) {
+    case "dwell":
+      return `every ${t.everyMinutes} attended minutes`;
+    case "entry":
+      return "on arrival";
+    case "click":
+      return `before a click on ${t.selectors.primary}`;
+  }
+}
+
+function gateDescription(host: string, rungs: readonly GateRung[]): string {
+  const [first] = rungs;
+  if (rungs.length === 1) {
+    return `A stopping cue on ${host}, ${triggerWords(first.trigger)}: ${frictionWords(first.friction)}.`;
+  }
+  return `A ${rungs.length}-rung ladder on ${host}, ${triggerWords(first.trigger)}: ${rungs
+    .map((r) => frictionWords(r.friction))
+    .join(", ")}. Each proceed today climbs a rung; resets at local midnight.`;
 }
 
 /**
@@ -576,34 +767,64 @@ export interface BrowserGateDeclaration {
 export async function declareBrowserGate(
   deps: FenceDeps,
   input: BrowserGateDeclaration,
-): Promise<DeclareFenceResult> {
-  const problems = hostProblems(input.host);
-  if (input.prompt.trim() === "") {
-    problems.push(
-      "say what the gate asks — the question is the friction, and a gate with nothing to answer is a click",
-    );
+): Promise<DeclareFencesResult> {
+  const hosts = [
+    ...new Set(
+      [...(input.host ? [input.host] : []), ...(input.hosts ?? [])].map((h) =>
+        h.trim().toLowerCase(),
+      ),
+    ),
+  ];
+  const problems = hosts.flatMap(hostProblems);
+  if (hosts.length === 0) problems.push("name a host (`host` or `hosts`)");
+
+  const flat = input.everyMinutes !== undefined || input.prompt !== undefined;
+  let rungs: readonly GateRung[] = input.rungs ?? [];
+  if (input.rungs && flat) {
+    problems.push("pass either `rungs` or `everyMinutes` + `prompt`, not both");
+  } else if (!input.rungs) {
+    if (input.everyMinutes === undefined) {
+      problems.push("a flat gate needs `everyMinutes` (or pass `rungs`)");
+    }
+    if (!input.prompt?.trim()) {
+      problems.push(
+        "say what the gate asks — the question is the friction, and a gate with nothing to answer is a click",
+      );
+    }
+    rungs = [
+      {
+        trigger: { type: "dwell", everyMinutes: input.everyMinutes ?? 0 },
+        friction: { type: "intention", prompt: input.prompt?.trim() ?? "" },
+      },
+    ];
+  } else if (input.rungs.length === 0) {
+    problems.push("a gate needs at least one rung");
   }
 
   const resolved = await resolveReturn(deps, input.returnsTo);
   if ("problems" in resolved) problems.push(...resolved.problems);
   if (problems.length > 0 || "problems" in resolved) return { problems };
 
-  const host = input.host.trim().toLowerCase();
-  return writeFence(
-    deps,
-    browserDwellGateRule({
-      id: deps.newRuleId(),
+  const base = input.id?.trim() || slug(input.name ?? "") || "gate";
+  const rules = hosts.map((host) =>
+    browserGateRule({
+      id:
+        hosts.length === 1
+          ? input.id?.trim() || deps.newRuleId()
+          : `${base}:${host}`,
       host,
       name: input.name?.trim() || host,
-      description:
-        input.description?.trim() ||
-        `A recurring stopping cue on ${host}, every ${input.everyMinutes} attended minutes.`,
+      description: input.description?.trim() || gateDescription(host, rungs),
       serves: { cycleId: resolved.cycleId, areaId: resolved.areaIds[0] },
       returnsTo: resolved.areaIds,
-      everyMinutes: input.everyMinutes,
-      prompt: input.prompt.trim(),
+      rungs,
+      ...(input.windowMs === undefined ? {} : { windowMs: input.windowMs }),
+      ...(input.deliveryProbability === undefined
+        ? {}
+        : { deliveryProbability: input.deliveryProbability }),
     }),
   );
+  return writeFences(deps, rules, resolved.note);
 }
 
 export interface BrowserTransformDeclaration {
@@ -669,6 +890,7 @@ export async function declareBrowserTransform(
       },
       replacement: input.replacement,
     } satisfies BrowserTransformInput),
+    resolved.note,
   );
 }
 
@@ -683,9 +905,7 @@ export interface HostBlockSeedDeclaration {
   readonly resolverProfile?: string;
 }
 
-export type SeedHostBlocksResult =
-  | { readonly declared: readonly RuleSpec[]; readonly standing: number }
-  | { readonly problems: readonly string[] };
+export type SeedHostBlocksResult = DeclareFencesResult;
 
 /**
  * Write the seed blocklist into `fences`, as rules that say what they are for.
@@ -731,17 +951,76 @@ export async function seedHostBlocks(
         }),
   });
 
-  for (const rule of seeded) {
-    const bad = [...validateRuleSpec(rule), ...exitProblems(rule)];
-    if (bad.length > 0) problems.push(...bad);
-  }
-  if (problems.length > 0) return { problems };
+  return writeFences(deps, seeded, resolved.note);
+}
 
+export type FenceTarget = { readonly id: RuleId } | { readonly policy: string };
+
+export type SetFencesEnabledResult =
+  | {
+      readonly changed: readonly {
+        readonly id: RuleId;
+        readonly name: string;
+      }[];
+      readonly unchanged: readonly RuleId[];
+    }
+  | { readonly problems: readonly string[] };
+
+/**
+ * Pause or resume a fence — by id, or every rule of a watering policy.
+ *
+ * Flips `defaultEnabled` and appends a dated line with the reason to the
+ * description, so the record carries its own history. Never deletes: a
+ * paused fence keeps its id, its tally and its outcome trail.
+ */
+export async function setFencesEnabled(
+  deps: FenceDeps,
+  target: FenceTarget,
+  enabled: boolean,
+  reason: string,
+  today: string,
+): Promise<SetFencesEnabledResult> {
+  if (reason.trim() === "") {
+    return { problems: ["say why — the reason is written into the record"] };
+  }
   const all = await deps.store.read();
+  const ids =
+    "id" in target
+      ? target.id in all
+        ? [target.id]
+        : []
+      : Object.keys(all).filter((id) =>
+          id.startsWith(`watering:${target.policy}:`),
+        );
+  if (ids.length === 0) {
+    return {
+      problems: [
+        "id" in target
+          ? `no fence with id "${target.id}"`
+          : `no watering hours with policy "${target.policy}"`,
+      ],
+    };
+  }
+
+  const verb = enabled ? "Resumed" : "Paused";
   const next = { ...all };
-  for (const rule of seeded) next[rule.id] = rule;
-  await deps.store.write(next);
-  return { declared: seeded, standing: Object.keys(next).length };
+  const changed: { id: RuleId; name: string }[] = [];
+  const unchanged: RuleId[] = [];
+  for (const id of ids) {
+    const rule = all[id];
+    if ((rule.defaultEnabled !== false) === enabled) {
+      unchanged.push(id);
+      continue;
+    }
+    next[id] = {
+      ...rule,
+      defaultEnabled: enabled,
+      description: `${rule.description}\n${verb} ${today}: ${reason.trim()}`,
+    };
+    changed.push({ id, name: rule.name });
+  }
+  if (changed.length > 0) await deps.store.write(next);
+  return { changed, unchanged };
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   declareWateringHours,
   fenceReport,
   seedHostBlocks,
+  setFencesEnabled,
 } from "../src/application/use-cases/fences.ts";
 import {
   collectResolverHosts,
@@ -133,8 +134,11 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
+import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
+import type { Primitive } from "../src/domain/intervention/Primitive.ts";
+import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 import { logDir, readActivityLog } from "./activity-log.js";
@@ -146,6 +150,11 @@ import {
   migrateSurfaces,
   resolveWindow,
 } from "./attention.js";
+import {
+  type BrowserFenceLine,
+  browserFenceReport,
+  conciseBrowserFences,
+} from "./browser-fences.js";
 import { paginate } from "./paging.js";
 import {
   boundaryKey,
@@ -166,7 +175,11 @@ import {
   conciseRelationship,
   stripNulls,
 } from "./serialize.js";
-import { conciseSiteMinutes, getSiteMinutes } from "./site-minutes.js";
+import {
+  conciseSiteMinutes,
+  getSiteMinutes,
+  midnight,
+} from "./site-minutes.js";
 import { defineTool, err, ok, type ToolResult } from "./tooling.js";
 
 function nowIso(): string {
@@ -3701,6 +3714,13 @@ const fenceDeps: FenceDeps = {
         .sort((a, b) => b.startDate.localeCompare(a.startDate));
       return active[0]?.id ?? null;
     },
+    async cycles() {
+      return Object.values(readCollection(VAULT_ROOT, "cycles")).map((c) => ({
+        id: c.id,
+        name: c.name,
+        endDate: c.endDate,
+      }));
+    },
     async phaseConfigs() {
       const raw = readCollection(VAULT_ROOT, "phaseConfigs");
       return Object.values(raw).map((c: any) => ({
@@ -3747,9 +3767,30 @@ defineTool(server, {
       description,
     });
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
+
+/** Every fence writer answers the same way: what was written, how many stand,
+ * and the note (e.g. which season `serves` fell back to) when there is one. */
+function declaredPayload(result: {
+  declared: unknown;
+  standing: number;
+  note?: string;
+}) {
+  return {
+    declared: result.declared,
+    standing: result.standing,
+    ...(result.note ? { note: result.note } : {}),
+  };
+}
+
+const ReachSchema = z
+  .enum(["all", "navigation"])
+  .optional()
+  .describe(
+    'Browser blocks only. "all" (default) stops every request to the host. "navigation" stops page loads only: a page already open keeps working (a live game is not cut when the window opens), but loading or reloading the site is refused.',
+  );
 
 // ── Browser-scoped fences ─────────────────────────────────────────────
 //
@@ -3790,44 +3831,133 @@ defineTool(server, {
       .describe(
         "Name the resolver profile carrying the block to enforce it there instead of in the browser",
       ),
+    reach: ReachSchema,
   },
   handler: async (input) => {
     const result = await declareHostBlock(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
     syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
+
+const GateTriggerSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("dwell"),
+    everyMinutes: z
+      .number()
+      .positive()
+      .describe(
+        "Attended minutes between firings (idle/background time does not accrue)",
+      ),
+  }),
+  z
+    .object({ type: z.literal("entry") })
+    .describe("Once per arrival on the host"),
+  z
+    .object({
+      type: z.literal("click"),
+      selectors: z.object({
+        primary: z.string().min(1),
+        fallbacks: z.array(z.string().min(1)).optional(),
+      }),
+    })
+    .describe(
+      "Stands in front of a click on the selector (or a descendant), e.g. the button that starts the next game",
+    ),
+]);
+
+const GateFrictionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("intention"), prompt: z.string().min(1) }),
+  z.object({ type: z.literal("delay"), seconds: z.number().int().positive() }),
+  z.object({ type: z.literal("breath"), cycles: z.number().int().positive() }),
+]);
 
 defineTool(server, {
   name: "set_browser_gate",
   description:
-    "Declare a recurring stopping cue on a host: every N attended minutes of dwell, the page asks a question with an exit. Friction on the duration rather than on the visit — which is the answer to a standing block on a host you have a real reason to use, since that block gets lifted and a block lifted in the moment is not a boundary. Ships below delivery probability 1, because whether a cue like this returns attention is exactly what is unknown.",
+    "Declare a stopping cue on a host, with an exit on every rung. Simple form: `everyMinutes` + `prompt` = a question every N attended minutes. Full form: `rungs`, each a trigger (dwell / entry / click on a selector) and a friction (intention question / delay seconds / breath cycles); several rungs make a ladder, where each 'proceed' today climbs a rung (resets at local midnight). `hosts` writes one rule per host with derived ids `<id or name-slug>:<host>`; re-declaring the same id replaces it. Ships at delivery probability 0.7 unless told otherwise, because whether a cue returns attention is the open question. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     host: z
       .string()
       .min(1)
-      .describe('A registrable host — "linkedin.com", not a URL'),
+      .optional()
+      .describe(
+        'A registrable host — "linkedin.com", not a URL. Or use `hosts`.',
+      ),
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .optional()
+      .describe("Several hosts in one call: one rule per host"),
     returnsTo: z
       .array(z.string().min(1))
       .min(1)
       .describe("Areas attention should land in after the gate — names or ids"),
     everyMinutes: z
       .number()
+      .optional()
       .describe(
-        "Accumulated ATTENDED dwell between firings — a backgrounded tab or an idle person does not accrue it",
+        "Simple form: accumulated ATTENDED dwell between firings — a backgrounded tab or an idle person does not accrue it",
       ),
     prompt: z
       .string()
       .min(1)
-      .describe("What the gate asks. The question is the friction."),
+      .optional()
+      .describe(
+        "Simple form: what the gate asks. The question is the friction.",
+      ),
+    rungs: z
+      .array(
+        z.object({
+          trigger: GateTriggerSchema,
+          friction: GateFrictionSchema,
+          proceedLabel: z
+            .string()
+            .min(1)
+            .optional()
+            .describe('Default "Still what I came for"'),
+          abortLabel: z
+            .string()
+            .min(1)
+            .optional()
+            .describe('Default "Close the tab"'),
+        }),
+      )
+      .min(1)
+      .optional()
+      .describe(
+        "Full form, instead of everyMinutes + prompt. More than one = a ladder.",
+      ),
+    id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Rule id (one host) or id base (several hosts). Default: a fresh uuid / the name's slug.",
+      ),
+    deliveryProbability: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        "Chance the cue is delivered at each decision point. Default 0.7.",
+      ),
+    windowMs: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "Outcome window after a decision point. Default 600000 (10 min).",
+      ),
     name: z.string().optional(),
     description: z.string().optional(),
   },
   handler: async (input) => {
     const result = await declareBrowserGate(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
 
@@ -3882,7 +4012,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await declareBrowserTransform(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
 
@@ -3913,20 +4043,22 @@ defineTool(server, {
     const result = await seedHostBlocks(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
     syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
-    return ok({
-      declared: result.declared.map((r) => ({
-        id: r.id,
-        host: (r.scope as { domain: string }).domain,
-      })),
-      standing: result.standing,
-    });
+    return ok(
+      declaredPayload({
+        ...result,
+        declared: result.declared.map((r) => ({
+          id: r.id,
+          host: (r.scope as { domain: string }).domain,
+        })),
+      }),
+    );
   },
 });
 
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Three modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through). One declaration generates per-surface rules with derived ids; re-declaring replaces.",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Three modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -3939,21 +4071,39 @@ defineTool(server, {
       .describe(
         "regular = gentle friction, dry = standing block, by_hand = tool-level gate",
       ),
-    window: z.object({
-      phases: z
-        .array(z.enum(["MORNING", "AFTERNOON", "EVENING", "NIGHT"]))
-        .max(1)
-        .optional()
-        .describe(
-          "One phase name — resolved to hours at declaration, frozen with cutFrom provenance",
-        ),
-      weekdays: z
-        .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
-        .optional()
-        .describe("Days of the week this policy is in force"),
-      fromHour: z.number().min(0).max(23).optional(),
-      toHour: z.number().min(0).max(23).optional(),
-    }),
+    window: z
+      .object({
+        phases: z
+          .array(z.enum(["MORNING", "AFTERNOON", "EVENING", "NIGHT"]))
+          .max(1)
+          .optional()
+          .describe(
+            "One phase name — resolved to hours at declaration, frozen with cutFrom provenance",
+          ),
+        weekdays: z
+          .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
+          .optional()
+          .describe("Days of the week this policy is in force"),
+        fromHour: z
+          .number()
+          .min(0)
+          .max(23)
+          .optional()
+          .describe(
+            "Start of the RESTRICTED hours (local, inclusive). The policy applies from here to toHour.",
+          ),
+        toHour: z
+          .number()
+          .min(0)
+          .max(23)
+          .optional()
+          .describe(
+            "End of the RESTRICTED hours (local, exclusive). Wraps midnight when toHour <= fromHour. Examples: 22→7 = blocked at night (22:00–07:00); 16→13 = blocked all day except 13:00–16:00.",
+          ),
+      })
+      .describe(
+        "The RESTRICTED hours: the policy applies INSIDE this window and lifts outside it. Give one phase, or fromHour/toHour.",
+      ),
     waters: z
       .array(z.string().min(1))
       .min(1)
@@ -3971,7 +4121,7 @@ defineTool(server, {
         .array(z.string().min(1))
         .optional()
         .describe(
-          "Hosts that get friction (browser surface, deferred to slice 2)",
+          "Hosts that get friction (browser surface, one rule per host)",
         ),
       tools: z
         .array(z.string().min(1))
@@ -3986,6 +4136,9 @@ defineTool(server, {
       .string()
       .optional()
       .describe("How the block is lifted (REQUIRED for dry mode)"),
+    reach: ReachSchema.describe(
+      'dry mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
+    ),
   },
   handler: async (input) => {
     const result = await declareWateringHours(fenceDeps, {
@@ -3997,12 +4150,53 @@ defineTool(server, {
     });
     if ("problems" in result) return err(result.problems.join("; "));
     syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
+    return ok(
+      declaredPayload({
+        ...result,
+        declared: result.declared.map((r) => ({
+          id: r.id,
+          surface: r.scope.surface,
+        })),
+      }),
+    );
+  },
+});
+
+defineTool(server, {
+  name: "set_fence_enabled",
+  description:
+    "Pause or resume a fence without deleting it: by `id`, or every rule of a watering `policy`. Flips `defaultEnabled` (every surface skips a paused rule) and appends a dated line with your reason to the description. Use this instead of clear_fence when the boundary should come back.",
+  schema: {
+    id: z.string().min(1).optional().describe("The fence's rule id"),
+    policy: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A watering policy name: pauses/resumes all its rules"),
+    enabled: z.boolean().describe("false = pause, true = resume"),
+    reason: z
+      .string()
+      .min(1)
+      .describe("Why — written into the record's description, dated"),
+  },
+  handler: async ({ id, policy, enabled, reason }) => {
+    if (Boolean(id) === Boolean(policy)) {
+      return err("pass exactly one of `id` or `policy`");
+    }
+    const result = await setFencesEnabled(
+      fenceDeps,
+      id ? { id } : { policy: policy as string },
+      enabled,
+      reason,
+      localDay(Date.now()),
+    );
+    if ("problems" in result) return err(result.problems.join("; "));
+    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
-      declared: result.declared.map((r) => ({
-        id: r.id,
-        surface: r.scope.surface,
-      })),
-      standing: result.standing,
+      [enabled ? "resumed" : "paused"]: result.changed.map((c) => c.id),
+      ...(result.unchanged.length > 0
+        ? { alreadyThatWay: result.unchanged }
+        : {}),
     });
   },
 });
@@ -4058,9 +4252,10 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced: each standing fence with its crossing tally (from the plugin's fences-state.json, zero when never crossed), the rung the NEXT crossing would land on, and the enforcement reach per surface.",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record.",
   schema: {},
   annotations: { readOnlyHint: true },
+  concise: conciseFenceReport,
   handler: async () => {
     const report = await fenceReport(fenceDeps);
     const allFences = readFencesFile(VAULT_ROOT);
@@ -4089,9 +4284,54 @@ defineTool(server, {
       return { ...f, reach };
     });
 
-    return ok({ fences });
+    const now = Date.now();
+    const events = readActivityLog(
+      logDir(VAULT_ROOT),
+      midnight(localDay(now)),
+      now + 1,
+      ["browser"],
+    );
+    return ok({ fences, browser: browserFenceReport(allFences, events) });
   },
 });
+
+/** Concise get_fence: the plugin tally for non-browser fences in one line
+ * each, and the browser rules grouped (see `conciseBrowserFences`). */
+function conciseFenceReport(payload: unknown): unknown {
+  const p = payload as {
+    fences: {
+      fence: RuleSpec;
+      crossings: number;
+      lastCrossedAt: number | null;
+      nextRung: Primitive | undefined;
+    }[];
+    browser: BrowserFenceLine[];
+  };
+  const tally = p.fences
+    .filter((f) => f.fence.scope.surface !== "browser")
+    .map(({ fence, crossings, lastCrossedAt, nextRung }) => {
+      const rung = nextRung?.kind === "schedule" ? nextRung.wraps : nextRung;
+      return {
+        id: fence.id,
+        name: fence.name,
+        surface: fence.scope.surface,
+        ...(fence.defaultEnabled === false ? { state: "paused" } : {}),
+        crossings,
+        ...(lastCrossedAt
+          ? { lastCrossedAt: new Date(lastCrossedAt).toISOString() }
+          : {}),
+        ...(rung
+          ? {
+              nextRung:
+                rung.kind === "gate"
+                  ? `gate: ${rung.frictionType.type}`
+                  : rung.kind,
+            }
+          : {}),
+      };
+    });
+  return { fences: tally, browser: conciseBrowserFences(p.browser) };
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // ATTENTION — the plan ↔ trace bridge

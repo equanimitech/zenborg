@@ -36,6 +36,7 @@ function deps(opts?: {
     tally: { read: async () => ({}) },
     garden: {
       areas: async () => opts?.areas ?? AREAS,
+      cycles: async () => [],
       activeCycleId: async () =>
         opts?.cycleId === undefined ? "cycle-1" : opts.cycleId,
       phaseConfigs: async () => opts?.phaseConfigs ?? PHASE_CONFIGS,

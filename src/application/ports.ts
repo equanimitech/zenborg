@@ -1,5 +1,4 @@
 import type { ActivityEvent } from "../domain/attention/ActivityEvent";
-import type { SurfaceIndex } from "../domain/attention/SurfaceIndex";
 import type { Discrepancy } from "../domain/attention/Discrepancy";
 import type {
   AreaId,
@@ -8,9 +7,10 @@ import type {
   MomentId,
   RuleId,
 } from "../domain/attention/ids";
-import type { Phase } from "../domain/value-objects/Phase";
 import type { SpanDerivationConfig } from "../domain/attention/SpanDerivation";
+import type { SurfaceIndex } from "../domain/attention/SurfaceIndex";
 import type { RuleSpec } from "../domain/intervention/RuleSpec";
+import type { Phase } from "../domain/value-objects/Phase";
 
 /**
  * The application layer's boundary with everything outside it.
@@ -145,6 +145,8 @@ export interface FenceGardenPort {
   areas(): Promise<readonly AreaRef[]>;
   /** The cycle containing today, or null when no season is running. */
   activeCycleId(): Promise<CycleId | null>;
+  /** Every cycle, for pointing `serves` at the last season when none runs. */
+  cycles(): Promise<readonly CycleRef[]>;
   /** Phase time boundaries, for resolving phase names to hours. */
   phaseConfigs(): Promise<readonly PhaseConfigRef[]>;
 }
@@ -152,6 +154,13 @@ export interface FenceGardenPort {
 export interface AreaRef {
   readonly id: AreaId;
   readonly name: string;
+}
+
+export interface CycleRef {
+  readonly id: CycleId;
+  readonly name: string;
+  /** Local `YYYY-MM-DD`; null for an open-ended cycle. */
+  readonly endDate: string | null;
 }
 
 export interface PhaseConfigRef {

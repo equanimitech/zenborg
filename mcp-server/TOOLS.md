@@ -153,17 +153,21 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `list_phase_configs` | — | 4 rows, sorted by order. |
 | `update_phase_config` | `id, ...fields` | Configs are seeded; update only. |
 
-### Fences (8 tools)
+### Fences (9 tools)
+
+Every writer works between seasons: with none running, `serves` points at the last cycle by end date and the response carries a `note`. Only an empty `cycles` refuses.
 
 | Tool | Key params | Notes |
 |---|---|---|
 | `set_fence` | `label, paths, areas` | Session fence: "only this stream". |
-| `set_host_block` | `host, returnsTo, unlockNote` | Standing block on a host. |
-| `set_browser_gate` | `host, returnsTo, everyMinutes, prompt` | Recurring dwell-time cue. |
+| `set_host_block` | `host, returnsTo, unlockNote, reach?` | Standing block on a host. `reach: "navigation"` keeps open pages alive. |
+| `set_browser_gate` | `host`/`hosts, returnsTo`, `everyMinutes + prompt` or `rungs[]`, `id?, deliveryProbability?, windowMs?` | Stopping cue: dwell / entry / click triggers; intention / delay / breath friction; several rungs = a ladder. |
 | `set_browser_transform` | `host, selectors, returnsTo` | DOM transform (hide/restyle). |
 | `seed_host_blocks` | `returnsTo, unlockNote, hosts` | Batch blocklist. Idempotent. |
+| `set_watering_hours` | `name, mode, window, waters, restricts, reach?` | Temporal policy. `window` = the RESTRICTED hours, wraps midnight when `toHour <= fromHour`. |
+| `set_fence_enabled` | `id` or `policy, enabled, reason` | Pause/resume without deleting; logs a dated line in the description. |
 | `clear_fence` | `id` or `all` | Take fences down. `destructiveHint`. |
-| `get_fence` | — | Standing fences with crossing tallies. |
+| `get_fence` | — | Plugin crossing tallies, plus every browser rule: kind, state, rungs, schedule, reach, today's decision points and answers. |
 | `declare_drift` | `distance, reason` | Name a departure from the session fence; the fence hook reads it. Ack only. |
 
 ---

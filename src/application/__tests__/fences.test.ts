@@ -34,6 +34,7 @@ function deps(opts?: {
     tally: { read: async () => opts?.tally ?? {} },
     garden: {
       areas: async () => opts?.areas ?? AREAS,
+      cycles: async () => [],
       activeCycleId: async () =>
         opts?.cycleId === undefined ? "cycle-1" : opts.cycleId,
       phaseConfigs: async () => [],
@@ -125,11 +126,11 @@ describe("declareFence", () => {
     expect(writes()).toBe(0);
   });
 
-  it("refuses when no season is running — `serves` needs a cycle to point at", async () => {
+  it("refuses when no cycle exists at all — `serves` needs a cycle to point at", async () => {
     const { d, writes } = deps({ cycleId: null });
     const result = await declareFence(d, DECLARATION);
     if (!("problems" in result)) throw new Error("expected refusal");
-    expect(result.problems.join(" ")).toContain("no season is running");
+    expect(result.problems.join(" ")).toContain("no season exists");
     expect(writes()).toBe(0);
   });
 
