@@ -69,6 +69,14 @@ Read the cycle's intention and surface how the allocation pattern relates to it.
 - "The intention was 'settle into Arcadia.' Social and Exploration areas saw the most growth."
 - If `reflection` exists on the cycle, surface it.
 
+#### 4b. Browser rules, as information
+
+Call `mcp__zenborg__get_rule_efficacy` with the cycle's `from`/`to`. If `rules` is empty, skip this step without mentioning it. Otherwise print each rule's `line` verbatim under one heading, one line per rule, and add nothing: no verdict, no advice to keep or drop a rule, no "you".
+```
+Browser rules this season:
+  chess-ladder: −2.1 min on chess.com in 10 min after a cue, n = 14 / 6 over 5 days.
+```
+
 ### Plan half (look ahead)
 
 #### 5. Transition to planning

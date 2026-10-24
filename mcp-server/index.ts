@@ -158,6 +158,8 @@ import {
   resolveWindow,
 } from "./attention.js";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { conciseRuleEfficacy, getRuleEfficacy } from "./rule-efficacy.js";
+import { conciseSiteMinutes, getSiteMinutes } from "./site-minutes.js";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
@@ -4123,6 +4125,55 @@ defineTool(server, {
     if (!result.ok) return err(result.message);
     if (result.mutated) writeCollection(VAULT_ROOT, "areas", areas);
     return ok(result);
+  },
+});
+
+defineTool(server, {
+  name: "get_site_minutes",
+  description:
+    "Attended browser minutes per host per machine-local day, by the extension's bout method " +
+    "(focus/idle-gated, 30-min segment cap); a host includes its subdomains. " +
+    "Returns mean and median per host for the period; with `compare`, a second period " +
+    "side by side (a before/after table). Days with no browser log are listed as missing " +
+    "and left out of the means. Concise omits the daily rows; full includes them.",
+  schema: {
+    hosts: z.array(z.string().min(1)).min(1)
+      .describe('Hosts, e.g. ["youtube.com", "chess.com"].'),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+    compare: z.object({ from: DaySchema, to: DaySchema }).optional()
+      .describe("A second period to set beside the first."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseSiteMinutes,
+  handler: async (params) => {
+    for (const p of [params, params.compare]) {
+      if (p && p.from > p.to) return err(`from (${p.from}) is after to (${p.to})`);
+    }
+    return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
+  },
+});
+
+defineTool(server, {
+  name: "get_rule_efficacy",
+  description:
+    "Per browser rule, what followed its decision points: attended minutes on the rule's host " +
+    "in the window after each point, delivered arm vs withheld arm (randomised by the rule's draw). " +
+    "Reports n per arm, the difference, distinct days and overlapping windows; superseded points " +
+    "and points whose window is still open stay out of the comparison. Per rule only, no p-values. " +
+    "Concise omits the rung and trigger splits; full includes them.",
+  schema: {
+    ruleId: z.string().min(1).optional().describe("One rule. Omit for all."),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseRuleEfficacy,
+  handler: async (params) => {
+    if (params.from > params.to) {
+      return err(`from (${params.from}) is after to (${params.to})`);
+    }
+    return ok(getRuleEfficacy(logDir(VAULT_ROOT), params));
   },
 });
 

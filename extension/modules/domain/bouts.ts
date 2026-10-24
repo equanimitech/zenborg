@@ -1,3 +1,7 @@
+// Shared byte-for-byte by extension/modules/domain/ and src/domain/attention/browser/
+// (the MCP server cannot import from extension/). The root suite pins the copies
+// (src/domain/attention/__tests__/browserVendored.test.ts): change both together.
+
 /**
  * Bouts — the read-side behavioral unit.
  *
