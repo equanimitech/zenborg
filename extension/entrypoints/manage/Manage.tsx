@@ -19,11 +19,11 @@ import { fenceCache, fenceRefusals } from "@/modules/fence/store";
 import { exitLine } from "@/modules/fence/parse";
 import type { Fence, Fences, Refusal } from "@/modules/fence/types";
 import { areas as areasStore, areaMap as areaMapStore, pageTransforms, type AreaInfo, type PageTransform } from "@/modules/friction/policy/store";
-import { setArea } from "@/modules/relay/client";
+import { queryEvents, setArea } from "@/modules/relay/client";
 import { readAllEvents } from "@/modules/activity/log";
 import { toJsonl, exportFileName, startOfLocalDay } from "@/modules/activity/events";
 import { readEventsSince } from "@/modules/activity/log";
-import { tallyDeliveries, type DeliveryRow } from "@/modules/fence/deliveries";
+import { mergeById, tallyDeliveries, type DeliveryRow } from "@/modules/fence/deliveries";
 import { dayKey, gateCrossings } from "@/modules/friction/gate/decide";
 import { crossingsOf, rungIndex } from "@/modules/friction/gate/ladder";
 
@@ -52,17 +52,24 @@ export function Manage() {
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
   const [newDomain, setNewDomain] = useState("");
+  const [partial, setPartial] = useState(false);
   const [deliveries, setDeliveries] = useState<readonly (DeliveryRow & { rung: number })[]>([]);
 
   useEffect(() => {
     // Today's deliveries: local log + today's crossings. Read once on open.
     void (async () => {
       const now = Date.now();
-      const [events, crossings, fenceMap] = await Promise.all([
-        readEventsSince(startOfLocalDay(now)),
+      const since = startOfLocalDay(now);
+      const [hostEvents, outbox, crossings, fenceMap] = await Promise.all([
+        queryEvents(since),
+        readEventsSince(since),
         gateCrossings.getValue(),
         fenceCache.getValue(),
       ]);
+      // queryEvents answers [] when the host is unreachable; a reachable host always
+      // holds today's writer_started, so empty means the counts are outbox-only.
+      setPartial(hostEvents.length === 0);
+      const events = mergeById(hostEvents, outbox);
       setDeliveries(
         tallyDeliveries(events).map((row) => ({
           ...row,
@@ -194,6 +201,7 @@ export function Manage() {
       {/* Today's deliveries — neutral counts from the local log */}
       <section className="manage-section">
         <h2 className="manage-section-title">Today's deliveries</h2>
+        {partial && <p className="manage-hint">Host unreachable: counts are partial (unflushed events only).</p>}
         {deliveries.length === 0 ? (
           <p className="manage-empty">No decision points today.</p>
         ) : (

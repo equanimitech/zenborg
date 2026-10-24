@@ -16,7 +16,13 @@ export interface DeliveryRow {
   readonly left: number;
 }
 
-const EMPTY = (ruleId: string): DeliveryRow => ({
+/** Host events plus not-yet-flushed outbox events, deduped by `id` (host copy wins). */
+export function mergeById<T extends { readonly id: string }>(host: readonly T[], outbox: readonly T[]): T[] {
+  const seen = new Set(host.map((e) => e.id));
+  return [...host, ...outbox.filter((e) => !seen.has((e as { id: string }).id))];
+}
+
+const EMPTY =(ruleId: string): DeliveryRow => ({
   ruleId,
   points: 0,
   shown: 0,

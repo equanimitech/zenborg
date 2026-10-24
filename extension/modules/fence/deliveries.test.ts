@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { tallyDeliveries } from "./deliveries";
+import { mergeById, tallyDeliveries } from "./deliveries";
+
+describe("mergeById", () => {
+  it("dedupes by id and keeps unflushed outbox events", () => {
+    expect(mergeById([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "3" }]).map((e) => e.id)).toEqual(["1", "2", "3"]);
+  });
+});
 
 const dp = (ruleId: string, delivered: boolean) => ({ kind: "decision_point", payload: { ruleId, delivered } });
 const ev = (kind: string, ruleId: string) => ({ kind, payload: { ruleId } });
