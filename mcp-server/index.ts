@@ -158,6 +158,7 @@ import {
   resolveWindow,
 } from "./attention.js";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { conciseSiteMinutes, getSiteMinutes } from "./site-minutes.js";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
@@ -4123,6 +4124,32 @@ defineTool(server, {
     if (!result.ok) return err(result.message);
     if (result.mutated) writeCollection(VAULT_ROOT, "areas", areas);
     return ok(result);
+  },
+});
+
+defineTool(server, {
+  name: "get_site_minutes",
+  description:
+    "Attended browser minutes per host per machine-local day, by the extension's bout method " +
+    "(focus/idle-gated, 30-min segment cap); a host includes its subdomains. " +
+    "Returns mean and median per host for the period; with `compare`, a second period " +
+    "side by side (a before/after table). Days with no browser log are listed as missing " +
+    "and left out of the means. Concise omits the daily rows; full includes them.",
+  schema: {
+    hosts: z.array(z.string().min(1)).min(1)
+      .describe('Hosts, e.g. ["youtube.com", "chess.com"].'),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+    compare: z.object({ from: DaySchema, to: DaySchema }).optional()
+      .describe("A second period to set beside the first."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseSiteMinutes,
+  handler: async (params) => {
+    for (const p of [params, params.compare]) {
+      if (p && p.from > p.to) return err(`from (${p.from}) is after to (${p.to})`);
+    }
+    return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
   },
 });
 
