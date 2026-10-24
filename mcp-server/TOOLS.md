@@ -47,7 +47,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 
 ### Write-side (require user authorization)
 
-`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `clear_fence` · `declare_drift`
+`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `set_opening` · `set_pass_allowance` · `clear_fence` · `declare_drift`
 
 ---
 
@@ -153,7 +153,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `list_phase_configs` | — | 4 rows, sorted by order. |
 | `update_phase_config` | `id, ...fields` | Configs are seeded; update only. |
 
-### Fences (9 tools)
+### Fences (11 tools)
 
 Every writer works between seasons: with none running, `serves` points at the last cycle by end date and the response carries a `note`. Only an empty `cycles` refuses.
 
@@ -166,8 +166,10 @@ Every writer works between seasons: with none running, `serves` points at the la
 | `seed_host_blocks` | `returnsTo, unlockNote, hosts` | Batch blocklist. Idempotent. |
 | `set_watering_hours` | `name, mode, window, waters, restricts, reach?` | Temporal policy. `window` = the RESTRICTED hours, wraps midnight when `toHour <= fromHour`. |
 | `set_fence_enabled` | `id` or `policy, enabled, reason` | Pause/resume without deleting; logs a dated line in the description. |
-| `clear_fence` | `id` or `all` | Take fences down. `destructiveHint`. |
-| `get_fence` | — | Plugin crossing tallies, plus every browser rule: kind, state, rungs, schedule, reach, today's decision points and answers. |
+| `set_opening` | `hosts, from, until, reason` | Planned opening: lifts scheduled blocks and gates on those hosts for the window, then closes by itself. `"20:00"` or ISO. Doesn't draw on passes. |
+| `set_pass_allowance` | `perMonth, hours` | Block-page passes: N a month (reset on the 1st, local), H hours each. Default 4 × 3h. |
+| `clear_fence` | `id` or `all` or `policy` | Take fences down; an `opening:` id closes that opening early. `all` leaves openings and the allowance. `destructiveHint`. |
+| `get_fence` | — | Plugin crossing tallies, plus every browser rule: kind, state, rungs, schedule, reach, today's decision points and answers. Openings (active or upcoming) and the pass allowance. |
 | `declare_drift` | `distance, reason` | Name a departure from the session fence; the fence hook reads it. Ack only. |
 
 ---

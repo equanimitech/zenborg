@@ -36,7 +36,17 @@ import {
   expandHome,
   fenceStore,
   readFencesFile,
+  readOpenings,
+  readPassAllowance,
+  removeOpening,
+  writeOpening,
+  writePassAllowance,
 } from "./fences.js";
+import {
+  buildOpening,
+  buildPassAllowance,
+  DEFAULT_PASS_ALLOWANCE,
+} from "../src/domain/intervention/Opening.ts";
 import { buildRelatedHabits } from "./graph.js";
 import {
   computeHealth,
@@ -4204,9 +4214,12 @@ defineTool(server, {
 defineTool(server, {
   name: "clear_fence",
   description:
-    "Take a fence down, by id, by watering-policy name, or all of them at once. Pass exactly one of `id`, `all`, or `policy`. The crossing tally is plugin-owned and left alone; a cleared fence's id is never reused, so its count can never gate anything again.",
+    "Take a fence down, by id, by watering-policy name, or all of them at once. Pass exactly one of `id`, `all`, or `policy`. An `opening:` id closes that planned opening early. `all` takes down rules only; openings and the pass allowance stay. The crossing tally is plugin-owned and left alone; a cleared fence's id is never reused, so its count can never gate anything again.",
   schema: {
-    id: z.string().optional().describe("The fence's rule id"),
+    id: z
+      .string()
+      .optional()
+      .describe("The fence's rule id, or an opening's id (opening:…)"),
     all: z.boolean().optional().describe("Take every standing fence down"),
     policy: z
       .string()
@@ -4217,6 +4230,11 @@ defineTool(server, {
   handler: async ({ id, all, policy }) => {
     if ([id, all, policy].filter(Boolean).length !== 1) {
       return err("pass exactly one of `id`, `all`, or `policy`");
+    }
+    // An opening is not a rule: it closes here, and nothing else changes.
+    const opening = id ? removeOpening(VAULT_ROOT, id) : null;
+    if (opening) {
+      return ok({ cleared: [{ id: opening.id, opening: opening.hosts }] });
     }
     const target = all
       ? { all: true as const }
@@ -4229,6 +4247,44 @@ defineTool(server, {
     return ok({
       cleared: result.cleared.map((f) => ({ id: f.id, label: f.name })),
     });
+  },
+});
+
+defineTool(server, {
+  name: "set_opening",
+  description:
+    'Plan an opening: open blocked hosts for a time-boxed window that closes by itself, e.g. friends over for a film. Lifts scheduled blocks (watering hours) and browser gates on those hosts from `from` until `until`; standing blocks with no schedule and hides stay. Does not draw on the monthly pass allowance. Times: "20:00" (today, local; an `until` at or before `from` rolls to the next day) or an ISO date-time. Close one early with clear_fence { id }.',
+  schema: {
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe('Registrable hosts, e.g. ["youtube.com"]'),
+    from: z.string().min(1).describe('"20:00" or an ISO date-time'),
+    until: z.string().min(1).describe('"01:00" or an ISO date-time'),
+    reason: z.string().min(1).describe("What it is for, one line"),
+  },
+  handler: async ({ hosts, from, until, reason }) => {
+    const now = new Date();
+    const result = buildOpening({ hosts, from, until, reason }, now);
+    if ("problems" in result) return err(result.problems.join("; "));
+    writeOpening(VAULT_ROOT, result.record, now);
+    return ok({ opening: result.record });
+  },
+});
+
+defineTool(server, {
+  name: "set_pass_allowance",
+  description:
+    "Set the block page's pass allowance: passes per month (reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
+  schema: {
+    perMonth: z.number().int().min(0).describe("Passes per month"),
+    hours: z.number().positive().max(24).describe("Hours each pass lasts"),
+  },
+  handler: async ({ perMonth, hours }) => {
+    const result = buildPassAllowance(perMonth, hours);
+    if ("problems" in result) return err(result.problems.join("; "));
+    writePassAllowance(VAULT_ROOT, result.record);
+    return ok({ passAllowance: { perMonth, hours } });
   },
 });
 
@@ -4252,7 +4308,7 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record.",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month and hours each (`default: true` when no record is set).",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: conciseFenceReport,
@@ -4291,9 +4347,31 @@ defineTool(server, {
       now + 1,
       ["browser"],
     );
-    return ok({ fences, browser: browserFenceReport(allFences, events) });
+    return ok({
+      fences,
+      browser: browserFenceReport(allFences, events),
+      ...liftsReport(new Date(now)),
+    });
   },
 });
+
+/** Planned openings (active or upcoming) and the pass allowance, for get_fence. */
+function liftsReport(now: Date) {
+  const allowance = readPassAllowance(VAULT_ROOT);
+  return {
+    openings: readOpenings(VAULT_ROOT, now).map((o) => ({
+      id: o.id,
+      hosts: o.hosts,
+      from: o.from,
+      until: o.until,
+      reason: o.reason,
+      state: Date.parse(o.from) <= now.getTime() ? "active" : "upcoming",
+    })),
+    passAllowance: allowance
+      ? { perMonth: allowance.perMonth, hours: allowance.hours }
+      : { ...DEFAULT_PASS_ALLOWANCE, default: true },
+  };
+}
 
 /** Concise get_fence: the plugin tally for non-browser fences in one line
  * each, and the browser rules grouped (see `conciseBrowserFences`). */
@@ -4306,6 +4384,8 @@ function conciseFenceReport(payload: unknown): unknown {
       nextRung: Primitive | undefined;
     }[];
     browser: BrowserFenceLine[];
+    openings: unknown[];
+    passAllowance: unknown;
   };
   const tally = p.fences
     .filter((f) => f.fence.scope.surface !== "browser")
@@ -4330,7 +4410,12 @@ function conciseFenceReport(payload: unknown): unknown {
           : {}),
       };
     });
-  return { fences: tally, browser: conciseBrowserFences(p.browser) };
+  return {
+    fences: tally,
+    browser: conciseBrowserFences(p.browser),
+    ...(p.openings.length > 0 ? { openings: p.openings } : {}),
+    passAllowance: p.passAllowance,
+  };
 }
 
 // ────────────────────────────────────────────────────────────────────────

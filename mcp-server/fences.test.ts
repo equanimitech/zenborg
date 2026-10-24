@@ -8,9 +8,18 @@ import {
   fencesPath,
   fencesStatePath,
   readCrossingTally,
+  readFenceRecords,
   readFencesFile,
+  readOpenings,
+  readPassAllowance,
+  removeOpening,
   writeFencesFile,
+  writeOpening,
+  writePassAllowance,
 } from "./fences.js";
+import { buildOpening } from "../src/domain/intervention/Opening.ts";
+// The extension's own reader, so the record shape cannot drift between the two.
+import { parseFences } from "../extension/modules/fence/parse.ts";
 
 let root: string;
 
@@ -59,6 +68,59 @@ describe("fences collection I/O", () => {
     const fresh = path.join(root, "nested", "vault");
     writeFencesFile(fresh, {});
     expect(readFencesFile(fresh)).toEqual({});
+  });
+});
+
+describe("openings and the pass allowance in fences.json", () => {
+  // Local wall-clock: "20:00 to 01:00" is the window whatever the zone.
+  const now = new Date(2026, 9, 24, 17, 0);
+  const plan = () => {
+    const built = buildOpening(
+      { hosts: ["youtube.com"], from: "20:00", until: "01:00", reason: "friends over" },
+      now,
+    );
+    if (!("record" in built)) throw new Error(built.problems.join("; "));
+    return built.record;
+  };
+
+  it("set_opening writes a record the extension's parseFences reads as that window", () => {
+    writeOpening(root, plan(), now);
+    const parsed = parseFences(readFenceRecords(root), now.getTime());
+    expect(parsed?.refused).toEqual([]);
+    expect(parsed?.openings).toHaveLength(1);
+    expect(parsed?.openings[0]).toMatchObject({
+      hosts: ["youtube.com"],
+      from: new Date(2026, 9, 24, 20, 0).getTime(),
+      until: new Date(2026, 9, 25, 1, 0).getTime(),
+      reason: "friends over",
+    });
+  });
+
+  it("rule readers never meet an opening, and rule writes carry it through", () => {
+    writeFencesFile(root, { "rule-1": fence });
+    writeOpening(root, plan(), now);
+    writePassAllowance(root, { id: "pass-allowance", kind: "pass-allowance", perMonth: 2, hours: 1 });
+    expect(readFencesFile(root)).toEqual({ "rule-1": fence });
+    writeFencesFile(root, {}); // clear_fence { all }
+    expect(readOpenings(root, now).map((o) => o.reason)).toEqual(["friends over"]);
+    expect(readPassAllowance(root)).toMatchObject({ perMonth: 2, hours: 1 });
+  });
+
+  it("clears one opening early, and drops expired ones on the next write", () => {
+    const first = plan();
+    writeOpening(root, first, now);
+    expect(removeOpening(root, first.id)?.id).toBe(first.id);
+    expect(removeOpening(root, first.id)).toBeNull();
+    writeOpening(root, first, now);
+    const later = new Date(2026, 9, 26, 12, 0);
+    expect(readOpenings(root, later)).toEqual([]);
+    const next = buildOpening(
+      { hosts: ["chess.com"], from: "20:00", until: "22:00", reason: "a match" },
+      later,
+    );
+    if (!("record" in next)) throw new Error("bad");
+    writeOpening(root, next.record, later);
+    expect(Object.keys(readFenceRecords(root))).toEqual([next.record.id]);
   });
 });
 
