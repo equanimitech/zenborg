@@ -51,7 +51,9 @@ Garden state is a filesystem vault at `~/.zenborg` (release) or `~/.zenborg-dev`
 
 One JSON file per collection, each a **JSON object keyed by entity UUID** (not an array):
 `areas.json`, `habits.json`, `cycles.json`, `cyclePlans.json`, `moments.json`,
-`phaseConfigs.json`, `metricLogs.json`, `dayNotes.json`.
+`phaseConfigs.json`, `metricLogs.json`, `dayNotes.json`, `people.json`, `places.json`,
+`relationships.json`, `routines.json`. `EXPORTABLE_MODELS` in `src/domain/registry.ts` is
+the list of record.
 
 Plus one **singleton** file that is not a collection: `activeMoment.json`, a
 `{ momentId, at }` pointer naming the moment that IS the current intention. It is
@@ -65,7 +67,7 @@ app must not trash the real vault.
 
 ### Rules you inherit
 
-- **One writer per collection.** Zenborg is the writer for all eight above, and for
+- **One writer per collection.** Zenborg is the writer for every collection above, and for
   `activeMoment`. The plugin reads `areas`, `dayNotes` and `activeMoment` live. Readers
   never mutate — not even to add a missing record.
 - **`id` is a UUID.** Stable, opaque, never regenerated. The filename is the id, never a
