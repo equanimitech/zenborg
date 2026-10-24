@@ -76,52 +76,72 @@ function pauseMedia(): readonly HTMLMediaElement[] {
 const STYLE = `
 :host { all: initial; }
 .backdrop {
+  --stone-50: oklch(0.985 0.003 60); --stone-100: oklch(0.97 0.004 60);
+  --stone-200: oklch(0.923 0.005 60); --stone-300: oklch(0.869 0.006 60);
+  --stone-400: oklch(0.709 0.008 60); --stone-600: oklch(0.444 0.010 60);
+  --stone-700: oklch(0.374 0.010 60); --stone-800: oklch(0.268 0.007 60);
+  --stone-900: oklch(0.216 0.007 60); --stone-950: oklch(0.147 0.005 60);
+  --clay: oklch(0.62 0.100 60);
+  --ground: var(--stone-50); --ink: var(--stone-900);
+  --muted: var(--stone-600); --rule: var(--stone-300);
+  --faint: var(--stone-400); --abort-hover: var(--stone-700);
   position: fixed; inset: 0; z-index: 2147483647;
-  background: rgba(12, 14, 16, 0.92);
+  background: var(--ground); color: var(--ink);
   display: flex; align-items: center; justify-content: center;
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  animation: fade 220ms ease-out;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
 }
-@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
-.card {
-  max-width: 30rem; padding: 2.5rem; text-align: center; color: #f4f4f5;
+@media (prefers-color-scheme: dark) {
+  .backdrop {
+    --ground: var(--stone-950); --ink: var(--stone-50);
+    --muted: var(--stone-400); --rule: var(--stone-700);
+    --faint: var(--stone-600); --abort-hover: var(--stone-200);
+  }
 }
+::selection { background: color-mix(in oklch, var(--clay) 30%, transparent); }
+.card { max-width: 30rem; padding: 2.5rem; text-align: center; }
 .dwell {
-  font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase;
-  color: #a1a1aa; margin: 0 0 1.25rem;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase;
+  font-variant-numeric: tabular-nums; color: var(--muted); margin: 0 0 1.618rem;
 }
 .prompt {
-  font-size: 1.5rem; line-height: 1.35; font-weight: 500; margin: 0 0 2rem;
+  font-size: 1.618rem; line-height: 1.3; font-weight: 500;
+  letter-spacing: -0.012em; text-wrap: balance; max-width: 30ch;
+  margin: 0 auto 2.618rem;
 }
 .actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
 button {
-  font: inherit; font-size: 0.9375rem; padding: 0.6875rem 1.25rem;
-  border-radius: 0.5rem; cursor: pointer; border: 1px solid transparent;
+  font: inherit; font-size: 0.9375rem; font-variant-numeric: tabular-nums;
+  padding: 0.75rem 1.25rem; border-radius: 2px; cursor: pointer;
+  border: 1px solid transparent;
 }
-.proceed { background: transparent; border-color: #52525b; color: #e4e4e7; }
-.proceed:hover { border-color: #a1a1aa; }
-.proceed[disabled] { opacity: 0.45; cursor: default; border-color: #3f3f46; }
-.proceed[disabled]:hover { border-color: #3f3f46; }
+button:focus:not(:focus-visible) { outline: none; }
+button:focus-visible { outline: 2px solid var(--clay); outline-offset: 3px; }
+.abort { background: var(--ink); border-color: var(--ink); color: var(--ground); }
+.abort:hover { background: var(--abort-hover); border-color: var(--abort-hover); }
+.proceed { background: transparent; border-color: var(--rule); color: var(--muted); }
+.proceed:hover { border-color: var(--ink); color: var(--ink); }
+.proceed[disabled], .proceed[disabled]:hover {
+  color: var(--faint); border-color: var(--rule); cursor: default;
+}
 /* Breath only. A delay is a wait; a breath is a pace, and the pace has to be visible
-   or the person is just staring at a number. */
+   or the person is just staring at a number. It runs --cycles times, then rests. */
 .breath {
-  width: 3.5rem; height: 3.5rem; margin: 0 auto 1.75rem; border-radius: 50%;
-  background: currentColor; opacity: 0.16;
-  animation: breathe 10s ease-in-out infinite;
+  width: 3.5rem; height: 3.5rem; margin: 0 auto 1.618rem; border-radius: 50%;
+  background: var(--ink); opacity: 0.16; transform: scale(0.8);
 }
 @keyframes breathe {
   0%, 100% { transform: scale(0.55); }
   40%, 60% { transform: scale(1); }
 }
-@media (prefers-reduced-motion: reduce) { .breath { animation: none; transform: scale(0.8); } }
-.abort { background: #f4f4f5; color: #18181b; }
-.abort:hover { background: #ffffff; }
-@media (prefers-color-scheme: light) {
-  .backdrop { background: rgba(250, 250, 250, 0.94); }
-  .card { color: #18181b; }
-  .dwell { color: #71717a; }
-  .proceed { border-color: #d4d4d8; color: #3f3f46; }
-  .abort { background: #18181b; color: #fafafa; }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+@media (prefers-reduced-motion: no-preference) {
+  .backdrop { animation: fade 220ms cubic-bezier(.4,0,.2,1); }
+  button { transition: background-color 150ms cubic-bezier(.4,0,.2,1), border-color 150ms cubic-bezier(.4,0,.2,1), color 150ms cubic-bezier(.4,0,.2,1); }
+  .breath {
+    animation: breathe 10s ease-in-out forwards;
+    animation-iteration-count: var(--cycles, 1);
+  }
 }
 `;
 
@@ -159,6 +179,7 @@ export function showGate(options: GateOptions): Promise<boolean> {
   if (options.friction.type === "breath") {
     const pacer = document.createElement("div");
     pacer.className = "breath";
+    pacer.style.setProperty("--cycles", String(options.friction.cycles));
     card.append(pacer);
   }
 
