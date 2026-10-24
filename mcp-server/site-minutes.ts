@@ -25,7 +25,7 @@ export interface SiteMinutesParams {
 }
 
 /** Local midnight of `YYYY-MM-DD`, plus `addDays` (DST-safe). */
-function midnight(day: string, addDays = 0): number {
+export function midnight(day: string, addDays = 0): number {
   const [y, m, d] = day.split("-").map(Number);
   return new Date(y, m - 1, d + addDays).getTime();
 }

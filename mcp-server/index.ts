@@ -158,6 +158,7 @@ import {
   resolveWindow,
 } from "./attention.js";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { conciseRuleEfficacy, getRuleEfficacy } from "./rule-efficacy.js";
 import { conciseSiteMinutes, getSiteMinutes } from "./site-minutes.js";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
@@ -4150,6 +4151,29 @@ defineTool(server, {
       if (p && p.from > p.to) return err(`from (${p.from}) is after to (${p.to})`);
     }
     return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
+  },
+});
+
+defineTool(server, {
+  name: "get_rule_efficacy",
+  description:
+    "Per browser rule, what followed its decision points: attended minutes on the rule's host " +
+    "in the window after each point, delivered arm vs withheld arm (randomised by the rule's draw). " +
+    "Reports n per arm, the difference, distinct days and overlapping windows; superseded points " +
+    "and points whose window is still open stay out of the comparison. Per rule only, no p-values. " +
+    "Concise omits the rung and trigger splits; full includes them.",
+  schema: {
+    ruleId: z.string().min(1).optional().describe("One rule. Omit for all."),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseRuleEfficacy,
+  handler: async (params) => {
+    if (params.from > params.to) {
+      return err(`from (${params.from}) is after to (${params.to})`);
+    }
+    return ok(getRuleEfficacy(logDir(VAULT_ROOT), params));
   },
 });
 
