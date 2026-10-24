@@ -14,6 +14,7 @@ import { startOfLocalDay } from "@/modules/activity/events";
 import { queryEvents } from "@/modules/relay/client";
 import { storage } from "wxt/storage";
 import { crossingsOf, gateAtRung, NO_CROSSINGS, recordCrossing, type Crossings } from "./ladder";
+import { isArrival } from "./arrival";
 import { nextFiredAt, shouldGate, type GateReading } from "./state";
 
 /**
@@ -36,6 +37,8 @@ export interface DwellRung {
   readonly friction: GateFriction;
   /** Click-trigger selectors for this rung; absent means a dwell rung. */
   readonly click?: readonly string[];
+  /** Entry-trigger rung; absent means dwell (or click). */
+  readonly entry?: true;
   readonly proceed: DwellGate["proceed"];
   readonly abort: DwellGate["abort"];
 }
@@ -60,7 +63,12 @@ export interface DwellGate {
    * on dwell; absent, it is a dwell gate.
    */
   readonly click?: readonly string[];
-  /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click firing. */
+  /**
+   * Entry trigger: the gate asks once when the person arrives at the host (`isArrival`)
+   * and never on dwell. Absent, it is a dwell gate (or a click gate).
+   */
+  readonly entry?: true;
+  /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click and per entry firing. */
   readonly deliveryProbability?: number;
   /** Ladder: two or more rungs, indexed by today's crossings. Top-level fields mirror rung 0. */
   readonly rungs?: readonly DwellRung[];
@@ -99,6 +107,11 @@ export const gateFiredAt = storage.defineItem<Record<string, number>>("local:fri
 /** The day the fired-at map belongs to; a new day resets it. */
 export const gateFiredDay = storage.defineItem<string>("local:friction:gateFiredDay", {
   fallback: "",
+});
+
+/** When each entry gate last saw an attended poll, keyed by rule id. Background only. */
+export const gateLastSeen = storage.defineItem<Record<string, number>>("local:friction:gateLastSeen", {
+  fallback: {},
 });
 
 /** Proceeds per rule today — the ladder's position. Written only by the background. */
@@ -177,7 +190,8 @@ export async function recordProceed(ruleId: string, now: number = Date.now()): P
  */
 export async function evaluateGate(
   gate: DwellGate,
-  now: number = Date.now()
+  now: number = Date.now(),
+  draw: number = Math.random()
 ): Promise<GateVerdict> {
   const base = normalizeGate(gate);
   const today = dayKey(now);
@@ -193,6 +207,27 @@ export async function evaluateGate(
   // A click rung never fires on dwell: that is the mid-game interruption it exists to end.
   if (g.click !== undefined) {
     return { fire: false, dwellMs: 0 };
+  }
+  if (g.entry) {
+    // Every attended poll refreshes the stay; only the first after a long absence asks.
+    // A withheld delivery (the draw) still consumes the arrival: once per visit, not
+    // "retry on the next poll until the dice land".
+    const seen = await gateLastSeen.getValue();
+    const arrived = isArrival(seen[g.ruleId] ?? null, now);
+    await gateLastSeen.setValue({ ...seen, [g.ruleId]: now });
+    if (!arrived || draw >= (g.deliveryProbability ?? 1)) {
+      return { fire: false, dwellMs: 0 };
+    }
+    return {
+      fire: true,
+      dwellMs: await dwellTodayFor(g.domains, now),
+      ruleId: g.ruleId,
+      friction: g.friction,
+      proceed: g.proceed,
+      abort: g.abort,
+      rung,
+      everyMinutes: g.everyMinutes,
+    };
   }
   const dwellMs = await dwellTodayFor(g.domains, now);
   const fired = await gateFiredAt.getValue();

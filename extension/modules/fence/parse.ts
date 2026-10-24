@@ -219,6 +219,8 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
       everyMinutes: Number.isFinite(everyMinutes) && everyMinutes > 0 ? Math.round(everyMinutes) : 1,
       friction,
       ...(click ? { click } : {}),
+      // Entry asks once per arrival (`isArrival`); `everyMinutes` is then inert filler.
+      ...(trigger?.type === "entry" ? { entry: true as const } : {}),
     };
   }
   return null;
@@ -362,6 +364,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
           everyMinutes: e.everyMinutes,
           friction: e.friction,
           ...(e.click ? { click: e.click } : {}),
+          ...(e.entry ? { entry: e.entry } : {}),
           proceed: pr,
           ...(label === "" ? {} : { abort: { label } }),
         });
@@ -546,13 +549,15 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
       everyMinutes: r.everyMinutes,
       friction: r.friction,
       click: r.click,
+      entry: r.entry,
       proceed: { label: r.proceed.label, action: gateAction(r.proceed) },
       abort: r.abort ?? { label: "Close the tab" },
     }));
-    const { click } = entry.enforcement;
+    const { click, entry: onEntry } = entry.enforcement;
     out.push({
       ...(rungs ? { rungs } : {}),
       ...(click ? { click } : {}),
+      ...(onEntry ? { entry: onEntry } : {}),
       ...(entry.deliveryProbability < 1 ? { deliveryProbability: entry.deliveryProbability } : {}),
       ruleId: entry.id,
       domains: entry.domains,

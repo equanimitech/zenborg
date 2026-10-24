@@ -110,6 +110,9 @@ export function armDwellGate(): void {
   };
 
   setInterval(() => void check(), POLL_MS);
+  // Arrival is the moment an entry gate exists for; waiting a poll would let the page
+  // be read first. Dwell gates are idempotent against an early check.
+  void check();
   // Also check on return to the tab: a long background stretch accrues no
   // dwell, but coming back is exactly when a stopping cue lands well.
   document.addEventListener("visibilitychange", () => {

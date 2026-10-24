@@ -46,6 +46,8 @@ export type FenceEnforcement =
       /** A click trigger's selectors, primary first. Present means the gate fires
        * on a click on a match, never on dwell. */
       readonly click?: readonly string[];
+      /** An entry trigger: the gate asks once on arrival at the host, never on dwell. */
+      readonly entry?: true;
     };
 
 /**
@@ -80,6 +82,7 @@ export interface GateRungSpec {
   readonly everyMinutes: number;
   readonly friction: GateFriction;
   readonly click?: readonly string[];
+  readonly entry?: true;
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
 }
