@@ -21,7 +21,11 @@ import type { Fence, Fences, Refusal } from "@/modules/fence/types";
 import { areas as areasStore, areaMap as areaMapStore, pageTransforms, type AreaInfo, type PageTransform } from "@/modules/friction/policy/store";
 import { setArea } from "@/modules/relay/client";
 import { readAllEvents } from "@/modules/activity/log";
-import { toJsonl, exportFileName } from "@/modules/activity/events";
+import { toJsonl, exportFileName, startOfLocalDay } from "@/modules/activity/events";
+import { readEventsSince } from "@/modules/activity/log";
+import { tallyDeliveries, type DeliveryRow } from "@/modules/fence/deliveries";
+import { dayKey, gateCrossings } from "@/modules/friction/gate/decide";
+import { crossingsOf, rungIndex } from "@/modules/friction/gate/ladder";
 
 function fenceTypeLabel(fence: Fence): string {
   if (fence.enforcement.kind === "block") {
@@ -48,8 +52,24 @@ export function Manage() {
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
   const [newDomain, setNewDomain] = useState("");
+  const [deliveries, setDeliveries] = useState<readonly (DeliveryRow & { rung: number })[]>([]);
 
   useEffect(() => {
+    // Today's deliveries: local log + today's crossings. Read once on open.
+    void (async () => {
+      const now = Date.now();
+      const [events, crossings, fenceMap] = await Promise.all([
+        readEventsSince(startOfLocalDay(now)),
+        gateCrossings.getValue(),
+        fenceCache.getValue(),
+      ]);
+      setDeliveries(
+        tallyDeliveries(events).map((row) => ({
+          ...row,
+          rung: rungIndex(fenceMap[row.ruleId]?.rungs?.length ?? 1, crossingsOf(crossings, dayKey(now), row.ruleId)),
+        }))
+      );
+    })();
     fenceCache.getValue().then(setFences);
     pageTransforms.getValue().then(setTransforms);
     fenceRefusals.getValue().then(setRefused);
@@ -168,6 +188,41 @@ export function Manage() {
               </tbody>
             </table>
           </>
+        )}
+      </section>
+
+      {/* Today's deliveries — neutral counts from the local log */}
+      <section className="manage-section">
+        <h2 className="manage-section-title">Today's deliveries</h2>
+        {deliveries.length === 0 ? (
+          <p className="manage-empty">No decision points today.</p>
+        ) : (
+          <table className="manage-fence-table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Points</th>
+                <th>Shown</th>
+                <th>Withheld</th>
+                <th>Continued</th>
+                <th>Left</th>
+                <th>Rung</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deliveries.map((d) => (
+                <tr key={d.ruleId}>
+                  <td>{fences[d.ruleId]?.label ?? d.ruleId}</td>
+                  <td>{d.points}</td>
+                  <td>{d.shown}</td>
+                  <td>{d.withheld}</td>
+                  <td>{d.continued}</td>
+                  <td>{d.left}</td>
+                  <td>{d.rung + 1}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 
