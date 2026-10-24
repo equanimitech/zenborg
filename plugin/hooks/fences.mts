@@ -160,7 +160,9 @@ function loadFences(): RuleSpec[] {
     const records = Array.isArray(raw) ? raw : Object.values(raw ?? {});
     return records.filter(
       (r: any) =>
-        r?.scope?.surface === "session" && Array.isArray(r?.primitives),
+        r?.scope?.surface === "session" &&
+        Array.isArray(r?.primitives) &&
+        r?.defaultEnabled !== false, // paused by set_fence_enabled
     ) as RuleSpec[];
   } catch {
     return []; // No fences, unreadable, or garbled — all mean "nothing declared".

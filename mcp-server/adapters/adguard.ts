@@ -150,6 +150,7 @@ export function collectResolverHosts(
 
   for (const rule of Object.values(fences)) {
     if (rule.scope.surface !== "browser") continue;
+    if (rule.defaultEnabled === false) continue; // paused
     const scope = rule.scope as Extract<RuleScope, { surface: "browser" }>;
 
     if (!rule.primitives.some(hasBlockingCooldown)) continue;

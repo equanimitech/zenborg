@@ -245,6 +245,10 @@ fn handle_request_policy(vault: &Path) {
             if scope.get("surface").and_then(|v| v.as_str()) != Some("browser") {
                 continue;
             }
+            // Paused by set_fence_enabled: a paused transform must stop hiding.
+            if fence.get("defaultEnabled") == Some(&Value::Bool(false)) {
+                continue;
+            }
             let domains = browser_domains(scope);
             let rule_id = fence.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if let Some(primitives) = fence.get("primitives") {

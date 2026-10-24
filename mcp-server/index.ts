@@ -3647,6 +3647,7 @@ function wateringHoursAdvisory(
 
     for (const rule of Object.values(fences)) {
       if (rule.scope.surface !== "garden") continue;
+      if (rule.defaultEnabled === false) continue;
       if (!rule.scope.areaIds.includes(areaId)) continue;
 
       for (const prim of rule.primitives) {
