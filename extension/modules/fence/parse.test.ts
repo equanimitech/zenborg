@@ -285,6 +285,40 @@ describe("parseFences — vault format (primitives[] + scope)", () => {
     expect(f.proceed.action.type).toBe("out_of_band");
   });
 
+  it("reads `reach: navigation` off a schedule-wrapped browser cooldown and splits the hosts", () => {
+    const block = (domain: string, enforcement?: Record<string, unknown>) => ({
+      scope: { surface: "browser", domain },
+      primitives: [
+        {
+          kind: "schedule",
+          // passthrough: in force at any hour, so the test does not depend on the clock
+          window: { fromHour: 16, toHour: 13 },
+          outsideWindow: "passthrough",
+          wraps: {
+            kind: "cooldown",
+            duration: { type: "standing" },
+            unlockPath: { type: "out_of_band", note: "Afternoon." },
+            ...(enforcement ? { enforcement } : {}),
+          },
+        },
+      ],
+    });
+    const fences = parseFences({
+      chess: block("chess.com", { at: "browser", reach: "navigation" }),
+      tube: block("youtube.com"),
+      junk: block("example.com", { at: "browser", reach: "sideways" }),
+      dns: block("dns.example", { at: "resolver", profile: "p", reach: "navigation" }),
+    })!.fences;
+    expect(fences.chess.enforcement).toEqual({
+      kind: "block", enforcement: "browser", standing: true, reach: "navigation",
+    });
+    expect(fences.junk.enforcement).not.toHaveProperty("reach");
+    expect(fences.dns.enforcement).not.toHaveProperty("reach");
+    expect(standingBlockHosts(fences, "navigation")).toEqual(["chess.com"]);
+    expect(standingBlockHosts(fences, "all")).toEqual(["youtube.com", "example.com"]);
+    expect(standingBlockHosts(fences)).toEqual(["chess.com", "youtube.com", "example.com"]);
+  });
+
   it("parses a gate from primitives + scope", () => {
     const result = parseFences({
       "yt-gate": {

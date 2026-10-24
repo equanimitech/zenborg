@@ -30,6 +30,12 @@ const BLOCK_RULE_ID = 1;
 // Rule 2 once held the self-armed cooldown. Kept in removeRuleIds below so a
 // browser that still has it installed gets it cleared.
 const COOLDOWN_RULE_ID = 2;
+// Standing blocks with `reach: "navigation"`: page loads only.
+const NAVIGATION_RULE_ID = 3;
+
+// Page loads, top-level and framed. Everything an open page does after it has
+// loaded (its websocket above all, which is a live game's clock) is left alone.
+const NAVIGATION_RESOURCE_TYPES = ["main_frame", "sub_frame"] as const;
 
 // All resource types, main_frame + sub_frame included, so a blocked domain is
 // stopped whether navigated to directly or embedded.
@@ -71,23 +77,27 @@ function getDnr(): Dnr | null {
 }
 
 /**
- * The pure projection: the blocked domains → the DNR rule that enforces them.
+ * The pure projection: the blocked domains → the DNR rules that enforce them.
+ * One rule per reach. A host under both is held by the `all` rule, since DNR
+ * blocks when any rule matches: the stricter block wins.
  *
  * Kept separate from `syncFenceRules` so the mapping is testable without
  * mocking chrome or storage.
  */
-export function buildDnrRules(blockDomains: readonly string[]): DnrRule[] {
+export function buildDnrRules(
+  blockDomains: readonly string[],
+  navigationDomains: readonly string[] = []
+): DnrRule[] {
+  const rule = (id: number, domains: readonly string[], resourceTypes: readonly string[]): DnrRule => ({
+    id,
+    priority: 1,
+    action: { type: "block" },
+    condition: { requestDomains: [...domains], resourceTypes },
+  });
   const rules: DnrRule[] = [];
-  if (blockDomains.length > 0) {
-    rules.push({
-      id: BLOCK_RULE_ID,
-      priority: 1,
-      action: { type: "block" },
-      condition: {
-        requestDomains: [...blockDomains],
-        resourceTypes: ALL_RESOURCE_TYPES,
-      },
-    });
+  if (blockDomains.length > 0) rules.push(rule(BLOCK_RULE_ID, blockDomains, ALL_RESOURCE_TYPES));
+  if (navigationDomains.length > 0) {
+    rules.push(rule(NAVIGATION_RULE_ID, navigationDomains, NAVIGATION_RESOURCE_TYPES));
   }
   return rules;
 }
@@ -110,15 +120,17 @@ export async function syncFenceRules(): Promise<void> {
   // lift a standing block and a fence taken down still comes down. The uncovered
   // case is the same as before — a fresh profile that has never been pushed to
   // blocks nothing until the relay first answers.
-  const domains = standingBlockHosts(await fenceCache.getValue());
+  const fences = await fenceCache.getValue();
+  const domains = standingBlockHosts(fences, "all");
+  const navigation = standingBlockHosts(fences, "navigation");
 
-  const addRules = buildDnrRules(domains);
+  const addRules = buildDnrRules(domains, navigation);
   try {
     await dnr.updateDynamicRules({
-      removeRuleIds: [BLOCK_RULE_ID, COOLDOWN_RULE_ID],
+      removeRuleIds: [BLOCK_RULE_ID, COOLDOWN_RULE_ID, NAVIGATION_RULE_ID],
       addRules,
     });
-    console.info(`[zenborg fence] synced ${domains.length} fenced domain(s)`, domains);
+    console.info(`[zenborg fence] synced ${domains.length} fenced domain(s)`, domains, navigation);
   } catch (err) {
     console.error("[zenborg fence] updateDynamicRules failed:", err);
   }

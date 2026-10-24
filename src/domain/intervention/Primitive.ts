@@ -135,6 +135,19 @@ export interface GateSpec {
  * without a way out, whoever set them.
  */
 /**
+ * What a browser block stops. Absent means `all`, which is what a block has
+ * always been.
+ *
+ * `navigation` stops page loads only (top-level and framed). A page already
+ * open keeps its sockets and requests, so a schedule that switches on at 16:00
+ * does not cut a live game and lose it on time, while loading or reloading the
+ * site is still refused. It lives on the `browser` variant because only the
+ * browser can tell a page load from a websocket; a resolver or a device sees a
+ * hostname and nothing else, so `reach` there would be a promise it cannot keep.
+ */
+export type BlockReach = "all" | "navigation";
+
+/**
  * Where the lockout is applied.
  *
  * `resolver` is the one that reaches a phone, which is the reason host blocking
@@ -142,7 +155,7 @@ export interface GateSpec {
  * app does not run on.
  */
 export type CooldownEnforcement =
-  | { readonly at: "browser" }
+  | { readonly at: "browser"; readonly reach?: BlockReach }
   | { readonly at: "resolver"; readonly profile: string }
   | { readonly at: "device" };
 

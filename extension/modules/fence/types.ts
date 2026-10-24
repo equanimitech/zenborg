@@ -33,6 +33,11 @@ export type FenceEnforcement =
       readonly standing: boolean;
       /** Where a lockout is applied. Only `browser` is this surface's to enforce. */
       readonly enforcement: "browser" | "resolver" | "device";
+      /**
+       * Browser only. `navigation` blocks page loads (main_frame, sub_frame) and
+       * spares an open page's sockets; absent means every resource type.
+       */
+      readonly reach?: "navigation";
     }
   | {
       readonly kind: "gate";

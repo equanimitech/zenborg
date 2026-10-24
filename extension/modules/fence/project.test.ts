@@ -25,6 +25,21 @@ describe("buildDnrRules", () => {
     ]);
   });
 
+  it("an `all` rule and a `navigation` rule block different resource types", () => {
+    const [all, nav] = buildDnrRules(["youtube.com"], ["chess.com"]);
+    expect(all.condition.requestDomains).toEqual(["youtube.com"]);
+    expect(all.condition.resourceTypes).toContain("websocket");
+    expect(nav.id).not.toBe(all.id);
+    expect(nav.condition.requestDomains).toEqual(["chess.com"]);
+    expect([...nav.condition.resourceTypes]).toEqual(["main_frame", "sub_frame"]);
+  });
+
+  it("navigation-only blocks emit just the navigation rule", () => {
+    const rules = buildDnrRules([], ["lichess.org"]);
+    expect(rules).toHaveLength(1);
+    expect(rules[0].condition.resourceTypes).not.toContain("websocket");
+  });
+
   it("emits nothing when there are no domains", () => {
     const rules = buildDnrRules([]);
     expect(rules).toEqual([]);

@@ -124,6 +124,15 @@ function readFriction(raw: unknown): GateFriction | null {
   }
 }
 
+/**
+ * `navigation`, or nothing. Any other value reads as the default (`all`), so an
+ * unknown reach fails toward the stricter block rather than toward a hole.
+ * Browser only: a resolver or device block has no resource types to narrow.
+ */
+function reachOf(at: unknown, raw: unknown): { reach?: "navigation" } {
+  return raw === "navigation" && at !== "resolver" && at !== "device" ? { reach: "navigation" } : {};
+}
+
 function readEnforcement(raw: unknown): FenceEnforcement | null {
   if (!isRecord(raw)) {
     return null;
@@ -132,7 +141,7 @@ function readEnforcement(raw: unknown): FenceEnforcement | null {
     const at = raw.enforcement;
     const enforcement: "browser" | "resolver" | "device" =
       at === "resolver" || at === "device" ? at : "browser";
-    return { kind: "block", enforcement, standing: raw.standing === true };
+    return { kind: "block", enforcement, standing: raw.standing === true, ...reachOf(at, raw.reach) };
   }
   if (raw.kind === "gate") {
     const friction = readFriction(raw.friction);
@@ -178,7 +187,8 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
       at === "resolver" || at === "device" ? at : "browser";
     const standing = p.duration != null && isRecord(p.duration) && p.duration.type === "standing"
       || p.duration != null && isRecord(p.duration) && (p.duration as Record<string, unknown>).standing === true;
-    return { kind: "block", enforcement, standing };
+    const reach = reachOf(at, isRecord(p.enforcement) ? p.enforcement.reach : undefined);
+    return { kind: "block", enforcement, standing, ...reach };
   }
   if (p.kind === "gate") {
     const trigger = isRecord(p.trigger) ? p.trigger : null;
@@ -435,14 +445,20 @@ export function fencesFor(fences: Fences, host: string): readonly Fence[] {
  * Resolver- and device-enforced blocks are deliberately absent: they hold
  * somewhere the extension is not, and projecting them here would double-block
  * on this machine while reporting a firing that another surface actually made.
+ *
+ * `reach` narrows to one DNR projection; omitted, every standing browser block.
  */
-export function standingBlockHosts(fences: Fences): readonly string[] {
+export function standingBlockHosts(
+  fences: Fences,
+  reach?: "all" | "navigation"
+): readonly string[] {
   const out = new Set<string>();
   for (const entry of Object.values(fences)) {
     const e = entry.enforcement;
     if (e.kind !== "block" || !e.standing || e.enforcement !== "browser") {
       continue;
     }
+    if (reach !== undefined && (e.reach ?? "all") !== reach) continue;
     if (!isFenceActive(entry)) continue;
     for (const domain of entry.domains) {
       out.add(domain);
