@@ -32,6 +32,7 @@ import type {
   Fence,
   FenceEnforcement,
   Fences,
+  GateRungSpec,
   ParsedFences,
   ProceedAffordance,
   ScheduleWindow,
@@ -315,6 +316,31 @@ export function parseFences(raw: unknown): ParsedFences | null {
       }
     }
 
+    // A ladder: more than one gate primitive. Each rung is unwrapped like rung 0
+    // (a schedule on a later rung is ignored; rung 0's window governs the fence).
+    let rungs: GateRungSpec[] | undefined;
+    if (enforcement?.kind === "gate" && Array.isArray(value.primitives) && value.primitives.length > 1) {
+      const built: GateRungSpec[] = [];
+      for (const raw of value.primitives as unknown[]) {
+        const inner = isRecord(raw) ? (readSchedule(raw)?.inner ?? raw) : null;
+        const e = inner ? enforcementFromPrimitive(inner) : null;
+        if (!inner || e?.kind !== "gate") break;
+        const pr = proceedFromPrimitive(inner);
+        if (pr === null) {
+          proceed = null; // a rung with no exit refuses the whole fence (invariant 6)
+          break;
+        }
+        const label = isRecord(inner.abortAffordance) ? text(inner.abortAffordance.label) : "";
+        built.push({
+          everyMinutes: e.everyMinutes,
+          friction: e.friction,
+          proceed: pr,
+          ...(label === "" ? {} : { abort: { label } }),
+        });
+      }
+      if (built.length > 1) rungs = built;
+    }
+
     if (enforcement === null) {
       refused.push({ id, reason: "unactuatable" });
       continue;
@@ -335,6 +361,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
       enforcement,
       proceed,
       ...(abortLabel === "" ? {} : { abort: { label: abortLabel } }),
+      ...(rungs ? { rungs } : {}),
       ...(schedule ? { schedule } : {}),
       deliveryProbability: readProbability(value.deliveryProbability),
     };
@@ -479,7 +506,14 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
     if (entry.enforcement.kind !== "gate") {
       continue;
     }
+    const rungs = entry.rungs?.map((r) => ({
+      everyMinutes: r.everyMinutes,
+      friction: r.friction,
+      proceed: { label: r.proceed.label, action: gateAction(r.proceed) },
+      abort: r.abort ?? { label: "Close the tab" },
+    }));
     out.push({
+      ...(rungs ? { rungs } : {}),
       ruleId: entry.id,
       domains: entry.domains,
       everyMinutes: entry.enforcement.everyMinutes,

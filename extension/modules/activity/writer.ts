@@ -37,7 +37,7 @@ import {
   validateSensorMessage,
 } from "../sensors/events";
 import { derivedObserveDomains } from "../watchlist/store";
-import { evaluateGates } from "../friction/gate/decide";
+import { evaluateGates, recordProceed } from "../friction/gate/decide";
 import { evaluateMomentGate } from "../friction/gate/moment";
 import { fencesFor, gatesFrom } from "../fence/parse";
 import { fenceCache } from "../fence/store";
@@ -336,6 +336,7 @@ export function startActivityWriter(): void {
               domain,
               ruleId: verdict.ruleId,
               primitive: "gate",
+              ..."rung" in verdict && verdict.rung !== undefined ? { rung: verdict.rung } : {},
             });
           }
           return verdict;
@@ -348,6 +349,19 @@ export function startActivityWriter(): void {
     // sender tab, exactly as the sensor channel does.
     if (isSettlement(message)) {
       if (domain !== null) {
+        // A crossing is the person proceeding, counted here because the page is
+        // untrusted. Only a rule that actually gates this host counts: the page
+        // may lie about the id, but not into inflating one that is not in force.
+        if (message.proceeded) {
+          void fenceCache
+            .getValue()
+            .then((fences) => {
+              if (fenceGatesFor(fences, domain).some((g) => g.ruleId === message.ruleId)) {
+                return recordProceed(message.ruleId);
+              }
+            })
+            .catch(() => {});
+        }
         writeDelivery(settlementKind(message.proceeded), {
           domain,
           ruleId: message.ruleId,

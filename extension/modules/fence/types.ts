@@ -68,6 +68,13 @@ export interface ScheduleWindow {
   readonly outsideWindow: "inactive" | "passthrough";
 }
 
+export interface GateRungSpec {
+  readonly everyMinutes: number;
+  readonly friction: GateFriction;
+  readonly proceed: ProceedAffordance;
+  readonly abort?: { readonly label: string };
+}
+
 export interface Fence {
   readonly id: string;
   /** What the person called it. Shown wherever the exit is shown. */
@@ -77,6 +84,8 @@ export interface Fence {
   readonly enforcement: FenceEnforcement;
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
+  /** Ladder rungs (two or more gates), rung 0 first; top-level fields mirror rung 0. */
+  readonly rungs?: readonly GateRungSpec[];
   /** When set, the fence holds inside this window (and outside it only on `passthrough`). */
   readonly schedule?: ScheduleWindow;
   /**
