@@ -384,6 +384,12 @@ fn handle_request_today_moments(vault: &Path) {
 
 fn handle_request_events(msg: &Value, vault: &Path) {
     let since = msg.get("since").and_then(|v| v.as_i64()).unwrap_or(0);
+    // Optional: only these kinds (the pass count asks for `pass_used` over a
+    // month and has no use for a month of browsing). Absent means every kind.
+    let kinds: Option<HashSet<&str>> = msg
+        .get("kinds")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|k| k.as_str()).collect());
     let now = chrono::Utc::now().timestamp_millis();
     let log_dir = vault.join("log");
 
@@ -408,7 +414,10 @@ fn handle_request_events(msg: &Value, vault: &Path) {
                     }
                     if let Ok(event) = serde_json::from_str::<Value>(line) {
                         let event_ts = event.get("ts").and_then(|v| v.as_i64()).unwrap_or(0);
-                        if event_ts >= since && event_ts < now {
+                        let kind_ok = kinds.as_ref().map_or(true, |ks| {
+                            event.get("kind").and_then(|k| k.as_str()).is_some_and(|k| ks.contains(k))
+                        });
+                        if event_ts >= since && event_ts < now && kind_ok {
                             events.push((event_ts, event));
                         }
                     }
