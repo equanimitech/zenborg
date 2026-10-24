@@ -277,6 +277,16 @@ function readSchedule(p: Record<string, unknown>): { inner: Record<string, unkno
   };
 }
 
+/** `outcome.windowMs` and `serves.areaId`, when present and well-formed. */
+function readOutcome(value: Record<string, unknown>): { windowMs?: number; servesAreaId?: string } {
+  const windowMs = isRecord(value.outcome) ? Number(value.outcome.windowMs) : NaN;
+  const areaId = isRecord(value.serves) ? text(value.serves.areaId) : "";
+  return {
+    ...(Number.isFinite(windowMs) && windowMs > 0 ? { windowMs } : {}),
+    ...(areaId === "" ? {} : { servesAreaId: areaId }),
+  };
+}
+
 function readProbability(raw: unknown): number {
   const p = Number(raw);
   if (raw === undefined || raw === null || !Number.isFinite(p)) {
@@ -395,6 +405,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
       ...(rungs ? { rungs } : {}),
       ...(schedule ? { schedule } : {}),
       deliveryProbability: readProbability(value.deliveryProbability),
+      ...readOutcome(value),
     };
   }
 
@@ -559,6 +570,8 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
       ...(click ? { click } : {}),
       ...(onEntry ? { entry: onEntry } : {}),
       ...(entry.deliveryProbability < 1 ? { deliveryProbability: entry.deliveryProbability } : {}),
+      ...(entry.windowMs === undefined ? {} : { windowMs: entry.windowMs }),
+      ...(entry.servesAreaId === undefined ? {} : { servesAreaId: entry.servesAreaId }),
       ruleId: entry.id,
       domains: entry.domains,
       everyMinutes: entry.enforcement.everyMinutes,

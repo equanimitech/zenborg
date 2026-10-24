@@ -105,6 +105,10 @@ export interface Fence {
    * anything below it buys the comparison condition a proximal outcome needs.
    */
   readonly deliveryProbability: number;
+  /** From the vault record's `outcome.windowMs`, carried to `decision_point`. */
+  readonly windowMs?: number;
+  /** From the vault record's `serves.areaId`. */
+  readonly servesAreaId?: string;
 }
 
 /** The cache, keyed by fence id — the shape of the pushed record. */

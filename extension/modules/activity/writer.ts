@@ -50,6 +50,7 @@ import { fencesFor, gatesFrom } from "../fence/parse";
 import { fenceCache } from "../fence/store";
 import type { Fence, Fences } from "../fence/types";
 import {
+  decisionPointEvent,
   interventionEvent,
   isSettlement,
   settlementKind,
@@ -111,6 +112,16 @@ export function startActivityWriter(): void {
         sessionId,
       })
     );
+  };
+
+  /** Every decision point the verdict reached, delivered or withheld. Written before
+   * `intervention_shown`, so the draw precedes what it caused. */
+  const writePoints = (verdict: GateVerdict, domain: string): void => {
+    for (const point of verdict.points ?? []) {
+      void appendEvent(
+        decisionPointEvent({ point, domain, id: crypto.randomUUID(), ts: Date.now(), sessionId })
+      );
+    }
   };
 
   const write: WriteFn = (kind, payload, durationMs) => {
@@ -340,6 +351,7 @@ export function startActivityWriter(): void {
           // reason the firing is: a content script that could decline to report
           // would earn a free pass by refreshing. `intervention_shown` is a
           // completion in `logs` — there is no second collection.
+          writePoints(verdict, domain);
           if (verdict.fire && verdict.ruleId !== undefined) {
             writeDelivery("intervention_shown", {
               domain,
@@ -368,6 +380,7 @@ export function startActivityWriter(): void {
           return gate ? evaluateClickGate(gate) : { fire: false, dwellMs: 0 };
         })
         .then((verdict) => {
+          writePoints(verdict, domain);
           if (verdict.fire && verdict.ruleId !== undefined) {
             writeDelivery("intervention_shown", {
               domain,

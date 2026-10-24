@@ -14,6 +14,7 @@ import { startOfLocalDay } from "@/modules/activity/events";
 import { queryEvents } from "@/modules/relay/client";
 import { storage } from "wxt/storage";
 import { crossingsOf, gateAtRung, NO_CROSSINGS, recordCrossing, type Crossings } from "./ladder";
+import { DEFAULT_WINDOW_MS, type DecisionPoint } from "../../fence/events";
 import { isArrival } from "./arrival";
 import { nextFiredAt, shouldGate, type GateReading } from "./state";
 
@@ -70,6 +71,10 @@ export interface DwellGate {
   readonly entry?: true;
   /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click and per entry firing. */
   readonly deliveryProbability?: number;
+  /** Outcome window from the vault record, for `decision_point`. */
+  readonly windowMs?: number;
+  /** `serves.areaId` from the vault record, for `decision_point`. */
+  readonly servesAreaId?: string;
   /** Ladder: two or more rungs, indexed by today's crossings. Top-level fields mirror rung 0. */
   readonly rungs?: readonly DwellRung[];
   /** @deprecated Pre-2026-08-08 mirror shape. Read only by `normalizeGate`. */
@@ -174,6 +179,30 @@ export interface GateVerdict {
   readonly rung?: number;
   /** Interval of the rung that fired, for picking among rules. */
   readonly everyMinutes?: number;
+  /** One per decision point reached on this evaluation, delivered or withheld. */
+  readonly points?: readonly DecisionPoint[];
+}
+
+/** The decision point for `g` at `rung`: delivered iff `draw < p`. */
+export function decisionPoint(
+  g: DwellGate,
+  trigger: DecisionPoint["trigger"],
+  rung: number,
+  draw: number
+): DecisionPoint {
+  const p = g.deliveryProbability ?? 1;
+  const delivered = draw < p;
+  return {
+    ruleId: g.ruleId,
+    trigger,
+    delivered,
+    p,
+    draw,
+    rung,
+    windowMs: g.windowMs ?? DEFAULT_WINDOW_MS,
+    ...(g.servesAreaId === undefined ? {} : { servesAreaId: g.servesAreaId }),
+    ...(delivered ? {} : { reason: "draw" as const }),
+  };
 }
 
 /** The person chose to proceed on `ruleId`: one more crossing today. Background only. */
@@ -215,10 +244,15 @@ export async function evaluateGate(
     const seen = await gateLastSeen.getValue();
     const arrived = isArrival(seen[g.ruleId] ?? null, now);
     await gateLastSeen.setValue({ ...seen, [g.ruleId]: now });
-    if (!arrived || draw >= (g.deliveryProbability ?? 1)) {
+    if (!arrived) {
       return { fire: false, dwellMs: 0 };
     }
+    const point = decisionPoint(g, "entry", rung, draw);
+    if (!point.delivered) {
+      return { fire: false, dwellMs: 0, points: [point] };
+    }
     return {
+      points: [point],
       fire: true,
       dwellMs: await dwellTodayFor(g.domains, now),
       ruleId: g.ruleId,
@@ -240,8 +274,15 @@ export async function evaluateGate(
   if (!shouldGate(reading)) {
     return { fire: false, dwellMs };
   }
+  // Advance even when the draw withholds: the point was reached, so it must not re-fire
+  // on the next poll.
   await gateFiredAt.setValue({ ...fired, [g.ruleId]: nextFiredAt(reading) });
+  const point = decisionPoint(g, "dwell", rung, draw);
+  if (!point.delivered) {
+    return { fire: false, dwellMs, points: [point] };
+  }
   return {
+    points: [point],
     fire: true,
     dwellMs,
     ruleId: g.ruleId,
@@ -258,8 +299,8 @@ export async function evaluateGate(
  *
  * The click itself is the decision point, so there is no interval to check: the
  * rung is today's crossings, and the only reason not to fire is the delivery
- * draw. `draw` is injectable so a test can pin it. A withheld delivery writes
- * nothing; the click goes through as if no gate were there.
+ * draw. `draw` is injectable so a test can pin it. A withheld delivery still
+ * carries its decision point; the click goes through as if no gate were there.
  */
 export async function evaluateClickGate(
   gate: DwellGate,
@@ -271,10 +312,15 @@ export async function evaluateClickGate(
     base,
     crossingsOf(await gateCrossings.getValue(), dayKey(now), base.ruleId)
   );
-  if (g.click === undefined || draw >= (g.deliveryProbability ?? 1)) {
+  if (g.click === undefined) {
     return { fire: false, dwellMs: 0 };
   }
+  const point = decisionPoint(g, "click", rung, draw);
+  if (!point.delivered) {
+    return { fire: false, dwellMs: 0, points: [point] };
+  }
   return {
+    points: [point],
     fire: true,
     dwellMs: await dwellTodayFor(g.domains, now),
     ruleId: g.ruleId,
@@ -342,12 +388,15 @@ export function gateFor(gates: readonly DwellGate[], domain: string): DwellGate 
  */
 export async function evaluateGates(
   gates: readonly DwellGate[],
-  now: number = Date.now()
+  now: number = Date.now(),
+  draw: () => number = Math.random
 ): Promise<GateVerdict> {
+  const points: DecisionPoint[] = [];
   let best: GateVerdict = { fire: false, dwellMs: 0 };
   let bestEvery = -1;
   for (const gate of gates) {
-    const verdict = await evaluateGate(gate, now);
+    const verdict = await evaluateGate(gate, now, draw());
+    points.push(...(verdict.points ?? []));
     if (!verdict.fire) {
       if (!best.fire) {
         best = { ...best, dwellMs: Math.max(best.dwellMs, verdict.dwellMs) };
@@ -360,5 +409,11 @@ export async function evaluateGates(
       bestEvery = every;
     }
   }
-  return best;
+  // Only one overlay shows: a due gate that drew "deliver" but lost to a rarer one
+  // was not delivered, and says why.
+  const shown = best.fire ? best.ruleId : undefined;
+  const settled = points.map((p) =>
+    p.delivered && p.ruleId !== shown ? { ...p, delivered: false, reason: "superseded" as const } : p
+  );
+  return { ...best, points: settled };
 }
