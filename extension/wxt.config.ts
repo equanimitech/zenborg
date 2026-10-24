@@ -75,18 +75,10 @@ export default defineConfig({
     //     justify it. An unused permission on a manifest that calls itself the
     //     privacy statement is worse than a missing feature.
     permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon"],
-    // A keyboard path to the cooldown, so reaching for the lock costs less
-    // than reaching for the temptation. No popup to open, no menu to find.
-    commands: {
-      cooldown: {
-        suggested_key: { default: "Ctrl+Shift+K", mac: "Command+Shift+K" },
-        description: "Lock the watched domains for 2h",
-      },
-    },
     // Single shared instance in incognito so the porn Drogue's block holds
     // there too (where porn is most often browsed). The user must still flip
     // "Allow in incognito" once — see README. Shared storage = one source of
-    // truth for shields/cooldowns across normal + incognito.
+    // truth for shields across normal + incognito.
     incognito: "spanning",
     // WXT auto-discovers `entrypoints/newtab/index.html` and would register it
     // on its own, but the mapped filename depends on how the dev server names

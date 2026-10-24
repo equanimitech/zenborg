@@ -293,7 +293,6 @@ fn handle_request_policy(vault: &Path) {
     write_message(&json!({
         "type": "policy",
         "transforms": transforms,
-        "break": null,
         "areas": area_list,
         "momentFriction": moment_friction,
     }));

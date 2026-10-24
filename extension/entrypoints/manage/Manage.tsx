@@ -1,8 +1,8 @@
 /**
  * The manage page — a fence dashboard.
  *
- * Four sections: the fences table (what is standing, its type, its exit),
- * cooldown status, area-map assignment, and activity-log export. Everything
+ * Three sections: the fences table (what is standing, its type, its exit),
+ * area-map assignment, and activity-log export. Everything
  * here is read-mostly: the only writes this page performs are `setArea`
  * (native-messaging, may fail silently — see `handleAssign`) and the local
  * export download. All authoring — declaring or retiring a fence — happens
@@ -18,8 +18,6 @@ import { useEffect, useState } from "react";
 import { fenceCache, fenceRefusals } from "@/modules/fence/store";
 import { exitLine } from "@/modules/fence/parse";
 import type { Fence, Fences, Refusal } from "@/modules/fence/types";
-import { cooldowns } from "@/modules/friction/cooldown/store";
-import { activeAt, type ActiveCooldown } from "@/modules/friction/cooldown/state";
 import { areas as areasStore, areaMap as areaMapStore, pageTransforms, type AreaInfo, type PageTransform } from "@/modules/friction/policy/store";
 import { setArea } from "@/modules/relay/client";
 import { readAllEvents } from "@/modules/activity/log";
@@ -43,15 +41,10 @@ function fenceTypeBadge(fence: Fence): string {
   }
 }
 
-function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
 export function Manage() {
   const [fences, setFences] = useState<Fences>({});
   const [transforms, setTransforms] = useState<readonly PageTransform[]>([]);
   const [refused, setRefused] = useState<readonly Refusal[]>([]);
-  const [cds, setCds] = useState<readonly ActiveCooldown[]>([]);
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
   const [newDomain, setNewDomain] = useState("");
@@ -60,7 +53,6 @@ export function Manage() {
     fenceCache.getValue().then(setFences);
     pageTransforms.getValue().then(setTransforms);
     fenceRefusals.getValue().then(setRefused);
-    cooldowns.getValue().then((s) => setCds(activeAt(s, Date.now())));
     areasStore.getValue().then(setAllAreas);
     areaMapStore.getValue().then(setMap);
 
@@ -70,13 +62,9 @@ export function Manage() {
     const unwatchTransforms = pageTransforms.watch((v) => {
       if (v) { setTransforms(v); }
     });
-    const unwatchCooldowns = cooldowns.watch((s) => {
-      if (s) { setCds(activeAt(s, Date.now())); }
-    });
     return () => {
       unwatchFences();
       unwatchTransforms();
-      unwatchCooldowns();
     };
   }, []);
 
@@ -182,20 +170,6 @@ export function Manage() {
           </>
         )}
       </section>
-
-      {/* Cooldown */}
-      {cds.length > 0 && (
-        <section className="manage-section">
-          <h2 className="manage-section-title">Cooldown</h2>
-          <ul className="manage-cooldown-list">
-            {cds.map((cd) => (
-              <li key={cd.ruleId}>
-                {cd.domains.length} domain(s) until {formatUntil(cd.until)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
 
       {/* Area map */}
       <section className="manage-section">

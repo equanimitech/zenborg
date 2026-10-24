@@ -1,7 +1,7 @@
 /**
  * The Playwright inspection surface for fence state.
  *
- * A snapshot of what is currently in force — fences and active cooldowns —
+ * A snapshot of what is currently in force — fences —
  * written to `chrome.storage.local` on every change so `browser_evaluate` (or
  * any e2e harness) can read it without reaching into the store internals or
  * racing a watcher. `window.__kairos` (wired in `entrypoints/popup/main.tsx`)
@@ -11,8 +11,6 @@
 
 import { storage } from "wxt/storage";
 import { fenceCache, fencePushedAt } from "./store";
-import { cooldowns } from "../friction/cooldown/store";
-import { activeAt, type CooldownState } from "../friction/cooldown/state";
 import type { Fences } from "./types";
 
 export interface KairosInspection {
@@ -26,14 +24,6 @@ export interface KairosInspection {
       readonly standing: boolean;
     }
   >;
-  readonly cooldowns: Record<
-    string,
-    {
-      readonly id: string;
-      readonly domains: readonly string[];
-      readonly until: number;
-    }
-  >;
   readonly lastPushAt: number;
 }
 
@@ -42,7 +32,7 @@ export const inspectionStore = storage.defineItem<KairosInspection | null>(
   { fallback: null }
 );
 
-function buildInspection(fences: Fences, cds: CooldownState, pushAt: number): KairosInspection {
+function buildInspection(fences: Fences, pushAt: number): KairosInspection {
   const fenceMap: KairosInspection["fences"] = {};
   for (const [id, f] of Object.entries(fences)) {
     fenceMap[id] = {
@@ -53,21 +43,15 @@ function buildInspection(fences: Fences, cds: CooldownState, pushAt: number): Ka
       standing: f.enforcement.kind === "block" && f.enforcement.standing,
     };
   }
-  const cdMap: KairosInspection["cooldowns"] = {};
-  const now = Date.now();
-  for (const cd of activeAt(cds, now)) {
-    cdMap[cd.ruleId] = { id: cd.ruleId, domains: [...cd.domains], until: cd.until };
-  }
-  return { fences: fenceMap, cooldowns: cdMap, lastPushAt: pushAt };
+  return { fences: fenceMap, lastPushAt: pushAt };
 }
 
 export async function writeInspection(): Promise<KairosInspection> {
-  const [fences, cds, pushAt] = await Promise.all([
+  const [fences, pushAt] = await Promise.all([
     fenceCache.getValue(),
-    cooldowns.getValue(),
     fencePushedAt.getValue(),
   ]);
-  const inspection = buildInspection(fences, cds, pushAt);
+  const inspection = buildInspection(fences, pushAt);
   await inspectionStore.setValue(inspection);
   return inspection;
 }

@@ -1,14 +1,12 @@
 import { useEffect, useState } from "react";
-import { armBreak, type BreakTarget } from "@/modules/friction/cooldown/arm";
-import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
-import { breakTarget, pageTransforms, type PageTransform } from "@/modules/friction/policy/store";
+import { pageTransforms, type PageTransform } from "@/modules/friction/policy/store";
 import { exitLine, fencesFor } from "@/modules/fence/parse";
 import { fenceCache } from "@/modules/fence/store";
 import type { Fence, Fences } from "@/modules/fence/types";
 import { normalizeDomain } from "@/modules/domains";
 
 /**
- * Popup — per-domain fences, then one gesture, then the global count.
+ * Popup — per-domain fences, then the global count.
  *
  * Redesigned 2026-08-26 (extension surfaces, Task 2). It used to open on an
  * undifferentiated "In force" list — every fence, wherever it applied. That
@@ -16,12 +14,6 @@ import { normalizeDomain } from "@/modules/domains";
  * what applies *here*. So the domain header and its fences (each with a type
  * badge and its exit line) come first now; the total fence count moves to
  * the bottom, next to the dashboard link.
- *
- * The button itself is unchanged from the redesign that shaped it against
- * System 1: no confirmation, no duration picker, no countdown. Friction
- * belongs on the temptation, never on the reach for help. It names the areas
- * it pauses, because that is the sentence you are actually saying — not the
- * domain list that implements it.
  *
  * History and configuration live on the manage page, where your own data is
  * what you sort.
@@ -35,10 +27,6 @@ import { normalizeDomain } from "@/modules/domains";
  * deliberately out of band, and a button here would put the key back in the
  * room.
  */
-function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
 async function currentDomain(): Promise<string | null> {
   try {
     const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
@@ -97,28 +85,12 @@ export function Popup() {
   const [domain, setDomain] = useState<string | null>(null);
   const [allFences, setAllFences] = useState<Fences>({});
   const [transforms, setTransforms] = useState<readonly PageTransform[]>([]);
-  const [target, setTarget] = useState<BreakTarget | null>(null);
-  const [until, setUntil] = useState<number | null>(null);
 
   useEffect(() => {
     currentDomain().then(setDomain);
     fenceCache.getValue().then(setAllFences).catch(() => setAllFences({}));
     pageTransforms.getValue().then(setTransforms).catch(() => setTransforms([]));
-    breakTarget.getValue().then(setTarget).catch(() => setTarget(null));
-    cooldownNextLapse().then(setUntil).catch(() => setUntil(null));
   }, []);
-
-  const take = (): void => {
-    void armBreak("popup").then((r) => setUntil(r.until));
-  };
-
-  const onBreak = until !== null;
-  const areas = target?.areas ?? [];
-
-  // The only colour in the interface, and it names an area rather than a
-  // sentiment — the break reads red because Entertainement is red, not because
-  // "destructive". Stone when no area carries one (zenborg design grammar).
-  const accent = areas.find((a) => a.color)?.color;
 
   const hereFences = domain ? fencesFor(allFences, domain) : [];
   const hereTransforms = domain ? transformsFor(transforms, domain) : [];
@@ -127,10 +99,7 @@ export function Popup() {
   const totalInForce = totalFences + totalTransforms;
 
   return (
-    <div
-      className="popup-root"
-      style={accent === undefined ? undefined : ({ "--area": accent } as React.CSSProperties)}
-    >
+    <div className="popup-root">
       {/* Per-domain fences + transforms — what's in force here */}
       {(hereFences.length > 0 || hereTransforms.length > 0) && (
         <section className="popup-here">
@@ -151,28 +120,6 @@ export function Popup() {
             ))}
           </ul>
         </section>
-      )}
-
-      {/* Big red button — preserved exactly */}
-      {onBreak ? (
-        <div className="popup-resting">
-          <p className="popup-resting-title">On a break</p>
-          <p className="popup-resting-until">until {formatUntil(until)}</p>
-          <p className="popup-resting-areas">
-            {areas.map((a) => `${a.emoji} ${a.name}`).join(" · ")} paused
-          </p>
-        </div>
-      ) : (
-        <>
-          <button className="popup-break" onClick={take} disabled={areas.length === 0}>
-            Take a break
-          </button>
-          <p className="popup-break-sub">
-            {areas.length === 0
-              ? "No areas set up yet — open the dashboard to sort your sites."
-              : `2 hours away from ${areas.map((a) => `${a.emoji} ${a.name}`).join(" · ")}`}
-          </p>
-        </>
       )}
 
       {/* Global fence count + manage link */}

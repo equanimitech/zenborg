@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { fenceCache } from "@/modules/fence/store";
-import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
 import { areaMap as areaMapStore, areas as areasStore, type AreaInfo } from "@/modules/friction/policy/store";
 import { queryEvents, queryActiveMoment, queryTodayMoments, type ActiveMoment, type TodayBoard, type TodayMoment } from "@/modules/relay/client";
 import { setArea } from "@/modules/relay/client";
@@ -42,10 +41,6 @@ function formatDwell(ms: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function computeStats(
@@ -162,7 +157,6 @@ function formatTime(time: string): string {
 
 export function NewTab() {
   const [fenceCount, setFenceCount] = useState(0);
-  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [stats, setStats] = useState<readonly DomainStats[]>([]);
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [areaMap, setAreaMap] = useState<Record<string, string>>({});
@@ -173,7 +167,6 @@ export function NewTab() {
 
   useEffect(() => {
     fenceCache.getValue().then((fences) => setFenceCount(Object.keys(fences).length));
-    cooldownNextLapse().then(setCooldownUntil);
     queryActiveMoment().then(setActiveMoment);
     queryTodayMoments().then(setBoard);
     areasStore.getValue().then(setAllAreas);
@@ -327,11 +320,9 @@ export function NewTab() {
           </section>
         )}
 
-        {(fenceCount > 0 || cooldownUntil !== null) && (
+        {fenceCount > 0 && (
           <p className="newtab-fence-summary">
-            {fenceCount > 0 && `${fenceCount} fence${fenceCount === 1 ? "" : "s"}`}
-            {fenceCount > 0 && cooldownUntil !== null && " · "}
-            {cooldownUntil !== null && `cooldown until ${formatUntil(cooldownUntil)}`}
+            {`${fenceCount} fence${fenceCount === 1 ? "" : "s"}`}
           </p>
         )}
 
