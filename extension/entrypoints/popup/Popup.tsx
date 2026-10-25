@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { pageTransforms, type PageTransform } from "@/modules/friction/policy/store";
 import { exitLine, fencesFor } from "@/modules/fence/parse";
-import { fenceCache } from "@/modules/fence/store";
+import { fenceCache, rationSpent } from "@/modules/fence/store";
+import { localDay, type RationSpent } from "@/modules/fence/ration";
 import type { Fence, Fences } from "@/modules/fence/types";
 import { normalizeDomain } from "@/modules/domains";
 
@@ -85,13 +86,17 @@ export function Popup() {
   const [domain, setDomain] = useState<string | null>(null);
   const [allFences, setAllFences] = useState<Fences>({});
   const [transforms, setTransforms] = useState<readonly PageTransform[]>([]);
+  const [spent, setSpent] = useState<RationSpent | null>(null);
 
   useEffect(() => {
     currentDomain().then(setDomain);
+    rationSpent.getValue().then(setSpent).catch(() => setSpent(null));
     fenceCache.getValue().then(setAllFences).catch(() => setAllFences({}));
     pageTransforms.getValue().then(setTransforms).catch(() => setTransforms([]));
   }, []);
 
+  const spentFor = (pool: string): number =>
+    spent && spent.day === localDay(Date.now()) ? (spent.minutes[pool] ?? 0) : 0;
   const hereFences = domain ? fencesFor(allFences, domain) : [];
   const hereTransforms = domain ? transformsFor(transforms, domain) : [];
   const totalFences = Object.keys(allFences).length;
@@ -109,6 +114,11 @@ export function Popup() {
                 <span className="popup-fence-badge">{fenceTypeBadge(f)}</span>
                 <span className="popup-fence-name">{f.label}</span>
                 <span className="popup-fence-exit">{exitLine(f)}</span>
+                {f.budget && (
+                  <span className="popup-fence-exit">
+                    {Math.floor(spentFor(f.budget.pool))} / {f.budget.minutes} min today
+                  </span>
+                )}
               </li>
             ))}
             {hereTransforms.map((t) => (

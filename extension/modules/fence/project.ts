@@ -19,6 +19,7 @@
  */
 
 import { standingBlockHosts } from "./parse";
+import { rationBlocks } from "./ration";
 import { liveFences } from "./store";
 
 // Standing blocks, from the fence cache. Slice E had to give the fence record a
@@ -32,6 +33,10 @@ const BLOCK_RULE_ID = 1;
 const COOLDOWN_RULE_ID = 2;
 // Standing blocks with `reach: "navigation"`: page loads only.
 const NAVIGATION_RULE_ID = 3;
+// Spent rationed pools: one rule each, ids 100 and up.
+// ponytail: one DNR rule per pool, 20 pools max; read getDynamicRules if that ever binds
+const RATION_RULE_BASE = 100;
+const RATION_RULE_MAX = 20;
 
 // Page loads, top-level and framed. Everything an open page does after it has
 // loaded (its websocket above all, which is a live game's clock) is left alone.
@@ -60,7 +65,7 @@ interface DnrRule {
   id: number;
   priority: number;
   action: { type: "block" };
-  condition: { requestDomains: string[]; resourceTypes: readonly string[] };
+  condition: { requestDomains: string[]; excludedRequestDomains?: string[]; resourceTypes: readonly string[] };
 }
 
 type Dnr = {
@@ -86,7 +91,8 @@ function getDnr(): Dnr | null {
  */
 export function buildDnrRules(
   blockDomains: readonly string[],
-  navigationDomains: readonly string[] = []
+  navigationDomains: readonly string[] = [],
+  rations: ReturnType<typeof rationBlocks> = []
 ): DnrRule[] {
   const rule = (id: number, domains: readonly string[], resourceTypes: readonly string[]): DnrRule => ({
     id,
@@ -99,6 +105,18 @@ export function buildDnrRules(
   if (navigationDomains.length > 0) {
     rules.push(rule(NAVIGATION_RULE_ID, navigationDomains, NAVIGATION_RESOURCE_TYPES));
   }
+  rations.slice(0, RATION_RULE_MAX).forEach((r, i) => {
+    rules.push({
+      id: RATION_RULE_BASE + i,
+      priority: 1,
+      action: { type: "block" },
+      condition: {
+        requestDomains: [...r.domains],
+        ...(r.except.length > 0 ? { excludedRequestDomains: [...r.except] } : {}),
+        resourceTypes: r.reach === "navigation" ? NAVIGATION_RESOURCE_TYPES : ALL_RESOURCE_TYPES,
+      },
+    });
+  });
   return rules;
 }
 
@@ -127,10 +145,17 @@ export async function syncFenceRules(): Promise<void> {
   const domains = standingBlockHosts(fences, "all");
   const navigation = standingBlockHosts(fences, "navigation");
 
-  const addRules = buildDnrRules(domains, navigation);
+  // `liveFences` only holds a budgeted fence once its pool is spent, so every
+  // ration block here is a wall that has been earned.
+  const addRules = buildDnrRules(domains, navigation, rationBlocks(fences));
   try {
     await dnr.updateDynamicRules({
-      removeRuleIds: [BLOCK_RULE_ID, COOLDOWN_RULE_ID, NAVIGATION_RULE_ID],
+      removeRuleIds: [
+        BLOCK_RULE_ID,
+        COOLDOWN_RULE_ID,
+        NAVIGATION_RULE_ID,
+        ...Array.from({ length: RATION_RULE_MAX }, (_, i) => RATION_RULE_BASE + i),
+      ],
       addRules,
     });
     console.info(`[zenborg fence] synced ${domains.length} fenced domain(s)`, domains, navigation);

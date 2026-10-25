@@ -45,3 +45,23 @@ describe("buildDnrRules", () => {
     expect(rules).toEqual([]);
   });
 });
+
+describe("buildDnrRules — rationed pools", () => {
+  it("gives each spent pool its own rule, sparing excluded hosts", () => {
+    const rules = buildDnrRules([], [], [
+      { pool: "youtube-weekend", domains: ["youtube.com", "youtu.be"], except: ["music.youtube.com"], reach: "navigation" },
+    ]);
+    expect(rules).toEqual([
+      {
+        id: 100,
+        priority: 1,
+        action: { type: "block" },
+        condition: {
+          requestDomains: ["youtube.com", "youtu.be"],
+          excludedRequestDomains: ["music.youtube.com"],
+          resourceTypes: ["main_frame", "sub_frame"],
+        },
+      },
+    ]);
+  });
+});

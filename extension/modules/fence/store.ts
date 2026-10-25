@@ -21,6 +21,7 @@ import { storage } from "wxt/storage";
 import { parseFences } from "./parse";
 import { writeInspection } from "./inspect";
 import { withLifts, type Lift, type Opening, type PassAllowance } from "./lifts";
+import { withRations, type RationSpent } from "./ration";
 import type { Fences, Refusal } from "./types";
 
 /** What is in force right now, keyed by fence id. */
@@ -57,6 +58,9 @@ export const openingsAnnounced = storage.defineItem<string[]>("local:fence:openi
   fallback: [],
 });
 
+/** Today's attended minutes per rationed pool. Written only by the background's ration alarm. */
+export const rationSpent = storage.defineItem<RationSpent | null>("local:fence:rationSpent", { fallback: null });
+
 /** Every lift the extension knows of: openings and passes. */
 export async function allLifts(): Promise<Lift[]> {
   const [openings, passes] = await Promise.all([openingsCache.getValue(), passLifts.getValue()]);
@@ -65,8 +69,8 @@ export async function allLifts(): Promise<Lift[]> {
 
 /** The fences in force at `now`, lifts applied. What every actuator reads. */
 export async function liveFences(now: number = Date.now()): Promise<Fences> {
-  const [fences, lifts] = await Promise.all([fenceCache.getValue(), allLifts()]);
-  return withLifts(fences, lifts, now);
+  const [fences, lifts, spent] = await Promise.all([fenceCache.getValue(), allLifts(), rationSpent.getValue()]);
+  return withLifts(withRations(fences, spent, now), lifts, now);
 }
 
 export interface FenceWriteResult {

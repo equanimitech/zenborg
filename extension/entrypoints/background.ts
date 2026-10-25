@@ -1,14 +1,47 @@
 import { browser } from "wxt/browser";
 import { startActivityWriter } from "@/modules/activity/writer";
 import { syncFenceRules } from "@/modules/fence/project";
-import { allLifts, fenceCache, liveFences, openingsCache, passLifts } from "@/modules/fence/store";
+import { allLifts, fenceCache, liveFences, openingsCache, passLifts, rationSpent } from "@/modules/fence/store";
+import { hasOpenRation, localDay, poolMinutes } from "@/modules/fence/ration";
+import { mergeById } from "@/modules/fence/deliveries";
+import { readEventsSince } from "@/modules/activity/log";
 import { nextScheduleBoundary } from "@/modules/fence/parse";
 import { BLOCK_HIT_KIND, blockHitPayload, nextLiftEdge } from "@/modules/fence/lifts";
 import { blockingFences, settleLifts } from "@/modules/fence/pass";
-import { domainFromUrl } from "@/modules/activity/events";
-import { flushToHost } from "@/modules/relay/client";
+import { domainFromUrl, startOfLocalDay } from "@/modules/activity/events";
+import { flushToHost, queryEvents } from "@/modules/relay/client";
 
 const SCHEDULE_ALARM = "zenborg-schedule-edge";
+const RATION_ALARM = "zenborg-ration";
+
+/**
+ * Recount rationed pools once a minute while any rationed window is open.
+ * Today's events are the host's copy merged with the outbox, since the relay
+ * deletes what the host has acked (the same merge `fence/pass.ts` does).
+ */
+async function recountRations(): Promise<void> {
+  const fences = await fenceCache.getValue();
+  const now = Date.now();
+  if (!hasOpenRation(fences, new Date(now))) {
+    await browser.alarms.clear(RATION_ALARM);
+    return;
+  }
+  if (!(await browser.alarms.get(RATION_ALARM))) {
+    browser.alarms.create(RATION_ALARM, { periodInMinutes: 1 });
+  }
+  try {
+    const since = startOfLocalDay(now);
+    // ponytail: re-reads the whole day from the host every minute; cache the host slice if it shows up in profiles
+    const [host, outbox] = await Promise.all([queryEvents(since), readEventsSince(since)]);
+    const minutes = poolMinutes(mergeById(host, outbox), fences, now);
+    const prev = await rationSpent.getValue();
+    const next = { day: localDay(now), minutes };
+    if (JSON.stringify(prev) !== JSON.stringify(next)) await rationSpent.setValue(next);
+  } catch (err) {
+    // Fail open: the last count stands (or none), so nothing new walls on a failed read.
+    console.error("[zenborg ration] recount failed:", err);
+  }
+}
 
 /**
  * Re-project DNR at the next watering-hours window edge.
@@ -55,11 +88,15 @@ export default defineBackground(() => {
     void syncFenceRules();
     void scheduleWindowEdge();
     void settleLifts(write);
+    void recountRations();
   };
   resync();
   fenceCache.watch(resync);
   openingsCache.watch(resync);
   passLifts.watch(resync);
+  rationSpent.watch(() => {
+    void syncFenceRules();
+  });
 
   // A DNR `block` leaves the browser's own error page, where nothing of ours can
   // run. A blocked top-level load is sent to the block page instead, which shows
@@ -90,5 +127,6 @@ export default defineBackground(() => {
       void flushToHost();
     }
     if (alarm.name === SCHEDULE_ALARM) resync();
+    if (alarm.name === RATION_ALARM) void recountRations();
   });
 });
