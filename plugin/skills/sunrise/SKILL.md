@@ -34,6 +34,8 @@ Before reading the board, call `mcp__zenborg__materialize_routine { boundary: "N
 
 Fetch today's state in parallel:
 - `mcp__zenborg__list_moments` with `{ "day": "YYYY-MM-DD", "allocation": "allocated" }` for today
+- the same call for yesterday, to see what was recorded
+- `mcp__zenborg__get_day_trace` with yesterday's date, for footprints: where attention actually went, per phase and area, including unplanted spans
 - `mcp__zenborg__get_running_cycle` for the active cycle, intention, and per-habit health
 - `mcp__zenborg__list_wilting_habits` for habits that need attention
 - `mcp__zenborg__get_active_moment` to see if an intention is already set
@@ -47,6 +49,7 @@ Present a compact overview:
 ```
 ## Today (YYYY-MM-DD) -- Season: [cycle name] ([intention])
 
+Yesterday: [moment1] [moment2] (or "nothing recorded")
 Sleep:     [last night's summary from Garmin]
 
 Morning:   [moment1] [moment2]
@@ -60,7 +63,15 @@ reads their own body. If Garmin returned no data (watch off, travel), say so bri
 
 Show each moment with its emoji and habit name. Empty phases are visible silence.
 
-### 3. Surface whispers
+### 3. Close yesterday's gaps
+
+Read yesterday's unplanted footprints from `get_day_trace` and suggest the moments they imply: map each sizeable span (area, phase, minutes) to the habit it most likely waters, e.g. 78 min of Themia agent work in the Afternoon → "Themia build, Afternoon". When the area is clear but the habit is not, ask which habit. Footprints only see screens, so also ask what happened off-screen (a run, a call, a walk). Hand the accepted suggestions to tend to plant on yesterday. If the days before yesterday are empty too, say how far back the silence goes and offer weather to backfill them.
+
+### 4. Suggest what to plant
+
+Cross-check the board against the habits the season's intention names and the wilting habits, and suggest concrete moments for today or tomorrow from the ones with nothing planted: habit, day, phase. Prefer a habit's scheduled phase, and keep it to 3-5 suggestions. Plant only the ones the user accepts.
+
+### 5. Surface whispers
 
 From the wilting habits, cycle health, and sleep:
 - List 3-5 habits that are wilting or approaching their rhythm threshold
@@ -70,7 +81,7 @@ From the wilting habits, cycle health, and sleep:
 
 Keep observations neutral. "Reading has been quiet for 5 days" not "you should read more."
 
-### 4. Offer the next move
+### 6. Offer the next move
 
 Close with an open question:
 - "Want to plant something for today?"
@@ -81,7 +92,7 @@ If the user responds with moments to plant, hand off to the tend workflow (decom
 
 ## Rules
 
-- Do NOT auto-plant or auto-suggest moments. Surface context; the user decides.
+- Suggest moments; never plant one without the user's yes.
 - Do NOT compute completion rates or streaks.
 - Silence is data. An empty phase is a signal, not a failure.
 - Keep the overview scannable. One line per phase, emoji-prefixed moments.
