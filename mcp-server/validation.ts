@@ -49,15 +49,16 @@ export function validateOneToThreeWords(
 // Tag normalization (mirrors src/domain/services/TagService)
 // ────────────────────────────────────────────────────────────────────────
 
-const TAG_VALID = /^[a-z0-9-]{1,20}$/;
+const TAG_VALID = /^[\p{L}\p{N}-]{1,20}$/u;
 
 function normalizeSingleTag(tag: string): string | null {
   if (!tag || typeof tag !== "string") return null;
   const normalized = tag
+    .normalize("NFC")
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
+    .replace(/[^\p{L}\p{N}-]/gu, "")
     .substring(0, 20);
   return TAG_VALID.test(normalized) ? normalized : null;
 }

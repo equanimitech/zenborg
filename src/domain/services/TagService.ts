@@ -5,7 +5,8 @@
  * Follows DDD pattern: shared behavior in domain services.
  */
 
-const TAG_REGEX = /#([a-z0-9-]+)/g;
+/** Unicode-aware inline tag pattern (global). Shared by all tag parsers. */
+export const TAG_REGEX = /#([\p{L}\p{N}-]+)/gu;
 
 /**
  * Normalizes a tag to the correct format
@@ -19,10 +20,11 @@ export function normalizeTag(tag: string): string | null {
   if (!tag || typeof tag !== "string") return null;
 
   const normalized = tag
+    .normalize("NFC")
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "-") // Replace spaces with hyphens
-    .replace(/[^a-z0-9-]/g, "") // Remove invalid characters
+    .replace(/[^\p{L}\p{N}-]/gu, "") // Remove invalid characters
     .substring(0, 20); // Limit to 20 characters
 
   return validateTag(normalized) ? normalized : null;
@@ -30,14 +32,14 @@ export function normalizeTag(tag: string): string | null {
 
 /**
  * Validates a tag format
- * Rules: lowercase, no spaces, alphanumeric + hyphen, 1-20 characters
+ * Rules: lowercase, no spaces, Unicode letters/digits + hyphen, 1-20 characters
  *
  * @param tag - Tag to validate
  * @returns True if valid
  */
 export function validateTag(tag: string): boolean {
   if (!tag || typeof tag !== "string") return false;
-  return /^[a-z0-9-]{1,20}$/.test(tag);
+  return /^[\p{L}\p{N}-]{1,20}$/u.test(tag);
 }
 
 /**
