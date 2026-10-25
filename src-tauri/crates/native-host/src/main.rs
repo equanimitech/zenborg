@@ -382,6 +382,23 @@ fn handle_request_today_moments(vault: &Path) {
     }));
 }
 
+/// Local dates covering since..now (one day of slack each side), each once.
+/// Stepping 24h can land on the same local date twice on a 25h DST-end day.
+/// A 23h day never skips a date: 24h from 00:00 lands at 01:00 next day.
+fn log_dates(since: i64, now: i64, date_of: impl Fn(i64) -> String) -> Vec<String> {
+    let day_ms: i64 = 86_400_000;
+    let mut dates: Vec<String> = Vec::new();
+    let mut ts = since - day_ms;
+    while ts <= now + day_ms {
+        let d = date_of(ts);
+        if !dates.contains(&d) {
+            dates.push(d);
+        }
+        ts += day_ms;
+    }
+    dates
+}
+
 fn handle_request_events(msg: &Value, vault: &Path) {
     let since = msg.get("since").and_then(|v| v.as_i64()).unwrap_or(0);
     // Optional: only these kinds (the pass count asks for `pass_used` over a
@@ -399,12 +416,9 @@ fn handle_request_events(msg: &Value, vault: &Path) {
     }
 
     // Collect matching JSONL files by date range
-    let day_ms: i64 = 86_400_000;
     let mut events: Vec<(i64, Value)> = Vec::new();
 
-    let mut ts = since - day_ms;
-    while ts <= now + day_ms {
-        let date_str = local_date(ts);
+    for date_str in log_dates(since, now, local_date) {
         let file = log_dir.join(format!("{date_str}.browser.jsonl"));
         if file.exists() {
             if let Ok(content) = fs::read_to_string(&file) {
@@ -424,7 +438,6 @@ fn handle_request_events(msg: &Value, vault: &Path) {
                 }
             }
         }
-        ts += day_ms;
     }
 
     events.sort_by_key(|(ts, _)| *ts);
@@ -472,6 +485,44 @@ fn main() {
             // message name (request_armed, before f0eb615) must hear why it
             // gets nothing back.
             other => write_message(&json!({"type": "error", "error": "unknown_type", "received": other})),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dst_tests {
+    use super::*;
+    use chrono::{FixedOffset, Utc};
+
+    /// Europe/London 2026: BST (+1) from 03-29 01:00Z to 10-25 01:00Z, else GMT.
+    fn london_date(ts: i64) -> String {
+        let h = if (1_774_746_000_000..1_792_890_000_000).contains(&ts) { 3600 } else { 0 };
+        let tz = FixedOffset::east_opt(h).unwrap();
+        Utc.timestamp_millis_opt(ts).unwrap().with_timezone(&tz).format("%Y-%m-%d").to_string()
+    }
+
+    fn utc_ms(y: i32, m: u32, d: u32) -> i64 {
+        Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap().timestamp_millis()
+    }
+
+    #[test]
+    fn log_dates_once_across_dst() {
+        // `since` = a day after local midnight (BST 00:00 = 23:00Z the day before), so
+        // the walk starts on local midnight: 24h later is 23:00 the same day on a 25h day.
+        let h = 3_600_000;
+        for (since, until) in [
+            (utc_ms(2026, 10, 24) - h + 86_400_000, utc_ms(2026, 10, 30)),
+            (utc_ms(2026, 3, 28) + 86_400_000, utc_ms(2026, 4, 3)),
+        ] {
+            let dates = log_dates(since, until, london_date);
+            let mut uniq = dates.clone();
+            uniq.dedup();
+            assert_eq!(dates, uniq, "duplicate date: {dates:?}");
+            // consecutive calendar days, no gaps
+            for w in dates.windows(2) {
+                let p = |s: &str| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+                assert_eq!((p(&w[1]) - p(&w[0])).num_days(), 1, "gap in {dates:?}");
+            }
         }
     }
 }
