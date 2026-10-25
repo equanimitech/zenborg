@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "src-tauri",
+    ".next",
+    "out",
+    "packages",
+    "mcp-server",
+    "extension",
+    "e2e",
+    "playwright.tauri.config.ts",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}
