@@ -17,8 +17,10 @@ import type { RuleSpec } from "../RuleSpec";
  * "This plot is watered mornings" declares a window rather than a single
  * fence: `regular` adds friction outside it, `dry` blocks a surface outright
  * for a spell, `by_hand` asks for a confirming word instead of irrigating on
- * autopilot. One factory, three modes, because all three are the same fact —
- * a window plus a restriction — read at a different mechanism.
+ * autopilot, `rationed` leaves a host pool open until its attended minutes
+ * for the day reach a budget, then walls it. One factory, four modes, because
+ * all four are the same fact — a window plus a restriction — read at a
+ * different mechanism.
  *
  * A rule is generated per surface actually declared in `restricts`: naming
  * `areas` yields a `garden` rule, `paths` a `session` rule, each `hosts`
@@ -26,7 +28,7 @@ import type { RuleSpec } from "../RuleSpec";
  * asked to restrict.
  */
 
-export type WateringHoursMode = "regular" | "dry" | "by_hand";
+export type WateringHoursMode = "regular" | "dry" | "by_hand" | "rationed";
 
 export interface WateringHoursWindow {
   readonly fromHour: number;
@@ -56,6 +58,11 @@ export interface WateringHoursInput {
    * Browser rules only; absent means `all`.
    */
   readonly reach?: BlockReach;
+  /** `rationed` mode: daily attended-minutes budget for the host pool. */
+  readonly budget?: {
+    readonly minutes: number;
+    readonly exclude: readonly string[];
+  };
 }
 
 const TEN_MINUTES: Duration = 10 * 60_000;
@@ -184,11 +191,29 @@ function primitivesFor(
       );
     case "by_hand":
       return byHandRungs(input.window, input.prompt || "");
+    case "rationed": {
+      const [rung] = dryRung(
+        input.window,
+        input.unlockNote || "Tomorrow.",
+        browser ? input.reach : undefined,
+      );
+      if (rung.kind !== "schedule" || !input.budget) return [rung];
+      return [
+        {
+          ...rung,
+          budget: {
+            minutes: input.budget.minutes,
+            pool: input.policyName,
+            exclude: [...input.budget.exclude],
+          },
+        },
+      ];
+    }
   }
 }
 
 function mechanismFor(mode: WateringHoursMode): "friction" | "access-block" {
-  return mode === "dry" ? "access-block" : "friction";
+  return mode === "dry" || mode === "rationed" ? "access-block" : "friction";
 }
 
 export function wateringHoursRules(input: WateringHoursInput): RuleSpec[] {

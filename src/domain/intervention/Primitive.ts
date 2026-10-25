@@ -219,6 +219,17 @@ export interface ScheduleSpec {
   };
   readonly wraps: Primitive;
   readonly outsideWindow: "inactive" | "passthrough";
+  /**
+   * Rationed watering: the wrapped block holds only once the pool's attended
+   * minutes for the local day reach `minutes`. `pool` is the policy name, shared
+   * by every rule the policy emits; `exclude` names subdomains that neither
+   * count nor are walled.
+   */
+  readonly budget?: {
+    readonly minutes: number;
+    readonly pool: string;
+    readonly exclude: readonly string[];
+  };
 }
 
 /**
