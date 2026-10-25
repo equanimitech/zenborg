@@ -5,6 +5,7 @@ import {
   normalizeRefs,
   normalizeSchedule,
   phaseForStartTime,
+  resolvePersonKeys,
   schedulePhaseError,
   scheduleRhythmError,
   slugify,
@@ -322,5 +323,21 @@ describe("validatePlaceUrl", () => {
 
   it("is fine with the field being absent", () => {
     expect(validatePlaceUrl(undefined)).toBeNull();
+  });
+});
+
+describe("resolvePersonKeys", () => {
+  const people = {
+    a: { id: "11111111-aaaa", key: "ada" },
+    b: { id: "22222222-bbbb", key: "bea" },
+  };
+
+  it("keeps a key, maps a UUID to its key, slugifies a name, dedupes", () => {
+    expect(
+      resolvePersonKeys(
+        ["ada", "22222222-bbbb", "Cal Jones", "11111111-aaaa", "", "ada"],
+        people,
+      ),
+    ).toEqual(["ada", "bea", "cal-jones"]);
   });
 });

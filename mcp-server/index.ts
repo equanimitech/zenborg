@@ -80,6 +80,7 @@ import {
   requireActiveHabit,
   schedulePhaseError,
   scheduleRhythmError,
+  resolvePersonKeys,
   slugify,
   timingFromSchedule,
   validateMomentTiming,
@@ -2731,7 +2732,12 @@ function buildMoment(params: {
     emoji: params.emoji ?? null,
     tags: normalizeTags(params.tags ?? undefined),
     ...(params.personIds && params.personIds.length > 0
-      ? { personIds: params.personIds }
+      ? {
+          personIds: resolvePersonKeys(
+            params.personIds,
+            readCollection(VAULT_ROOT, "people"),
+          ),
+        }
       : {}),
     ...(params.placeIds && params.placeIds.length > 0
       ? { placeIds: params.placeIds.map(slugify).filter((k) => k.length > 0) }
@@ -2770,15 +2776,21 @@ function runAddMoment(
   const cyclePlans = readCollection(VAULT_ROOT, "cyclePlans");
   const moments = readCollection(VAULT_ROOT, "moments");
   const phaseConfigs = readCollection(VAULT_ROOT, "phaseConfigs");
-  const result = resolveAddMoment(input, {
-    areas,
-    habits,
-    cycles,
-    cyclePlans,
-    moments,
-    phaseConfigs,
-    now: new Date(),
-  });
+  const people = readCollection(VAULT_ROOT, "people");
+  const result = resolveAddMoment(
+    input.personIds
+      ? { ...input, personIds: resolvePersonKeys(input.personIds, people) }
+      : input,
+    {
+      areas,
+      habits,
+      cycles,
+      cyclePlans,
+      moments,
+      phaseConfigs,
+      now: new Date(),
+    },
+  );
   if (!result.ok) return { err: result.error };
   moments[result.moment.id] = result.moment;
   writeCollection(VAULT_ROOT, "moments", moments);
@@ -2838,7 +2850,12 @@ defineTool(server, {
       ),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2874,7 +2891,12 @@ defineTool(server, {
     phase: PhaseSchema.nullable().optional(),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2918,7 +2940,13 @@ defineTool(server, {
     emoji: z.string().nullable().optional(),
     phase: PhaseSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).nullable().optional(),
+    personIds: z
+      .array(z.string())
+      .nullable()
+      .optional()
+      .describe(
+        "Person keys (ids or names are resolved to keys); null or [] clears.",
+      ),
     placeIds: z.array(z.string()).nullable().optional(),
     placeUrl: z.string().nullable().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2991,7 +3019,10 @@ defineTool(server, {
     if ("personIds" in updates) {
       // Absent is the single empty representation — the same one `buildMoment`
       // writes — so an empty list clears the key rather than persisting `[]`.
-      const list = updates.personIds ?? [];
+      const list = resolvePersonKeys(
+        updates.personIds ?? [],
+        readCollection(VAULT_ROOT, "people"),
+      );
       if (list.length === 0) {
         delete next.personIds;
       } else {
@@ -3210,7 +3241,12 @@ defineTool(server, {
     order: z.number().int().nonnegative().optional(),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     startTime: StartTimeSchema.optional(),

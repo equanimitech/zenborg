@@ -119,6 +119,27 @@ export function slugify(label: string): string {
     .replace(/^-|-$/g, "");
 }
 
+/**
+ * Maps raw `personIds` entries to person keys, which is what the app resolves
+ * badges by. A key stays; a person's UUID becomes that person's key; anything
+ * else is slugified (an unknown key is still allowed through). Deduped, empties
+ * dropped.
+ */
+export function resolvePersonKeys(
+  raw: readonly string[],
+  people: Record<string, { id: string; key: string }>,
+): string[] {
+  const all = Object.values(people);
+  const keys: string[] = [];
+  for (const entry of raw) {
+    const hit =
+      all.find((p) => p.key === entry) ?? all.find((p) => p.id === entry);
+    const key = hit ? hit.key : slugify(entry);
+    if (key.length > 0 && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
+
 /** The pasted place link, named when it does not parse. Null when absent. */
 export function validatePlaceUrl(url: string | undefined): string | null {
   if (url === undefined) return null;
