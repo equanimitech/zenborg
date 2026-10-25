@@ -185,6 +185,7 @@ import {
   conciseRelationship,
   stripNulls,
 } from "./serialize.js";
+import { getBlockHits } from "./block-hits.js";
 import {
   conciseSiteMinutes,
   getSiteMinutes,
@@ -4522,6 +4523,26 @@ defineTool(server, {
     }
     return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
   },
+});
+
+defineTool(server, {
+  name: "get_block_hits",
+  description:
+    "How often a hard-blocked site was attempted: `block_hit` counts per host per machine-local day " +
+    "over the last `days` days (today included); a host includes its subdomains. " +
+    "Attempts only, not a score. The log holds domains, never URLs.",
+  schema: {
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(90)
+      .default(7)
+      .describe("Window length in local days, ending today."),
+    host: z.string().min(1).optional().describe('One host, e.g. "x.com".'),
+  },
+  annotations: { readOnlyHint: true },
+  handler: async (params) => ok(getBlockHits(logDir(VAULT_ROOT), params)),
 });
 
 defineTool(server, {
