@@ -152,6 +152,12 @@ export function monthName(now: number): string {
 
 export const PASS_USED_KIND = "pass_used";
 export const OPENING_ACTIVE_KIND = "opening_active";
+export const BLOCK_HIT_KIND = "block_hit";
+
+/** `block_hit`: a blocked load was attempted. The domain and the blocking fence ids. Never the URL. */
+export function blockHitPayload(domain: string, fences: readonly { readonly id: string }[]) {
+  return { domain, fenceIds: fences.map((f) => f.id) };
+}
 
 /** Passes spent this local month, from `pass_used` events. Counted, never scored. */
 export function passesUsedThisMonth(

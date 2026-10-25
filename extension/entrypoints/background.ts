@@ -3,7 +3,7 @@ import { startActivityWriter } from "@/modules/activity/writer";
 import { syncFenceRules } from "@/modules/fence/project";
 import { allLifts, fenceCache, liveFences, openingsCache, passLifts } from "@/modules/fence/store";
 import { nextScheduleBoundary } from "@/modules/fence/parse";
-import { nextLiftEdge } from "@/modules/fence/lifts";
+import { BLOCK_HIT_KIND, blockHitPayload, nextLiftEdge } from "@/modules/fence/lifts";
 import { blockingFences, settleLifts } from "@/modules/fence/pass";
 import { domainFromUrl } from "@/modules/activity/events";
 import { flushToHost } from "@/modules/relay/client";
@@ -72,7 +72,9 @@ export default defineBackground(() => {
     const host = domainFromUrl(nav.url);
     if (host === null) return;
     void liveFences().then((fences) => {
-      if (blockingFences(fences, host).length === 0) return;
+      const blocking = blockingFences(fences, host);
+      if (blocking.length === 0) return;
+      write(BLOCK_HIT_KIND, blockHitPayload(host, blocking));
       const page = browser.runtime.getURL("/block.html");
       const query = new URLSearchParams({ host, u: nav.url });
       return browser.tabs.update(nav.tabId, { url: `${page}?${query}` });

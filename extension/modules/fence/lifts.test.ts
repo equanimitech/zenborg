@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  blockHitPayload,
   isLiftActive,
   nextLiftEdge,
   passesUsedThisMonth,
@@ -188,5 +189,14 @@ describe("the block page boundary", () => {
     expect(returnTarget("https://evil.example/", "youtube.com")).toBe("https://youtube.com/");
     expect(returnTarget("javascript:alert(1)", "youtube.com")).toBe("https://youtube.com/");
     expect(returnTarget(null, "youtube.com")).toBe("https://youtube.com/");
+  });
+});
+
+describe("block_hit payload", () => {
+  it("carries the domain and the fence ids, nothing else", () => {
+    const fences = [{ id: "f1", label: "https://x.com/secret?q=1" }, { id: "f2" }];
+    const payload = blockHitPayload("x.com", fences);
+    expect(payload).toEqual({ domain: "x.com", fenceIds: ["f1", "f2"] });
+    expect(JSON.stringify(payload)).not.toMatch(/https?:|secret/);
   });
 });
