@@ -67,6 +67,7 @@ mcp-server/bun.lock
 .local/
 *.local.json
 .claude/*.local.md
+.claude/attently/
 *.local.csv
 highlights.local.json
 
