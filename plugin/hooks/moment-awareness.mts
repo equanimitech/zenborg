@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
 
 const VAULT =
   process.env.ZENBORG_HOME ||
@@ -73,10 +74,6 @@ function currentPhase(configs: PhaseConfig[]): PhaseConfig | null {
   return null;
 }
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 /** Fuzzy match cwd path segments against area names. */
 function matchArea(cwd: string, areas: Area[]): Area | null {
   const segments = cwd.split("/");
@@ -131,16 +128,21 @@ async function main(): Promise<void> {
   const cwd = process.cwd();
   const matchedArea = matchArea(cwd, areas);
 
-  const today = todayISO();
+  const today = wakingDayKey();
   const todayMoments = Object.values(momentsMap).filter((m) =>
     m.day?.startsWith(today),
   );
   const phaseMoments = todayMoments.filter((m) => m.phase === phase!.phase);
 
-  // ── Active moment is set → report context, detect staleness ─────────
+  // ── Active moment is set → report context. A pointer to a moment that is
+  // not on today's board is released: read as none, never written (one writer).
+  let released = "";
   if (activeMoment.momentId) {
     const active = momentsMap[activeMoment.momentId];
-    if (active) {
+    const reason = staleReason(active, today);
+    if (reason) {
+      released = `Stale active moment${active ? ` "${active.name}"` : ""} released (${reason}). `;
+    } else if (active) {
       const area = active.areaId ? areasMap[active.areaId] : null;
       const ago = activeMoment.at ? minutesAgo(activeMoment.at) : 0;
       const areaLabel = area ? ` (${area.emoji ?? ""} ${area.name})`.trim() : "";
@@ -148,13 +150,13 @@ async function main(): Promise<void> {
       const stale = ago > 120;
 
       if (phaseChanged || stale) {
-        const reason = phaseChanged
+        const why = phaseChanged
           ? `phase changed (was ${active.phase}, now ${phase!.label})`
           : `set ${ago}m ago`;
         process.stdout.write(
           `<zenborg-intention: stale active "${active.name}"${areaLabel} — ` +
-            `${reason}. Propose refreshing: clear_active_moment and pick a ` +
-            `${phase!.label} moment, or ask the gardener.>`,
+            `${why}. Propose picking a ${phase!.label} moment ` +
+            `(set_active_moment overwrites it), or ask the gardener.>`,
         );
       } else {
         process.stdout.write(
@@ -170,7 +172,7 @@ async function main(): Promise<void> {
   // ── No active moment → propose one ─────────────────────────────────
   const lines: string[] = [];
   lines.push(
-    `No active intention. Phase: ${phase!.label} (${phase!.startHour}:00–${phase!.endHour}:00).`,
+    `${released}No active intention. Phase: ${phase!.label} (${phase!.startHour}:00–${phase!.endHour}:00).`,
   );
 
   let bestMatch: Moment | null = null;
