@@ -58,7 +58,10 @@ CAL_DIR="$WORKSPACE_ROOT/calendar-sidecar"
 if [[ -d "$CAL_DIR/Sources" ]]; then
   echo "[sidecars] compiling zenborg-calendar (swiftc)"
   mkdir -p "$CAL_DIR/dist"
-  xcrun swiftc -O "$CAL_DIR"/Sources/*.swift \
+  # Pin minos: swiftc defaults to the build host's OS, so a macOS 26 CI
+  # runner emits a binary that dyld refuses on older Macs. 14.0 is the floor
+  # for EventKit's requestFullAccessToEvents.
+  xcrun swiftc -O -target "$(uname -m)-apple-macos14.0" "$CAL_DIR"/Sources/*.swift \
     -o "$CAL_DIR/dist/zenborg-calendar" \
     -framework EventKit -framework Foundation
   cp "$CAL_DIR/dist/zenborg-calendar" "$DEST/zenborg-calendar-$TARGET"
