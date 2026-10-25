@@ -257,7 +257,18 @@ function proceedFromPrimitive(p: Record<string, unknown>): ProceedAffordance | n
   return null;
 }
 
-function readSchedule(p: Record<string, unknown>): { inner: Record<string, unknown>; schedule: ScheduleWindow } | null {
+function readBudget(raw: unknown): Fence["budget"] | undefined {
+  if (!isRecord(raw)) return undefined;
+  const minutes = Number(raw.minutes);
+  const pool = text(raw.pool);
+  if (!Number.isFinite(minutes) || minutes <= 0 || pool === "") return undefined;
+  const exclude = Array.isArray(raw.exclude) ? [...readDomains(raw.exclude)] : [];
+  return { minutes, pool, exclude };
+}
+
+function readSchedule(
+  p: Record<string, unknown>,
+): { inner: Record<string, unknown>; schedule: ScheduleWindow; budget?: Fence["budget"] } | null {
   if (p.kind !== "schedule") return null;
   const window = isRecord(p.window) ? p.window : null;
   const wraps = isRecord(p.wraps) ? p.wraps : null;
@@ -268,8 +279,10 @@ function readSchedule(p: Record<string, unknown>): { inner: Record<string, unkno
   const weekdays = Array.isArray(window.weekdays)
     ? (window.weekdays as unknown[]).filter((w): w is string => typeof w === "string")
     : undefined;
+  const budget = readBudget(p.budget);
   return {
     inner: wraps,
+    ...(budget ? { budget } : {}),
     schedule: {
       fromHour, toHour,
       ...(weekdays && weekdays.length > 0 ? { weekdays } : {}),
@@ -348,6 +361,7 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
     let proceed = readProceed(value.proceed);
     let domains = readDomains(value.domains);
     let schedule: ScheduleWindow | undefined;
+    let budget: Fence["budget"];
     let abortLabel = isRecord(value.abort) ? text(value.abort.label) : "";
 
     if (enforcement === null && Array.isArray(value.primitives)) {
@@ -361,6 +375,7 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
         if (sched) {
           inner = sched.inner;
           schedule = sched.schedule;
+          budget = sched.budget;
         }
         enforcement = enforcementFromPrimitive(inner);
         proceed = proceed ?? proceedFromPrimitive(inner);
@@ -419,6 +434,7 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
       ...(abortLabel === "" ? {} : { abort: { label: abortLabel } }),
       ...(rungs ? { rungs } : {}),
       ...(schedule ? { schedule } : {}),
+      ...(budget ? { budget } : {}),
       deliveryProbability: readProbability(value.deliveryProbability),
       ...readOutcome(value),
     };
@@ -479,6 +495,7 @@ export function fencesFor(fences: Fences, host: string): readonly Fence[] {
   }
   const out: Fence[] = [];
   for (const entry of Object.values(fences)) {
+    if (entry.budget?.exclude.some((x) => covers(x, needle))) continue;
     if (entry.domains.some((d) => covers(d, needle)) && isFenceActive(entry)) {
       out.push(entry);
     }
@@ -505,6 +522,8 @@ export function standingBlockHosts(
     if (e.kind !== "block" || !e.standing || e.enforcement !== "browser") {
       continue;
     }
+    // Budgeted fences project through `rationBlocks`, which carries their exclusions.
+    if (entry.budget) continue;
     if (reach !== undefined && (e.reach ?? "all") !== reach) continue;
     if (!isFenceActive(entry)) continue;
     for (const domain of entry.domains) {

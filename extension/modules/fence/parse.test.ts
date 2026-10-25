@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   fenceableHosts,
   exitLine,
@@ -515,5 +515,51 @@ describe("nextScheduleBoundary", () => {
     const fences = { m: fence("m", { fromHour: 0, toHour: 0, weekdays: ["MON"], outsideWindow: "inactive" }) };
     expect(nextScheduleBoundary(fences, at(5, 15))).toBe(at(6, 0).getTime());
     expect(nextScheduleBoundary(fences, at(7, 15))).toBe(at(12, 0).getTime());
+  });
+});
+
+function rationedEntry(host: string): Record<string, unknown> {
+  return {
+    id: `watering:youtube-weekend:browser:${host}`,
+    name: `youtube-weekend (${host})`,
+    scope: { surface: "browser", domain: host },
+    primitives: [
+      {
+        kind: "schedule",
+        window: { fromHour: 0, toHour: 0, weekdays: ["SAT", "SUN"] },
+        outsideWindow: "inactive",
+        budget: { minutes: 60, pool: "youtube-weekend", exclude: ["music.youtube.com"] },
+        wraps: {
+          kind: "cooldown",
+          duration: { type: "standing" },
+          unlockPath: { type: "out_of_band", note: "Tomorrow." },
+          enforcement: { at: "browser", reach: "navigation" },
+        },
+      },
+    ],
+  };
+}
+
+describe("budgeted fences", () => {
+  const { fences } = parseFences({ a: rationedEntry("youtube.com") }, new Date(2026, 9, 24, 14).getTime())!;
+  it("reads the budget off the schedule primitive", () => {
+    expect(fences["watering:youtube-weekend:browser:youtube.com"].budget).toEqual({
+      minutes: 60,
+      pool: "youtube-weekend",
+      exclude: ["music.youtube.com"],
+    });
+  });
+  it("fencesFor skips an excluded subdomain", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 24, 14));
+    expect(fencesFor(fences, "www.youtube.com")).toHaveLength(1);
+    expect(fencesFor(fences, "music.youtube.com")).toHaveLength(0);
+    vi.useRealTimers();
+  });
+  it("standingBlockHosts leaves budgeted fences to their own rule", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 24, 14));
+    expect(standingBlockHosts(fences)).toEqual([]);
+    vi.useRealTimers();
   });
 });

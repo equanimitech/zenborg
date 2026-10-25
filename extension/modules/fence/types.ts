@@ -101,6 +101,8 @@ export interface Fence {
   readonly rungs?: readonly GateRungSpec[];
   /** When set, the fence holds inside this window (and outside it only on `passthrough`). */
   readonly schedule?: ScheduleWindow;
+  /** Rationed watering: holds only once the pool's minutes today reach `minutes`. */
+  readonly budget?: { readonly minutes: number; readonly pool: string; readonly exclude: readonly string[] };
   /**
    * From `RuleSpec.deliveryProbability`. `1` means the rule never withholds;
    * anything below it buys the comparison condition a proximal outcome needs.
