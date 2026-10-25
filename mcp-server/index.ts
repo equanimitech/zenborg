@@ -4069,7 +4069,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Three modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -4078,9 +4078,9 @@ defineTool(server, {
         "Policy handle — shown back at every crossing, used in derived ids",
       ),
     mode: z
-      .enum(["regular", "dry", "by_hand"])
+      .enum(["regular", "dry", "by_hand", "rationed"])
       .describe(
-        "regular = gentle friction, dry = standing block, by_hand = tool-level gate",
+        "regular = gentle friction, dry = standing block, by_hand = tool-level gate, rationed = open until budgetMinutes of attended time today, then walled",
       ),
     window: z
       .object({
@@ -4138,7 +4138,22 @@ defineTool(server, {
         .array(z.string().min(1))
         .optional()
         .describe("Tool names to gate — Edit, Write (by_hand mode)"),
+      excludeHosts: z
+        .array(z.string().min(1))
+        .optional()
+        .describe(
+          "rationed mode: subdomains of restricted hosts that neither count nor are walled (e.g. music.youtube.com)",
+        ),
     }),
+    budgetMinutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(1440)
+      .optional()
+      .describe(
+        "rationed mode: attended minutes allowed per local day across the policy's hosts",
+      ),
     prompt: z
       .string()
       .optional()
@@ -4146,9 +4161,9 @@ defineTool(server, {
     unlockNote: z
       .string()
       .optional()
-      .describe("How the block is lifted (REQUIRED for dry mode)"),
+      .describe("How the block is lifted (REQUIRED for dry and rationed modes)"),
     reach: ReachSchema.describe(
-      'dry mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
+      'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
     ),
   },
   handler: async (input) => {

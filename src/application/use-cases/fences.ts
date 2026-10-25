@@ -300,15 +300,19 @@ export interface WateringHoursDeclaration {
     readonly paths?: readonly string[];
     readonly hosts?: readonly string[];
     readonly tools?: readonly string[];
+    /** `rationed` mode: subdomains of `hosts` that neither count nor are walled. */
+    readonly excludeHosts?: readonly string[];
   };
   readonly prompt?: string;
   readonly unlockNote?: string;
   /**
-   * What a `dry` browser block stops. Omitted on a re-declaration, the reach
-   * the policy's browser rules already carry is kept; omitted on a first
-   * declaration, `all`.
+   * What a `dry` or `rationed` browser block stops. Omitted on a re-declaration,
+   * the reach the policy's browser rules already carry is kept; omitted on a
+   * first declaration, `all`.
    */
   readonly reach?: BlockReach;
+  /** `rationed` mode: attended minutes allowed per local day across the pool. */
+  readonly budgetMinutes?: number;
 }
 
 export type DeclareWateringHoursResult = DeclareFencesResult;
@@ -330,6 +334,42 @@ export async function declareWateringHours(
     problems.push(
       "dry mode requires unlockNote — a block that names no way out is refused (invariant 6)",
     );
+  }
+
+  if (input.mode === "rationed") {
+    if (!input.unlockNote || input.unlockNote.trim() === "") {
+      problems.push(
+        "rationed mode requires unlockNote — a block that names no way out is refused (invariant 6)",
+      );
+    }
+    const m = input.budgetMinutes;
+    if (m === undefined || !Number.isInteger(m) || m < 1 || m > 1440) {
+      problems.push(
+        "rationed mode requires budgetMinutes, a whole number from 1 to 1440",
+      );
+    }
+    if (!input.restricts.hosts || input.restricts.hosts.length === 0) {
+      problems.push("rationed mode rations hosts: restricts.hosts is required");
+    }
+    if (
+      input.restricts.areas?.length ||
+      input.restricts.paths?.length ||
+      input.restricts.tools?.length
+    ) {
+      problems.push(
+        "rationed mode is browser-only: drop restricts.areas, paths and tools",
+      );
+    }
+    for (const ex of input.restricts.excludeHosts ?? []) {
+      const hosts = input.restricts.hosts ?? [];
+      if (!hosts.some((h) => ex.endsWith(`.${h}`))) {
+        problems.push(
+          `excludeHosts "${ex}" is not a subdomain of any restricted host`,
+        );
+      }
+    }
+  } else if (input.budgetMinutes !== undefined) {
+    problems.push("budgetMinutes applies to rationed mode only");
   }
 
   const areas = await deps.garden.areas();
@@ -406,6 +446,14 @@ export async function declareWateringHours(
     prompt: input.prompt,
     unlockNote: input.unlockNote,
     ...(reach ? { reach } : {}),
+    ...(input.mode === "rationed" && input.budgetMinutes !== undefined
+      ? {
+          budget: {
+            minutes: input.budgetMinutes,
+            exclude: [...(input.restricts.excludeHosts ?? [])],
+          },
+        }
+      : {}),
   });
 
   for (const rule of rules) {

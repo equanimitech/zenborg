@@ -7,6 +7,7 @@ import {
 import type { RuleSpec } from "@/domain/intervention/RuleSpec";
 import { validateRuleSpec } from "@/domain/intervention/RuleSpec";
 import { Phase } from "@/domain/value-objects/Phase";
+import { Weekday } from "@/domain/value-objects/Schedule";
 
 const AREAS: AreaRef[] = [
   { id: "area-wellness", name: "Wellness" },
@@ -192,5 +193,85 @@ describe("clearFences with policy prefix", () => {
     if ("problems" in result) throw new Error(result.problems.join("; "));
     expect(result.cleared.length).toBeGreaterThan(0);
     expect(Object.keys(stored()).length).toBe(0);
+  });
+});
+
+describe("declareWateringHours — rationed", () => {
+  const base = {
+    name: "youtube-weekend",
+    mode: "rationed" as const,
+    window: {
+      fromHour: 0,
+      toHour: 0,
+      weekdays: [Weekday.SAT, Weekday.SUN] as const,
+    },
+    waters: ["Wellness"],
+    restricts: {
+      hosts: ["youtube.com", "m.youtube.com", "youtu.be"],
+      excludeHosts: ["music.youtube.com"],
+    },
+    unlockNote: "Tomorrow.",
+    reach: "navigation" as const,
+    budgetMinutes: 60,
+  };
+
+  it("writes one rule per host with the budget", async () => {
+    const { d, stored } = deps();
+    const result = await declareWateringHours(d, base);
+    if ("problems" in result) throw new Error(result.problems.join("; "));
+    expect(result.declared).toHaveLength(3);
+    const p =
+      stored()["watering:youtube-weekend:browser:youtube.com"].primitives[0];
+    expect(p.kind === "schedule" && p.budget).toEqual({
+      minutes: 60,
+      pool: "youtube-weekend",
+      exclude: ["music.youtube.com"],
+    });
+  });
+
+  it("refuses rationed without budgetMinutes", async () => {
+    const { budgetMinutes: _, ...rest } = base;
+    const result = await declareWateringHours(deps().d, rest);
+    expect("problems" in result && result.problems.join()).toMatch(
+      /budgetMinutes/,
+    );
+  });
+
+  it.each([0, 1441, 1.5])("refuses budgetMinutes %s", async (budgetMinutes) => {
+    const result = await declareWateringHours(deps().d, {
+      ...base,
+      budgetMinutes,
+    });
+    expect("problems" in result && result.problems.join()).toMatch(
+      /budgetMinutes/,
+    );
+  });
+
+  it("refuses budgetMinutes on a dry policy", async () => {
+    const result = await declareWateringHours(deps().d, {
+      ...base,
+      mode: "dry",
+    });
+    expect("problems" in result && result.problems.join()).toMatch(
+      /budgetMinutes/,
+    );
+  });
+
+  it("refuses an excluded host outside the pool", async () => {
+    const result = await declareWateringHours(deps().d, {
+      ...base,
+      restricts: { ...base.restricts, excludeHosts: ["vimeo.com"] },
+    });
+    expect("problems" in result && result.problems.join()).toMatch(
+      /excludeHosts/,
+    );
+  });
+
+  it("refuses rationed on garden or session surfaces", async () => {
+    const result = await declareWateringHours(deps().d, {
+      ...base,
+      restricts: { ...base.restricts, areas: ["Craft"] },
+    });
+    expect("problems" in result && result.problems.join()).toMatch(/rationed/);
   });
 });
