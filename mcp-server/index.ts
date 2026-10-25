@@ -144,6 +144,7 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
+import { staleReason, wakingDayKey } from "../src/domain/attention/ActiveMoment.ts";
 import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
@@ -3233,38 +3234,12 @@ defineTool(server, {
 // keel reads it and surfaces it in every Claude Code session. The file contract
 // lives in vault.ts.
 
-/**
- * The waking-day key, rolling at 04:00 rather than midnight.
- *
- * Mirrors `focusDayKey` / `DAY_START_HOUR` in keel's `apps/agent/core.mjs` and
- * must stay in lockstep with it: keel honours the pointer only while the moment
- * it names sits on *its* waking-day, so if the two disagreed, a moment set at
- * 02:00 would be written here and silently ignored there.
- */
-const DAY_START_HOUR = 4;
-
-function wakingDayKey(now: Date = new Date()): string {
-  const rolled = new Date(now.getTime() - DAY_START_HOUR * 3600_000);
-  const y = rolled.getFullYear();
-  const m = String(rolled.getMonth() + 1).padStart(2, "0");
-  const d = String(rolled.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 /** Shape the pointer into something a reader can act on without a second call. */
-function describeActiveMoment(pointer: { momentId: string; at: string }) {
-  const moment = readCollection(VAULT_ROOT, "moments")[pointer.momentId];
-  if (!moment) {
-    return {
-      ...pointer,
-      moment: null,
-      active: false,
-      stale: true,
-      reason: "moment no longer exists",
-    };
-  }
+function describeActiveMoment(
+  pointer: { momentId: string; at: string },
+  moment: Moment,
+) {
   const area = readCollection(VAULT_ROOT, "areas")[moment.areaId];
-  const onToday = moment.day === wakingDayKey();
   return {
     ...pointer,
     moment: {
@@ -3274,14 +3249,7 @@ function describeActiveMoment(pointer: { momentId: string; at: string }) {
       phase: moment.phase,
     },
     area: area ? { id: area.id, name: area.name } : null,
-    // keel surfaces the intention only while this is true.
-    active: onToday,
-    ...(onToday
-      ? {}
-      : {
-          stale: true,
-          reason: `moment is allocated to ${moment.day}, not today`,
-        }),
+    active: true,
   };
 }
 
@@ -3334,20 +3302,32 @@ defineTool(server, {
     }
 
     const pointer = writeActiveMoment(VAULT_ROOT, moment.id, nowIso());
-    return ok({ set: describeActiveMoment(pointer) });
+    return ok({ set: describeActiveMoment(pointer, moment) });
   },
 });
 
 defineTool(server, {
   name: "get_active_moment",
   description:
-    "Read the current intention pointer, resolved to its moment and area. Returns null when nothing is active.",
+    "Read the current intention pointer, resolved to its moment and area. Returns null when nothing is active. A pointer to a moment that is not on today's board is stale and reads as released: active is null and `released` says which moment and why (the file is left for the next set_active_moment to overwrite).",
   schema: {},
   annotations: { readOnlyHint: true },
   handler: async () => {
     const pointer = readActiveMoment(VAULT_ROOT);
     if (!pointer) return ok({ active: null });
-    return ok({ active: describeActiveMoment(pointer) });
+    const moment = readCollection(VAULT_ROOT, "moments")[pointer.momentId];
+    const reason = staleReason(moment, wakingDayKey());
+    if (reason || !moment) {
+      return ok({
+        active: null,
+        released: {
+          momentId: pointer.momentId,
+          name: moment?.name ?? null,
+          reason,
+        },
+      });
+    }
+    return ok({ active: describeActiveMoment(pointer, moment) });
   },
 });
 

@@ -787,15 +787,34 @@ try {
       );
       parseOk(await callTool("delete_moment", { id: todayMoment.id }));
       const parsed = parseOk(await callTool("get_active_moment", {}));
-      if (parsed.active?.stale !== true) {
+      if (parsed.active !== null || !parsed.released?.reason) {
         throw new Error(
-          `expected stale:true, got ${JSON.stringify(parsed.active)}`,
+          `expected released pointer, got ${JSON.stringify(parsed)}`,
         );
       }
-      if (parsed.active?.active !== false)
-        throw new Error("a vanished moment must not read as active");
     },
   );
+
+  await step("a pointer to another day reads as released", async () => {
+    const other = parseOk(
+      await callTool("create_standalone_moment", {
+        name: "old news",
+        areaId,
+        day: "2000-01-01",
+        phase: "MORNING",
+      }),
+    ).created;
+    writeFileSync(
+      path.join(vault, "activeMoment.json"),
+      JSON.stringify({ momentId: other.id, at: new Date().toISOString() }),
+    );
+    const parsed = parseOk(await callTool("get_active_moment", {}));
+    if (parsed.active !== null || parsed.released?.name !== "old news") {
+      throw new Error(`expected released, got ${JSON.stringify(parsed)}`);
+    }
+    if (!existsSync(path.join(vault, "activeMoment.json")))
+      throw new Error("a read must not clear the pointer");
+  });
 
   // ── People CRUD ──
 

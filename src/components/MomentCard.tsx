@@ -3,6 +3,7 @@
 import { use$ } from "@legendapp/state/react";
 import type { Area } from "@/domain/entities/Area";
 import type { Moment } from "@/domain/entities/Moment";
+import { staleReason, wakingDayKey } from "@/domain/attention/ActiveMoment";
 import { useActiveMoment } from "@/hooks/useActiveMoment";
 import { useHabitHealth } from "@/hooks/useHabitHealth";
 import { useSelection } from "@/hooks/useSelection";
@@ -61,7 +62,9 @@ export function MomentCard({
   const { activeMomentId, toggleActive } = useActiveMoment();
 
   const isSelected = isSelectedMoment(moment.id);
-  const isActive = activeMomentId === moment.id;
+  // A pointer to a moment off today's board is stale: shown as none.
+  const isActive =
+    activeMomentId === moment.id && !staleReason(moment, wakingDayKey());
 
   // Health-based emoji treatment (opacity) — "unstated" when no habit link
   const { health } = useHabitHealth(moment.habitId ?? "");
