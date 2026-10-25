@@ -19,8 +19,8 @@ First use: YouTube on weekends, 60 minutes a day.
 
 **In:**
 - `rationed` mode on `set_watering_hours`, with `budgetMinutes` and `restricts.excludeHosts`.
-- An optional `reach: "navigation"` on `set_watering_hours` for `dry` and `rationed`, so a re-declaration can carry it (see "Bug folded in").
-- Extension: budget-aware activation, a recount alarm, an allow rule for excluded hosts, a popup readout.
+- `reach` (already on `set_watering_hours` for `dry`) extended to `rationed`.
+- Extension: budget-aware activation, a recount alarm, a dedicated DNR rule that spares excluded hosts, a popup readout.
 
 **Out:**
 - Chess. It keeps its `chess-afternoon` clock window, every day.
@@ -64,26 +64,30 @@ budget?: {
 }
 ```
 
-`reach`, when given, becomes `wraps.enforcement = { at: "browser", reach: "navigation" }` for both `dry` and `rationed`.
+`reach` already becomes `wraps.enforcement = { at: "browser", reach }` for `dry` browser rules (`dryRung`); `rationed` reuses `dryRung`, so it inherits that and the use case's `priorReach` keep-on-redeclare.
 
 ## Extension
 
 ```
-activity log (IndexedDB, activity/log.ts)
-   └─► bouts() (modules/domain/bouts.ts) ─► spentToday: Record<pool, minutes>
+today's events = host copy (relay queryEvents) ∪ outbox (activity/log.ts readEventsSince), mergeById
+   └─► bouts() ─► rationSpent { day, minutes: Record<pool, number> }  (chrome.storage.local)
 fence cache ─► parse.ts: Fence.budget { minutes, pool, exclude }
-   └─► isFenceActive(fence, now, spent) = inWindow && (no budget || spent[pool] >= minutes)
-          └─► project.ts: DNR rule 3 (navigation) + DNR allow rule for excluded hosts
+   └─► liveFences() = withLifts(withRations(fences, spent, now))   // unspent pools drop out, like a lift
+          └─► project.ts: one DNR block rule per spent pool, requestDomains = pool hosts,
+                          excludedRequestDomains = exclude, reach from the fence
 ```
+
+The local log is an outbox: the relay deletes events once the host acks them, so today's count must merge the host's copy with the outbox. `fence/pass.ts` (`passesUsed`) already does exactly this; reuse the pattern.
 
 **Units, each pure unless noted:**
 
 | Unit | Does | Depends on |
 |---|---|---|
-| `fence/budget.ts` (new) | `poolMinutes(events, pools, day)`: today's attended minutes per pool, hosts matched by longest suffix, `exclude` dropped | `bouts()`, `localDay` |
-| `fence/parse.ts` | reads `budget` off the schedule primitive into `Fence.budget`; `isFenceActive` takes `spent` | types |
+| `fence/ration.ts` (new) | `poolMinutes(events, fences, now)`: today's attended minutes per pool, excluded hosts dropped. `withRations(fences, spent, now)`: drops budgeted fences whose pool is under budget. `rationBlocks(fences)`: one `{ domains, except, reach }` per pool | `bouts()` |
+| `fence/parse.ts` | reads `budget` off the schedule primitive into `Fence.budget`; `fencesFor` skips a host covered by `budget.exclude`; `standingBlockHosts` skips budgeted fences (they get their own rule) | types |
 | `fence/types.ts` | `Fence.budget?: { minutes; pool; exclude }` | none |
-| `fence/project.ts` (I/O) | passes `spent` through; adds an `allow` rule (priority above the block) for excluded hosts of active budgeted fences | DNR |
+| `fence/project.ts` (I/O) | one block rule per spent pool (ids 100+), `excludedRequestDomains` for the exclude list | DNR |
+| `fence/store.ts` (I/O) | `rationSpent` storage item; `liveFences` applies `withRations` | storage |
 | `entrypoints/background.ts` (I/O) | a `zenborg-ration` alarm, every 1 min while any rationed window is open, recomputes `spent` from the log and re-projects | alarms, log |
 | popup | `YouTube: 42 / 60 min today` per active pool, plain text only: no bar, no colour change near the budget (red line: progress bars against targets) | `poolMinutes` |
 
@@ -93,11 +97,13 @@ fence cache ─► parse.ts: Fence.budget { minutes, pool, exclude }
 
 **Failure mode:** if the log read throws, `spent` is treated as 0 for that tick (no wall) and the error is logged with `console.error`. A budget that cannot count must not wall; a blocker that fails silently is worse than none, so the error is never swallowed.
 
-**Permissions:** DNR `allow` and `block` need no host permissions. Zero `host_permissions` stays true.
+**Why not a DNR `allow` rule for music:** a higher-priority allow would also beat the night and Monday blocks on music.youtube.com. `excludedRequestDomains` on the budget's own rule spares music from this policy only.
 
-## Bug folded in
+**Permissions:** DNR `block` with `excludedRequestDomains` needs no host permissions. Zero `host_permissions` stays true.
 
-`set_watering_hours` cannot express `enforcement.reach`. On 2026-10-25, re-declaring `chess-afternoon` dropped the hand-added `reach: "navigation"`, which would have killed a live game's websocket at 16h. It was restored by hand in `~/.zenborg/fences.json`. The optional `reach` parameter above closes this: after it ships, `chess-afternoon` is re-declared with `reach: "navigation"` and nothing is hand-edited.
+## Note: the reach drop was a stale server
+
+On 2026-10-25 a re-declaration of `chess-afternoon` dropped `reach: "navigation"`. The repo already exposes `reach` and keeps it on re-declare (`priorReach`); the session was talking to an MCP server built before that. It was restored by hand in `~/.zenborg/fences.json`. Nothing to build; reconnecting the server is the fix.
 
 ## Acceptance
 
@@ -106,19 +112,18 @@ fence cache ─► parse.ts: Fence.budget { minutes, pool, exclude }
 3. music.youtube.com never counts toward the pool and is never walled by `youtube-weekend`.
 4. On Monday the policy is inactive whatever the minutes.
 5. The popup shows the pool's minutes against the budget.
-6. Re-declaring `chess-afternoon` with `reach: "navigation"` keeps navigation reach.
+6. The block page shows the unlock note when a walled youtube.com load is redirected.
 7. The pool minutes for a day equal `get_site_minutes` for the same hosts and day (minus excluded hosts), within rounding.
 
 ## Tests
 
-- `fence/budget.test.ts`: sums across pool hosts; drops excluded subdomains; per-day split; empty log is 0.
-- `fence/parse.test.ts`: budget parsed; active only when in window and spent ≥ budget; no budget means current behavior.
-- `fence/project.test.ts`: allow rule emitted for excluded hosts only while the budgeted fence is active.
-- `src/application/__tests__/fenceAuthoring.test.ts`: rationed without `budgetMinutes` refused; `budgetMinutes` on `dry` refused; bad `excludeHosts` refused; `reach` lands on `dry` and `rationed`.
+- `fence/ration.test.ts`: sums across pool hosts; drops excluded subdomains; only today's bouts; `withRations` keeps a fence at or over budget and drops it under; stale `day` reads as 0.
+- `fence/parse.test.ts`: budget parsed; `fencesFor` skips excluded hosts; `standingBlockHosts` skips budgeted fences.
+- `fence/project.test.ts`: `buildDnrRules` emits the pool rule with `excludedRequestDomains`.
+- `src/application/__tests__/wateringHoursFences.test.ts`: rationed without `budgetMinutes` refused; `budgetMinutes` on `dry` refused; bad `excludeHosts` refused; rationed with areas/paths refused.
 - `bouts.ts` is vendored in two places; if touched, change both (`browserVendored.test.ts` pins them).
 
 ## Rollout
 
-1. Ship, then reconnect the zenborg MCP server.
+1. Ship, rebuild the extension and the MCP server, reconnect the server.
 2. Declare `youtube-weekend` as above.
-3. Re-declare `chess-afternoon` with `reach: "navigation"`; delete the hand patch's backup once diffed clean.
