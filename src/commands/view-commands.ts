@@ -5,6 +5,8 @@ import {
   isSettingsOpen$,
   setPlantEntity,
 } from "@/infrastructure/state/ui-store";
+import { nudgeVault } from "@/infrastructure/vault/adapter";
+import { isTauri } from "@/infrastructure/vault/is-tauri.ts";
 import type { Command } from "./types";
 
 export const viewCommands: Command[] = [
@@ -79,6 +81,24 @@ export const viewCommands: Command[] = [
     keywords: ["people", "contacts", "friends", "family"],
     action: () => {
       setPlantEntity("people");
+    },
+  },
+  {
+    // Tauri disables reload in production. Re-read the vault in place rather
+    // than reload the page: a reload boots from the IndexedDB cache and can
+    // drop a write still inside its 2s debounce. The nudge re-runs every
+    // collection's get() against the files, and pending local edits survive.
+    id: "view.reloadVault",
+    label: "Reload from Vault",
+    shortcut: "mod+r",
+    category: "Views",
+    keywords: ["reload", "refresh", "sync", "vault"],
+    action: () => {
+      if (isTauri()) {
+        void nudgeVault();
+      } else {
+        window.location.reload();
+      }
     },
   },
   {

@@ -134,7 +134,7 @@ pub fn write_collection(
 
     // Register before the write so the watcher suppresses FSEvents that
     // arrive even slightly before we return.
-    tracker.register_write(path.to_string_lossy().as_ref());
+    tracker.register_write(collection, json.as_bytes());
 
     let mut file = fs::File::create(&tmp_path)
         .map_err(|e| format!("Failed to create {}: {}", tmp_path.display(), e))?;
