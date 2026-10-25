@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/popover";
 import type { Habit } from "@/domain/entities/Habit";
 import { validateMomentName } from "@/domain/entities/Moment";
+import { TAG_REGEX } from "@/domain/services/TagService";
 import type { CustomMetric } from "@/domain/value-objects/Attitude";
 import type { Phase } from "@/domain/value-objects/Phase";
 import { PhaseIcon } from "@/domain/value-objects/phaseStyles";
@@ -391,7 +392,7 @@ export function MomentFormDialog({ onSave, onDelete }: MomentFormDialogProps) {
 
   // Validate name (remove tags for validation)
   const cleanNameForValidation = taggedField.displayValue
-    .replace(/#([a-z0-9-]+)/g, "")
+    .replace(TAG_REGEX, "")
     .replace(/\s+/g, " ")
     .trim();
   const validation = validateMomentName(cleanNameForValidation);
