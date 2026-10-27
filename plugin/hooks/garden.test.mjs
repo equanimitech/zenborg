@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { reading } = await import("./garden.ts");
+const { reading, matchHabits } = await import("./garden.ts");
 
 const TODAY = "2026-10-27";
 const at = (h, m = 0) => new Date(2026, 9, 27, h, m);
@@ -98,6 +98,38 @@ test("nothing to offer: status only", () => {
   assert.deepEqual(reading(vault(), at(9)), { status: "≋ Morning", band: null });
 });
 
+test("habits in other phases only: the band stays, with no taps, so search remains", () => {
+  const r = reading(vault({ habits: { h: { id: "h", name: "nap", phase: "AFTERNOON" } } }), at(9));
+  assert.deepEqual(r.band.taps, []);
+});
+
 test("outside every phase: nothing at all", () => {
   assert.equal(reading(vault(), at(22)), null);
+});
+
+const habits = {
+  a: { id: "a", name: "Café time", phase: "MORNING", order: 3 },
+  b: { id: "b", name: "iced cafe", phase: "AFTERNOON", order: 1 },
+  c: { id: "c", name: "cafetière", order: 2 },
+  d: { id: "d", name: "cafe old", isArchived: true, order: 0 },
+  e: { id: "e", name: "run", order: 4 },
+};
+const ids = (q, limit) => matchHabits(habits, q, limit).map((h) => h.id);
+
+test("matchHabits: folds case and accents, skips archived, matches any phase", () => {
+  assert.deepEqual(ids("CAFÉ").sort(), ["a", "b", "c"]);
+});
+
+test("matchHabits: prefix matches first, then by order", () => {
+  assert.deepEqual(ids("cafe"), ["c", "a", "b"]);
+});
+
+test("matchHabits: blank query matches nothing", () => {
+  assert.deepEqual([ids(""), ids("   ")], [[], []]);
+});
+
+test("matchHabits: limited to three by default", () => {
+  const many = Object.fromEntries([1, 2, 3, 4].map((i) => [i, { id: `${i}`, name: `x${i}`, order: i }]));
+  assert.equal(matchHabits(many, "x").length, 3);
+  assert.equal(matchHabits(many, "x", 4).length, 4);
 });

@@ -103,6 +103,32 @@ test('nothing planted: a habit tap plants it today in this phase, then tends it'
   await ui.unmount()
 })
 
+test('typing filters habits across phases; submit plants the first match', async ($, on) => {
+  const { calls } = garden(on, {
+    ...staleWithThree(),
+    'habits.json': {
+      h1: { id: 'h1', name: 'Café', phase: 'AFTERNOON', order: 2 },
+      h2: { id: 'h2', name: 'iced cafe', phase: 'EVENING', order: 1 },
+    },
+  })
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  const ui = await $.ui.mount(BAND)
+  await ui.input({ key: 'search', text: 'cafe', kind: 'change' })
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('+ Café')
+  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('+ iced cafe')
+  expect(await ui.find({ key: 'tap-2' })).toBeUndefined()
+  expect(await ui.find({ key: 'later' })).toBeDefined()
+  await ui.input({ key: 'search', text: 'zzz', kind: 'change' })
+  expect(await ui.find({ type: 'Text', text: 'no habit matches' })).toBeDefined()
+  await ui.input({ key: 'search', text: 'cafe', kind: 'change' })
+  await ui.input({ key: 'search', text: 'cafe' })
+  expect(calls).toEqual([
+    { tool: 'mcp__zenborg__add_moment', input: { habitId: 'h1', day: TODAY, phase: 'MORNING' } },
+    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1' } },
+  ])
+  await ui.unmount()
+})
+
 test('Later hides the band for this phase, across turns', async ($, on) => {
   garden(on, staleWithThree())
   await $.turn.start({ text: 'hi', turnId: 't1' })

@@ -7,6 +7,6 @@ export type Band = { day: string; phase: string; line: string; taps: Tap[] }
 
 declare module 'claude-code' {
   interface PluginState {
-    zenborg: { band: Band | null; later: string | null }
+    zenborg: { band: Band | null; later: string | null; query: string }
   }
 }

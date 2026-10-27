@@ -6,11 +6,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Tap } from '../types'
-import { reading, type Vault } from './garden.ts'
+import { labelOf, matchHabits, reading, type Vault } from './garden.ts'
 
 const band = atom({ plugin: 'zenborg', key: 'band' } as const, null)
 // "<day> <phase>" the gardener set aside with Later.
 const later = atom({ plugin: 'zenborg', key: 'later' } as const, null)
+
+// What the gardener has typed in the band's search field.
+const query = atom({ plugin: 'zenborg', key: 'query' } as const, '')
 
 // Fail soft: a missing or malformed file reads as empty.
 const readJson = async <T,>($: EngineInterface, path: string, empty: T): Promise<T> => {
@@ -61,7 +64,11 @@ const refresh = async ($: EngineInterface) => {
   const r = reading(await loadVault($), new Date(await $.clock.now()))
   $.ui.status(r?.status)
   const canWrite = (await toolNamed($, 'set_active_moment')) !== undefined
-  await update($, band, () => (canWrite ? (r?.band ?? null) : null))
+  const next = canWrite ? (r?.band ?? null) : null
+  // A new day or phase starts a fresh search.
+  const cur = await read($, band)
+  if (cur?.day !== next?.day || cur?.phase !== next?.phase) await update($, query, () => '')
+  await update($, band, () => next)
 }
 
 const tap = async ($: EngineInterface, t: Tap, b: Band) => {
@@ -69,6 +76,7 @@ const tap = async ($: EngineInterface, t: Tap, b: Band) => {
   let taken = false
   await update($, band, cur => ((taken = cur !== null), null))
   if (!taken) return
+  await update($, query, () => '')
   const momentId =
     t.kind === 'tend'
       ? t.momentId
@@ -95,13 +103,31 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const b = await read($, band)
     if (b === null || e.props.hasSurvey || (await read($, later)) === `${b.day} ${b.phase}`) return next(e)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const q = await read($, query)
+    // Search runs over every habit, planted by the same path as a default plant tap.
+    const found: Tap[] = []
+    if (q.trim() !== '') {
+      const v = await loadVault($)
+      const label = labelOf(v.areas)
+      for (const h of matchHabits(v.habits, q)) found.push({ kind: 'plant', habitId: h.id, label: `+ ${label(h)}` })
+    }
+    const taps = q.trim() === '' ? b.taps : found
     // Board order, nothing primary, nothing focused: the gardener chooses.
     return (
       <Box flexDirection="column" width={e.props.bodyColumns} paddingX={2}>
         <Text dimColor>{b.line}</Text>
+        <Input
+          key="search"
+          placeholder="search habits"
+          value={q}
+          onInput={(value: string) => update($, query, () => value)}
+          onSubmit={() => (found[0] ? tap($, found[0], b) : undefined)}
+          submitLabel="plant"
+        />
+        {q.trim() !== '' && found.length === 0 && <Text dimColor>no habit matches</Text>}
         <Box gap={2}>
-          {b.taps.map((t, i) => (
+          {taps.map((t, i) => (
             <Button key={`tap-${i}`} label={t.label} onPress={() => tap($, t, b)} />
           ))}
           <Button key="later" label="Later" onPress={() => update($, later, () => `${b.day} ${b.phase}`)} />

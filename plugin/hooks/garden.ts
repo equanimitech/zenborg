@@ -65,14 +65,30 @@ export function currentPhase(phases: PhaseConfig[], now: Date): PhaseConfig | nu
 const thisPhase = (label: string) =>
   label.toLowerCase() === "night" ? "tonight" : `this ${label.toLowerCase()}`;
 
+/** "<emoji> <name>", the emoji falling back to the area's. */
+export const labelOf = (areas: Record<string, Area>) => (x: Named) => {
+  const emoji = x.emoji ?? (x.areaId ? areas[x.areaId]?.emoji : undefined);
+  return emoji ? `${emoji} ${x.name}` : x.name;
+};
+
+const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+/** Unarchived habits of any phase whose name contains the query; prefix matches first, then by order. */
+export function matchHabits(habits: Record<string, Habit>, query: string, limit = MAX_TAPS): Habit[] {
+  const q = fold(query.trim());
+  if (!q) return [];
+  const byOrder = (a: Named, b: Named) => (a.order ?? 0) - (b.order ?? 0);
+  const hits = Object.values(habits)
+    .filter((h) => !h.isArchived && fold(h.name).includes(q))
+    .sort(byOrder);
+  return [...hits.filter((h) => fold(h.name).startsWith(q)), ...hits.filter((h) => !fold(h.name).startsWith(q))].slice(0, limit);
+}
+
 export function reading(v: Vault, now: Date): Reading | null {
   const phase = currentPhase(Object.values(v.phases), now);
   if (!phase) return null;
   const today = wakingDayKey(now);
-  const label = (x: Named) => {
-    const emoji = x.emoji ?? (x.areaId ? v.areas[x.areaId]?.emoji : undefined);
-    return emoji ? `${emoji} ${x.name}` : x.name;
-  };
+  const label = labelOf(v.areas);
   const byOrder = (a: Named, b: Named) => (a.order ?? 0) - (b.order ?? 0);
 
   // A pointer to a moment off today's board reads as none (staleReason).
@@ -104,7 +120,8 @@ export function reading(v: Vault, now: Date): Reading | null {
           .sort(byOrder)
           .slice(0, MAX_TAPS)
           .map((h) => ({ kind: "plant" as const, habitId: h.id, label: `+ ${label(h)}` }));
-  if (taps.length === 0) return { status, band: null };
+  // No taps still keeps the band, and its search, while there are habits to find.
+  if (taps.length === 0 && !Object.values(v.habits).some((h) => !h.isArchived)) return { status, band: null };
 
   const line = active
     ? `≋ ${active.name} ${fromPhase !== null ? "is" : "was"} ${why}`
