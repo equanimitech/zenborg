@@ -8,13 +8,13 @@ source: conversation 2026-10-27; mod candidate #6 in equanimitech/.claude/attent
 
 **Bet:** The stale-moment prompt that `moment-awareness.mts` writes for Claude at every session start becomes a one-line band above the prompt with the phase's moments as taps. A daily Ask becomes a Press.
 
-**Why:** A recurring conversational command is a missing button (torchbearer, *Glance, Press, Ask*). Today the gardener is asked, in prose, through Claude, every session: "stale active Netflix, propose picking a Morning moment". Picking means a sentence and an MCP round trip for a choice that is one of three names.
+**Why:** A recurring conversational command is a missing button (torchbearer, *Glance, Press, Ask*). Today the gardener is asked, in prose, through Claude, every session: "stale active film, propose picking a Morning moment". Picking means a sentence and an MCP round trip for a choice that is one of three names.
 
 ## Surfaces
 
 | Speed | Surface | Holds |
 |---|---|---|
-| Glance | status line | `≋ 🍿 Netflix`; stale: `≋ 🍿 Netflix · from the afternoon`; none: `≋ Morning` |
+| Glance | status line | `≋ 🍿 film`; stale: `≋ 🍿 film · from the afternoon`; none: `≋ Morning` |
 | Press | band above the prompt | only when the active moment is stale or none, and this phase has something to offer |
 | Ask | chat (`/tend`, `/sunrise`) | unchanged |
 
@@ -23,14 +23,14 @@ source: conversation 2026-10-27; mod candidate #6 in equanimitech/.claude/attent
 Stale or none, with moments planted in this phase:
 
 ```
-≋ Netflix is from the afternoon   [🧘 meditation] [🥐 breakfast] [🟰 quality time] [Later]
-≋ No intention this morning       [🧘 meditation] [🥐 breakfast] [🟰 quality time] [Later]
+≋ film is from the afternoon   [🧘 sit] [🥐 tea] [🟰 walk] [Later]
+≋ No intention this morning       [🧘 sit] [🥐 tea] [🟰 walk] [Later]
 ```
 
 None planted in this phase, habits whose phase is this phase (up to three, in habit order):
 
 ```
-≋ Nothing planted this morning    [+ 🧘 meditation] [+ 🏃 run] [Later]
+≋ Nothing planted this morning    [+ 🧘 sit] [+ 🏃 run] [Later]
 ```
 
 - A moment tap tends it: `set_active_moment { momentIdOrName: <id> }`.

@@ -67,17 +67,17 @@ const phases = {
   m: { phase: "MORNING", label: "Morning", startHour: 7, endHour: 13 },
   a: { phase: "AFTERNOON", label: "Afternoon", startHour: 13, endHour: 19 },
 };
-const areas = { fun: { id: "fun", name: "Entertainment", emoji: "🍿" } };
+const areas = { fun: { id: "fun", name: "Leisure", emoji: "🍿" } };
 const vault = (over = {}) => ({ active: {}, moments: {}, habits: {}, areas, phases, ...over });
 const moment = (id, name, phase, extra = {}) => ({ id, name, day: TODAY, phase, ...extra });
-const netflix = (phase) => moment("n", "Netflix", phase, { areaId: "fun" });
+const filmMoment = (phase) => moment("n", "film", phase, { areaId: "fun" });
 
 test("a fresh active moment: status only, no band", () => {
   const r = reading(
-    vault({ active: { momentId: "n", at: at(8).toISOString() }, moments: { n: netflix("MORNING") } }),
+    vault({ active: { momentId: "n", at: at(8).toISOString() }, moments: { n: filmMoment("MORNING") } }),
     at(9),
   );
-  assert.deepEqual(r, { status: "≋ 🍿 Netflix", band: null });
+  assert.deepEqual(r, { status: "≋ 🍿 film", band: null });
 });
 
 test("an active moment from another phase offers three of this phase's moments, in order", () => {
@@ -85,24 +85,24 @@ test("an active moment from another phase offers three of this phase's moments, 
     vault({
       active: { momentId: "n", at: at(8).toISOString() },
       moments: {
-        n: netflix("AFTERNOON"),
+        n: filmMoment("AFTERNOON"),
         d: moment("d", "read", "MORNING", { order: 4 }),
-        b: moment("b", "breakfast", "MORNING", { emoji: "🥐", order: 2 }),
-        a: moment("a", "meditation", "MORNING", { emoji: "🧘", order: 1 }),
-        c: moment("c", "quality time", "MORNING", { emoji: "🟰", order: 3 }),
+        b: moment("b", "tea", "MORNING", { emoji: "🥐", order: 2 }),
+        a: moment("a", "sit", "MORNING", { emoji: "🧘", order: 1 }),
+        c: moment("c", "walk", "MORNING", { emoji: "🟰", order: 3 }),
       },
     }),
     at(9),
   );
-  assert.equal(r.status, "≋ 🍿 Netflix · from the afternoon");
+  assert.equal(r.status, "≋ 🍿 film · from the afternoon");
   assert.deepEqual(r.band, {
     day: TODAY,
     phase: "MORNING",
-    line: "≋ Netflix is from the afternoon",
+    line: "≋ film is from the afternoon",
     taps: [
-      { kind: "tend", momentId: "a", label: "🧘 meditation" },
-      { kind: "tend", momentId: "b", label: "🥐 breakfast" },
-      { kind: "tend", momentId: "c", label: "🟰 quality time" },
+      { kind: "tend", momentId: "a", label: "🧘 sit" },
+      { kind: "tend", momentId: "b", label: "🥐 tea" },
+      { kind: "tend", momentId: "c", label: "🟰 walk" },
     ],
   });
 });
@@ -111,13 +111,13 @@ test("an active moment set over two hours ago is stale, and is not offered to it
   const r = reading(
     vault({
       active: { momentId: "n", at: at(7).toISOString() },
-      moments: { n: netflix("MORNING"), a: moment("a", "meditation", "MORNING", { emoji: "🧘" }) },
+      moments: { n: filmMoment("MORNING"), a: moment("a", "sit", "MORNING", { emoji: "🧘" }) },
     }),
     at(10),
   );
-  assert.equal(r.status, "≋ 🍿 Netflix · set 3h ago");
-  assert.equal(r.band.line, "≋ Netflix was set 3h ago");
-  assert.deepEqual(r.band.taps, [{ kind: "tend", momentId: "a", label: "🧘 meditation" }]);
+  assert.equal(r.status, "≋ 🍿 film · set 3h ago");
+  assert.equal(r.band.line, "≋ film was set 3h ago");
+  assert.deepEqual(r.band.taps, [{ kind: "tend", momentId: "a", label: "🧘 sit" }]);
 });
 
 test("nothing planted: habits of this phase, unarchived, in order, as plant taps", () => {
@@ -125,7 +125,7 @@ test("nothing planted: habits of this phase, unarchived, in order, as plant taps
     vault({
       habits: {
         h2: { id: "h2", name: "run", phase: "MORNING", order: 2 },
-        h1: { id: "h1", name: "meditation", phase: "MORNING", emoji: "🧘", order: 1 },
+        h1: { id: "h1", name: "sit", phase: "MORNING", emoji: "🧘", order: 1 },
         h0: { id: "h0", name: "old", phase: "MORNING", order: 0, isArchived: true },
         h4: { id: "h4", name: "nap", phase: "AFTERNOON", order: 0 },
       },
@@ -135,7 +135,7 @@ test("nothing planted: habits of this phase, unarchived, in order, as plant taps
   assert.equal(r.status, "≋ Morning");
   assert.equal(r.band.line, "≋ Nothing planted this morning");
   assert.deepEqual(r.band.taps, [
-    { kind: "plant", habitId: "h1", label: "+ 🧘 meditation" },
+    { kind: "plant", habitId: "h1", label: "+ 🧘 sit" },
     { kind: "plant", habitId: "h2", label: "+ run" },
   ]);
 });
@@ -144,7 +144,7 @@ test("a pointer to a moment off today's board reads as none", () => {
   const r = reading(
     vault({
       active: { momentId: "n", at: at(8).toISOString() },
-      moments: { n: { ...netflix("MORNING"), day: "2026-10-20" }, a: moment("a", "meditation", "MORNING") },
+      moments: { n: { ...filmMoment("MORNING"), day: "2026-10-20" }, a: moment("a", "sit", "MORNING") },
     }),
     at(9),
   );
@@ -343,7 +343,7 @@ const TOOLS = ['mcp__zenborg__set_active_moment', 'mcp__zenborg__add_moment']
 
 const base = () => ({
   'phaseConfigs.json': { m: { phase: 'MORNING', label: 'Morning', startHour: 7, endHour: 13 } },
-  'areas.json': { fun: { id: 'fun', name: 'Entertainment', emoji: '🍿' } },
+  'areas.json': { fun: { id: 'fun', name: 'Leisure', emoji: '🍿' } },
   'habits.json': {},
   'moments.json': {},
   'activeMoment.json': {},
@@ -369,7 +369,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
     if (opts.fail) return { result: {}, text: 'Error: no', isError: true }
     if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ created: { id: 'new1' } }) }
     files['activeMoment.json'] = { momentId: input.momentIdOrName, at: new Date(NOW).toISOString() }
-    files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'meditation', day: TODAY, phase: 'MORNING' } }
+    files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'sit', day: TODAY, phase: 'MORNING' } }
     return { result: {}, text: JSON.stringify({ set: {} }) }
   })
   on('ui.status', (_, e) => (statuses.push(e.text), { value: undefined }))
@@ -385,10 +385,10 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
 const staleWithThree = () => ({
   ...base(),
   'moments.json': {
-    n: { id: 'n', name: 'Netflix', day: TODAY, phase: 'AFTERNOON', areaId: 'fun' },
-    a: { id: 'a', name: 'meditation', day: TODAY, phase: 'MORNING', emoji: '🧘', order: 1 },
-    b: { id: 'b', name: 'breakfast', day: TODAY, phase: 'MORNING', emoji: '🥐', order: 2 },
-    c: { id: 'c', name: 'quality time', day: TODAY, phase: 'MORNING', emoji: '🟰', order: 3 },
+    n: { id: 'n', name: 'film', day: TODAY, phase: 'AFTERNOON', areaId: 'fun' },
+    a: { id: 'a', name: 'sit', day: TODAY, phase: 'MORNING', emoji: '🧘', order: 1 },
+    b: { id: 'b', name: 'tea', day: TODAY, phase: 'MORNING', emoji: '🥐', order: 2 },
+    c: { id: 'c', name: 'walk', day: TODAY, phase: 'MORNING', emoji: '🟰', order: 3 },
   },
   'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
 })
@@ -396,11 +396,11 @@ const staleWithThree = () => ({
 test('a stale moment: status line, band with three taps; a tap tends it and the band leaves', async ($, on) => {
   const { calls, statuses } = garden(on, staleWithThree())
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 Netflix · from the afternoon')
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
 
   const ui = await $.ui.mount(BAND)
-  expect(await ui.find({ type: 'Text', text: '≋ Netflix is from the afternoon' })).toBeDefined()
-  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('🥐 breakfast')
+  expect(await ui.find({ type: 'Text', text: '≋ film is from the afternoon' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('🥐 tea')
   for (const key of ['tap-0', 'tap-1', 'tap-2', 'later']) {
     expect((await ui.find({ key }))?.props.autoFocus).toBeUndefined()
     expect((await ui.find({ key }))?.props.variant).toBeUndefined()
@@ -409,14 +409,14 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   await ui.press({ key: 'tap-1' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 breakfast')
+  expect(statuses.at(-1)).toBe('≋ 🥐 tea')
   await ui.unmount()
 })
 
 test('nothing planted: a habit tap plants it today in this phase, then tends it', async ($, on) => {
   const { calls } = garden(on, {
     ...base(),
-    'habits.json': { h1: { id: 'h1', name: 'meditation', phase: 'MORNING', emoji: '🧘' } },
+    'habits.json': { h1: { id: 'h1', name: 'sit', phase: 'MORNING', emoji: '🧘' } },
   })
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const ui = await $.ui.mount(BAND)
@@ -446,14 +446,14 @@ test('a failing write toasts once and leaves the band as it was', async ($, on) 
   const ui = await $.ui.mount(BAND)
   await ui.press({ key: 'tap-0' })
   expect(toasts).toEqual(['zenborg: not saved, try again'])
-  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('🧘 meditation')
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('🧘 sit')
   await ui.unmount()
 })
 
 test('no zenborg MCP server: status line only, the drawing goes to the engine', async ($, on) => {
   const { statuses } = garden(on, staleWithThree(), { tools: ['Read'] })
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 Netflix · from the afternoon')
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
@@ -462,7 +462,7 @@ test('no zenborg MCP server: status line only, the drawing goes to the engine', 
 test('a fresh moment: no band', async ($, on) => {
   garden(on, {
     ...base(),
-    'moments.json': { n: { id: 'n', name: 'Netflix', day: TODAY, phase: 'MORNING', areaId: 'fun' } },
+    'moments.json': { n: { id: 'n', name: 'film', day: TODAY, phase: 'MORNING', areaId: 'fun' } },
     'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
   })
   await $.turn.start({ text: 'hi', turnId: 't1' })
