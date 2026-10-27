@@ -40,6 +40,23 @@ export function checkIntentions(
   return { ok: true, value };
 }
 
+/**
+ * Re-key a people map by person key. A record UUID is mapped to its key; a
+ * value matching nothing is left as given so validation can name it.
+ */
+export function keyPeople(
+  input: IntentionMap,
+  people: Record<string, { id: string; key: string }>,
+): IntentionMap {
+  const all = Object.values(people);
+  const out: IntentionMap = {};
+  for (const [ref, text] of Object.entries(input)) {
+    const hit = all.find((p) => p.key === ref) ?? all.find((p) => p.id === ref);
+    out[hit ? hit.key : ref] = text;
+  }
+  return out;
+}
+
 /** Attach display names. A deleted entity keeps its id and gets a null name. */
 export function resolveIntentions(
   map: IntentionMap | undefined,

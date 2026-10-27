@@ -55,7 +55,7 @@ import {
   parseVaultDay,
   resolveRhythm,
 } from "./health.js";
-import { checkIntentions, resolveIntentions } from "./intentions.js";
+import { checkIntentions, keyPeople, resolveIntentions } from "./intentions.js";
 import { resolveAddMoment } from "./moments.js";
 import { type RegistryPerson, selectPeopleToReach } from "./people.js";
 import { searchHabits, searchPeople, searchPlaces } from "./search.js";
@@ -2256,7 +2256,7 @@ const IntentionsSchema = z
 const PeopleRosterSchema = z
   .record(z.string())
   .describe(
-    'personId -> up to 12 words for this season; "" = on the roster only.',
+    'person key (a record id is accepted and stored as its key) -> up to 12 words for this season; "" = on the roster only.',
   );
 
 type SeasonIntentions = {
@@ -2281,10 +2281,11 @@ function checkSeasonIntentions(p: {
     out.areaIntentions = r.value;
   }
   if (p.people) {
+    const registry = readPeople();
     const r = checkIntentions(
       "person",
-      p.people,
-      new Set(Object.keys(readPeople())),
+      keyPeople(p.people, registry),
+      new Set(Object.values(registry).map((x) => x.key)),
       true,
     );
     if (!r.ok) return { error: r.error };
@@ -2630,9 +2631,16 @@ defineTool(server, {
         areaIntentions: resolveIntentions(cycle.areaIntentions, areas).map(
           ({ id, name, text }) => ({ areaId: id, areaName: name, text }),
         ),
-        people: resolveIntentions(cycle.people, readPeople()).map(
-          ({ id, name, text }) => ({ personId: id, personName: name, text }),
-        ),
+        people: resolveIntentions(
+          cycle.people,
+          Object.fromEntries(
+            Object.values(readPeople()).map((x) => [x.key, x]),
+          ),
+        ).map(({ id, name, text }) => ({
+          personKey: id,
+          personName: name,
+          text,
+        })),
       },
       habits: habitSnapshots,
       wilting,

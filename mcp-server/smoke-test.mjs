@@ -856,14 +856,24 @@ try {
         people: { [elias.id]: "" },
       }),
     );
+    // a record id is normalised to the person key
+    assert.deepEqual(Object.keys(res.updated.people), [elias.key]);
     assert.deepEqual(res.updated.areaIntentions, {
       [areaId]: "ship the small thing",
     });
-    assert.deepEqual(res.updated.people, { [elias.id]: "" });
+    assert.deepEqual(res.updated.people, { [elias.key]: "" });
     const onDisk = JSON.parse(
       readFileSync(path.join(vault, "cycles.json"), "utf8"),
     );
     assert.equal(onDisk[cycleId].areaIntentions[areaId], "ship the small thing");
+    assert.deepEqual(onDisk[cycleId].people, { [elias.key]: "" });
+    const byKey = parseOk(
+      await callTool("update_cycle", {
+        id: cycleId,
+        people: { [elias.key]: "weekly call" },
+      }),
+    );
+    assert.deepEqual(byKey.updated.people, { [elias.key]: "weekly call" });
   });
 
   await step("update_cycle rejects unknown ids and long text", async () => {
@@ -903,11 +913,12 @@ try {
         name: "Live season",
         startDate: today,
         areaIntentions: { [areaId]: "ship the small thing" },
-        people: { [elias.id]: "monthly call" },
+        people: { [elias.key]: "monthly call" },
       }),
     ).created;
     const running = parseOk(await callTool("get_running_cycle", {})).running;
     assert.equal(running.areaIntentions[0].areaName, "Work");
+    assert.equal(running.people[0].personKey, elias.key);
     assert.equal(running.people[0].personName, "Elias");
     assert.equal(running.people[0].text, "monthly call");
     await callTool("delete_cycle", { id: live.id });

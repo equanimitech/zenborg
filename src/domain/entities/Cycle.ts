@@ -32,7 +32,8 @@ export interface Cycle {
    */
   areaIntentions?: Record<string, string>;
   /**
-   * People on this season's roster, keyed by person id. Text is 1 to 12 words,
+   * People on this season's roster, keyed by person key
+   * (the key moments carry in `personIds`). Text is 1 to 12 words,
    * or "" for "on the roster, nothing to say yet".
    */
   people?: Record<string, string>;

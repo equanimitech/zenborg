@@ -71,7 +71,7 @@ Read the cycle's intention and surface how the allocation pattern relates to it.
 
 #### 4a. Area and person intentions, beside their moments
 
-`get_running_cycle` returns `areaIntentions` and `people` with names resolved (for an ended cycle, read them off `get_cycle`). For each area with an intention, list the intention next to that area's moments in the cycle (`list_moments` with `filter.cycleId` and `filter.areaId`). For each person with an intention, do the same with the moments that mention them. A person with empty text was on the roster only: show their moments, no sentence.
+`get_running_cycle` returns `areaIntentions` and `people` with names resolved (for an ended cycle, read them off `get_cycle`). For each area with an intention, list the intention next to that area's moments in the cycle (`list_moments` with `filter.cycleId` and `filter.areaId`). For each person with an intention, do the same with the moments that mention them (match the person key against each moment's `personIds`; a legacy moment holding the person's record id there still counts, so map id to key via `list_people`). A person with empty text was on the roster only: show their moments, no sentence.
 ```
 Fitness: "get back to running outdoors"
   Moments: Run x9, Swim x2, Yoga x1
@@ -105,7 +105,7 @@ Gather from the user:
 - **Intention** (one sentence: what this season is about)
 - **Places** (where the season is lived, for the outreach queue's `far` signal)
 - **Area intentions**: ask which areas the gardener wants to name for this season (they choose; never walk all areas). Then one question per named area: "What does [area] mean this season?" Answer in their own words, 1 to 12 words.
-- **People**: ask who they want to see this season. One question per person: "What do you want with [person] this season?" 1 to 12 words, or leave it empty to put them on the roster only. Resolve names to ids with `mcp__zenborg__search_people`.
+- **People**: ask who they want to see this season. One question per person: "What do you want with [person] this season?" 1 to 12 words, or leave it empty to put them on the roster only. Resolve names with `mcp__zenborg__search` (`type: "person"`) and pass the returned `personKey` as the key of `people`.
 
 #### 7. Review attitudes
 
@@ -133,7 +133,7 @@ Proposals based on rhythm and health:
 
 #### 9. Create the cycle
 
-On user confirmation, call `mcp__zenborg__plan_cycle` with the agreed parameters, including every answer in one call: `areaIntentions: { "<areaId>": "text" }` and `people: { "<personId>": "text" }`. This creates the cycle only; it does not create budget plans (those are authored in the app's cycle deck). To add intentions to an existing cycle, send both maps together in a single `mcp__zenborg__update_cycle`; each map replaces the stored one, so include entries to keep.
+On user confirmation, call `mcp__zenborg__plan_cycle` with the agreed parameters, including every answer in one call: `areaIntentions: { "<areaId>": "text" }` and `people: { "<personKey>": "text" }`. This creates the cycle only; it does not create budget plans (those are authored in the app's cycle deck). To add intentions to an existing cycle, send both maps together in a single `mcp__zenborg__update_cycle`; each map replaces the stored one, so include entries to keep.
 
 #### 10. Seed the first week
 

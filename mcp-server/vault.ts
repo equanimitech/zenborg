@@ -216,7 +216,7 @@ export interface Cycle {
   placeIds?: string[];
   /** A few words per area for this season. Mirrors src/domain/entities/Cycle.ts. */
   areaIntentions?: Record<string, string>;
-  /** Per-person words for this season; "" = on the roster. Mirrors src/domain/entities/Cycle.ts. */
+  /** Per-person words for this season, keyed by person key; "" = on the roster. Mirrors src/domain/entities/Cycle.ts. */
   people?: Record<string, string>;
   reflection?: string;
   reflectionSource?: ReflectionSource | null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkIntentions, resolveIntentions } from "./intentions.js";
+import { checkIntentions, keyPeople, resolveIntentions } from "./intentions.js";
 
 const known = new Set(["a1", "a2"]);
 const twelve = "one two three four five six seven eight nine ten eleven twelve";
@@ -43,5 +43,19 @@ describe("resolveIntentions", () => {
   });
   it("returns [] when absent", () => {
     expect(resolveIntentions(undefined, {})).toEqual([]);
+  });
+});
+
+describe("keyPeople", () => {
+  const people = { p1: { id: "uuid-1", key: "ada" } };
+  it("keeps a key and normalises a record id to the key", () => {
+    expect(keyPeople({ ada: "call" }, people)).toEqual({ ada: "call" });
+    expect(keyPeople({ "uuid-1": "" }, people)).toEqual({ ada: "" });
+  });
+  it("leaves an unknown value so validation can name it", () => {
+    const keyed = keyPeople({ nobody: "" }, people);
+    expect(
+      checkIntentions("person", keyed, new Set(["ada"]), true),
+    ).toEqual({ ok: false, error: "Unknown person id: nobody" });
   });
 });
