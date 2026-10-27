@@ -49,6 +49,26 @@ test("a stale pointer is released, never cleared, and not proposed for clearing"
   assert.equal(readFileSync(join(vault, "activeMoment.json"), "utf8"), before);
 });
 
+test("a stale active moment is stated, never proposed", () => {
+  const vault = garden(wakingDayKey());
+  writeFileSync(
+    join(vault, "moments.json"),
+    JSON.stringify({ m1: { id: "m1", name: "write spec", day: wakingDayKey(), phase: "OTHER" } }),
+  );
+  const out = run(vault);
+  assert.match(out, /stale active "write spec"/);
+  assert.doesNotMatch(out, /Propose|set_active_moment/);
+});
+
+test("no active moment lists what is planted and proposes nothing", () => {
+  const vault = garden(wakingDayKey());
+  writeFileSync(join(vault, "activeMoment.json"), "{}");
+  const out = run(vault);
+  assert.match(out, /No active intention/);
+  assert.match(out, /Planted this phase: "write spec"/);
+  assert.doesNotMatch(out, /Propose|set_active_moment|spawn_spontaneous|add_moment/);
+});
+
 test("the vendored staleness rule is byte-identical to src/domain", () => {
   const rel = "domain/attention/ActiveMoment.ts";
   assert.equal(
