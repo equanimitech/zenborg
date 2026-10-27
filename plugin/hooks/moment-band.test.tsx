@@ -16,7 +16,7 @@ const TOOLS = ['mcp__zenborg__set_active_moment', 'mcp__zenborg__add_moment']
 
 const base = () => ({
   'phaseConfigs.json': { m: { phase: 'MORNING', label: 'Morning', startHour: 7, endHour: 13 } },
-  'areas.json': { fun: { id: 'fun', name: 'Entertainment', emoji: '🍿' } },
+  'areas.json': { fun: { id: 'fun', name: 'Leisure', emoji: '🍿' } },
   'habits.json': {},
   'moments.json': {},
   'activeMoment.json': {},
@@ -43,7 +43,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
     if (opts.fail) return { result: {}, text: 'Error: no', isError: true }
     if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ created: { id: 'new1' } }) }
     files['activeMoment.json'] = { momentId: input.momentIdOrName, at: new Date(NOW).toISOString() }
-    files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'meditation', day: TODAY, phase: 'MORNING' } }
+    files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'sit', day: TODAY, phase: 'MORNING' } }
     return { result: {}, text: JSON.stringify({ set: {} }) }
   })
   on('ui.status', (_, e) => (statuses.push(e.text), { value: undefined }))
@@ -59,10 +59,10 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
 const staleWithThree = () => ({
   ...base(),
   'moments.json': {
-    n: { id: 'n', name: 'Netflix', day: TODAY, phase: 'AFTERNOON', areaId: 'fun' },
-    a: { id: 'a', name: 'meditation', day: TODAY, phase: 'MORNING', emoji: '🧘', order: 1 },
-    b: { id: 'b', name: 'breakfast', day: TODAY, phase: 'MORNING', emoji: '🥐', order: 2 },
-    c: { id: 'c', name: 'quality time', day: TODAY, phase: 'MORNING', emoji: '🟰', order: 3 },
+    n: { id: 'n', name: 'film', day: TODAY, phase: 'AFTERNOON', areaId: 'fun' },
+    a: { id: 'a', name: 'sit', day: TODAY, phase: 'MORNING', emoji: '🧘', order: 1 },
+    b: { id: 'b', name: 'tea', day: TODAY, phase: 'MORNING', emoji: '🥐', order: 2 },
+    c: { id: 'c', name: 'walk', day: TODAY, phase: 'MORNING', emoji: '🟰', order: 3 },
   },
   'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
 })
@@ -70,11 +70,11 @@ const staleWithThree = () => ({
 test('a stale moment: status line, band with three taps; a tap tends it and the band leaves', async ($, on) => {
   const { calls, statuses } = garden(on, staleWithThree())
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 Netflix · from the afternoon')
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
 
   const ui = await $.ui.mount(BAND)
-  expect(await ui.find({ type: 'Text', text: '≋ Netflix is from the afternoon' })).toBeDefined()
-  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('🥐 breakfast')
+  expect(await ui.find({ type: 'Text', text: '≋ film is from the afternoon' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('🥐 tea')
   for (const key of ['tap-0', 'tap-1', 'tap-2', 'later']) {
     expect((await ui.find({ key }))?.props.autoFocus).toBeUndefined()
     expect((await ui.find({ key }))?.props.variant).toBeUndefined()
@@ -83,14 +83,14 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   await ui.press({ key: 'tap-1' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 breakfast')
+  expect(statuses.at(-1)).toBe('≋ 🥐 tea')
   await ui.unmount()
 })
 
 test('nothing planted: a habit tap plants it today in this phase, then tends it', async ($, on) => {
   const { calls } = garden(on, {
     ...base(),
-    'habits.json': { h1: { id: 'h1', name: 'meditation', phase: 'MORNING', emoji: '🧘' } },
+    'habits.json': { h1: { id: 'h1', name: 'sit', phase: 'MORNING', emoji: '🧘' } },
   })
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const ui = await $.ui.mount(BAND)
@@ -120,14 +120,14 @@ test('a failing write toasts once and leaves the band as it was', async ($, on) 
   const ui = await $.ui.mount(BAND)
   await ui.press({ key: 'tap-0' })
   expect(toasts).toEqual(['zenborg: not saved, try again'])
-  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('🧘 meditation')
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('🧘 sit')
   await ui.unmount()
 })
 
 test('no zenborg MCP server: status line only, the drawing goes to the engine', async ($, on) => {
   const { statuses } = garden(on, staleWithThree(), { tools: ['Read'] })
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 Netflix · from the afternoon')
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
@@ -136,7 +136,7 @@ test('no zenborg MCP server: status line only, the drawing goes to the engine', 
 test('a fresh moment: no band', async ($, on) => {
   garden(on, {
     ...base(),
-    'moments.json': { n: { id: 'n', name: 'Netflix', day: TODAY, phase: 'MORNING', areaId: 'fun' } },
+    'moments.json': { n: { id: 'n', name: 'film', day: TODAY, phase: 'MORNING', areaId: 'fun' } },
     'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
   })
   await $.turn.start({ text: 'hi', turnId: 't1' })
