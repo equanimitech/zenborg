@@ -97,11 +97,11 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 |---|---|---|
 | `list_cycles` | `filter?` | `"active"/"current"/"upcoming"/"all"`. |
 | `get_cycle` | `idOrName` | |
-| `get_running_cycle` | — | Orientation snapshot: active cycle + per-habit health + wilting list. |
+| `get_running_cycle` | — | Orientation snapshot: active cycle + per-habit health + wilting list. `running.areaIntentions` / `running.people` carry the season's words with area and person names resolved. |
 | `get_cycle_planning_proposals` | `cycleId` | Attitude + rhythm + health proposals. |
 | `get_cycle_review` | `cycleId` | Descriptive review — no aggregate scores. |
-| `plan_cycle` | `name, template?, startDate?, endDate?, ...` | `template: "week"/"month"/"quarter"` computes endDate (7/28/90 days). Pass template OR endDate. |
-| `update_cycle` | `id, ...fields` | Set `endDate` to close a cycle. `reflection` stamps `reflectionSource: "machine"`. |
+| `plan_cycle` | `name, template?, startDate?, endDate?, ...` | `template: "week"/"month"/"quarter"` computes endDate (7/28/90 days). Pass template OR endDate. Also `areaIntentions?`, `people?` (see `update_cycle`). |
+| `update_cycle` | `id, ...fields` | Set `endDate` to close a cycle. `reflection` stamps `reflectionSource: "machine"`. `areaIntentions: {areaId: text}` (1 to 12 words) and `people: {personId: text}` (0 to 12 words; `""` = on this season's roster) replace the stored map; `null` or `{}` clears. Unknown ids and out-of-range text are rejected, naming the id. |
 | `delete_cycle` | `id` | Cascades: deletes all moments + plans. `destructiveHint`. |
 
 ### People

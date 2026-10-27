@@ -26,6 +26,16 @@ export interface Cycle {
    * nothing is filtered out by a constraint that cannot be checked.
    */
   placeIds?: string[];
+  /**
+   * What each area means this season, in the gardener's words (1 to 12 each).
+   * Declared at /season, expires with the cycle. Absent = none declared.
+   */
+  areaIntentions?: Record<string, string>;
+  /**
+   * People on this season's roster, keyed by person id. Text is 1 to 12 words,
+   * or "" for "on the roster, nothing to say yet".
+   */
+  people?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }

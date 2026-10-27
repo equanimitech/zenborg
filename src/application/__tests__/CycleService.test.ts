@@ -1369,6 +1369,26 @@ describe("CycleService.updateCycle — reflection provenance", () => {
     expect(cycles$.c.reflection.get()).toBe("Drafted prose.");
   });
 
+  it("keeps season intentions when the cycle is renamed", () => {
+    cycles$.set({
+      c: season({
+        areaIntentions: { "area-1": "settle in slowly" },
+        people: { "person-1": "", "person-2": "weekly calls" },
+      }) as never,
+    });
+
+    service.updateCycle("c", { name: "Avalon Summer" });
+
+    expect(cycles$.c.name.get()).toBe("Avalon Summer");
+    expect(cycles$.c.areaIntentions.get()).toEqual({
+      "area-1": "settle in slowly",
+    });
+    expect(cycles$.c.people.get()).toEqual({
+      "person-1": "",
+      "person-2": "weekly calls",
+    });
+  });
+
   it("lets a caller name the author explicitly", () => {
     cycles$.set({ c: season() as never });
 

@@ -214,6 +214,10 @@ export interface Cycle {
   intention?: string;
   /** Where this season is lived. Mirrors src/domain/entities/Cycle.ts. */
   placeIds?: string[];
+  /** A few words per area for this season. Mirrors src/domain/entities/Cycle.ts. */
+  areaIntentions?: Record<string, string>;
+  /** Per-person words for this season; "" = on the roster. Mirrors src/domain/entities/Cycle.ts. */
+  people?: Record<string, string>;
   reflection?: string;
   reflectionSource?: ReflectionSource | null;
   createdAt: string;

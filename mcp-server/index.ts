@@ -55,6 +55,7 @@ import {
   parseVaultDay,
   resolveRhythm,
 } from "./health.js";
+import { checkIntentions, resolveIntentions } from "./intentions.js";
 import { resolveAddMoment } from "./moments.js";
 import { type RegistryPerson, selectPeopleToReach } from "./people.js";
 import { searchHabits, searchPeople, searchPlaces } from "./search.js";
@@ -2249,6 +2250,49 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const IntentionsSchema = z
+  .record(z.string())
+  .describe("areaId -> 1 to 12 words for this season.");
+const PeopleRosterSchema = z
+  .record(z.string())
+  .describe(
+    'personId -> up to 12 words for this season; "" = on the roster only.',
+  );
+
+type SeasonIntentions = {
+  areaIntentions?: Record<string, string>;
+  people?: Record<string, string>;
+};
+
+/** Validate both season-intention maps against the vault; null/absent skip. */
+function checkSeasonIntentions(p: {
+  areaIntentions?: Record<string, string> | null;
+  people?: Record<string, string> | null;
+}): { error: string } | SeasonIntentions {
+  const out: SeasonIntentions = {};
+  if (p.areaIntentions) {
+    const r = checkIntentions(
+      "area",
+      p.areaIntentions,
+      new Set(Object.keys(readCollection(VAULT_ROOT, "areas"))),
+      false,
+    );
+    if (!r.ok) return { error: r.error };
+    out.areaIntentions = r.value;
+  }
+  if (p.people) {
+    const r = checkIntentions(
+      "person",
+      p.people,
+      new Set(Object.keys(readPeople())),
+      true,
+    );
+    if (!r.ok) return { error: r.error };
+    out.people = r.value;
+  }
+  return out;
+}
+
 defineTool(server, {
   name: "plan_cycle",
   description:
@@ -2272,6 +2316,8 @@ defineTool(server, {
       .optional(),
     intention: z.string().optional(),
     placeIds: z.array(z.string()).optional(),
+    areaIntentions: IntentionsSchema.optional(),
+    people: PeopleRosterSchema.optional(),
   },
   concise: (p) => conciseCycle((p as any).created),
   handler: async ({
@@ -2281,10 +2327,14 @@ defineTool(server, {
     endDate,
     intention,
     placeIds,
+    areaIntentions,
+    people,
   }) => {
     if (template && endDate !== undefined) {
       return err("pass template or endDate, not both");
     }
+    const checked = checkSeasonIntentions({ areaIntentions, people });
+    if ("error" in checked) return err(checked.error);
     const cycles = readCollection(VAULT_ROOT, "cycles");
     const now = nowIso();
     const resolvedStart = startDate ?? new Date().toISOString().slice(0, 10);
@@ -2302,6 +2352,7 @@ defineTool(server, {
       ...(placeIds && placeIds.length > 0
         ? { placeIds: placeIds.map(slugify).filter((k) => k.length > 0) }
         : {}),
+      ...checked,
       createdAt: now,
       updatedAt: now,
     };
@@ -2368,6 +2419,8 @@ defineTool(server, {
     intention: z.string().optional(),
     reflection: z.string().optional(),
     placeIds: z.array(z.string()).nullable().optional(),
+    areaIntentions: IntentionsSchema.nullable().optional(),
+    people: PeopleRosterSchema.nullable().optional(),
   },
   concise: (p) => conciseCycle((p as any).updated),
   handler: async (params) => {
@@ -2375,6 +2428,8 @@ defineTool(server, {
     const cycles = readCollection(VAULT_ROOT, "cycles");
     const cycle = cycles[id];
     if (!cycle) return err(`Cycle not found: ${id}`);
+    const checked = checkSeasonIntentions(updates);
+    if ("error" in checked) return err(checked.error);
     const next: Cycle = {
       ...cycle,
       ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
@@ -2405,6 +2460,16 @@ defineTool(server, {
         delete next.placeIds;
       } else {
         next.placeIds = keys;
+      }
+    }
+    // Passing a map replaces it; null or {} clears it.
+    for (const k of ["areaIntentions", "people"] as const) {
+      if (!(k in updates)) continue;
+      const map = checked[k];
+      if (map && Object.keys(map).length > 0) {
+        next[k] = map;
+      } else {
+        delete next[k];
       }
     }
     cycles[id] = next;
@@ -2562,6 +2627,12 @@ defineTool(server, {
         daysElapsed,
         daysRemaining,
         placeIds: cycle.placeIds ?? [],
+        areaIntentions: resolveIntentions(cycle.areaIntentions, areas).map(
+          ({ id, name, text }) => ({ areaId: id, areaName: name, text }),
+        ),
+        people: resolveIntentions(cycle.people, readPeople()).map(
+          ({ id, name, text }) => ({ personId: id, personName: name, text }),
+        ),
       },
       habits: habitSnapshots,
       wilting,
