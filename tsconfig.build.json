@@ -9,6 +9,7 @@
     "mcp-server",
     "extension",
     "e2e",
+    "plugin",
     "playwright.tauri.config.ts",
     "**/__tests__/**",
     "**/*.test.ts",
