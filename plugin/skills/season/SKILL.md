@@ -69,6 +69,18 @@ Read the cycle's intention and surface how the allocation pattern relates to it.
 - "The intention was 'settle into Arcadia.' Social and Exploration areas saw the most growth."
 - If `reflection` exists on the cycle, surface it.
 
+#### 4a. Area and person intentions, beside their moments
+
+`get_running_cycle` returns `areaIntentions` and `people` with names resolved (for an ended cycle, read them off `get_cycle`). For each area with an intention, list the intention next to that area's moments in the cycle (`list_moments` with `filter.cycleId` and `filter.areaId`). For each person with an intention, do the same with the moments that mention them (match the person key against each moment's `personIds`; a legacy moment holding the person's record id there still counts, so map id to key via `list_people`). A person with empty text was on the roster only: show their moments, no sentence.
+```
+Fitness: "get back to running outdoors"
+  Moments: Run x9, Swim x2, Yoga x1
+
+Ada: "weekly call"
+  Moments: Call Ada x3, Dinner x1
+```
+Plain observation, two columns of fact. No score, no verdict on whether the season honoured the words, no "you meant X but". If an area or person had no intention, show their moments without comment.
+
 #### 4b. Browser rules, as information
 
 Call `mcp__zenborg__get_rule_efficacy` with the cycle's `from`/`to`. If `rules` is empty, skip this step without mentioning it. Otherwise print each rule's `line` verbatim under one heading, one line per rule, and add nothing: no verdict, no advice to keep or drop a rule, no "you".
@@ -92,6 +104,8 @@ Gather from the user:
 - **Dates** (start, end or template duration)
 - **Intention** (one sentence: what this season is about)
 - **Places** (where the season is lived, for the outreach queue's `far` signal)
+- **Area intentions**: ask which areas the gardener wants to name for this season (they choose; never walk all areas). Then one question per named area: "What does [area] mean this season?" Answer in their own words, 1 to 12 words.
+- **People**: ask who they want to see this season. One question per person: "What do you want with [person] this season?" 1 to 12 words, or leave it empty to put them on the roster only. Resolve names with `mcp__zenborg__search` (`type: "person"`) and pass the returned `personKey` as the key of `people`.
 
 #### 7. Review attitudes
 
@@ -119,7 +133,7 @@ Proposals based on rhythm and health:
 
 #### 9. Create the cycle
 
-On user confirmation, call `mcp__zenborg__plan_cycle` with the agreed parameters. This creates the cycle and its budget plans.
+On user confirmation, call `mcp__zenborg__plan_cycle` with the agreed parameters, including every answer in one call: `areaIntentions: { "<areaId>": "text" }` and `people: { "<personKey>": "text" }`. This creates the cycle only; it does not create budget plans (those are authored in the app's cycle deck). To add intentions to an existing cycle, send both maps together in a single `mcp__zenborg__update_cycle`; each map replaces the stored one, so include entries to keep.
 
 #### 10. Seed the first week
 
@@ -131,7 +145,7 @@ Optionally, offer to plant the first week's moments using the tend workflow or `
 - Attitudes are the user's honest relationship with a practice. Do not recommend attitudes.
 - No scoring, streaks, or completion tracking.
 - A cycle's reflection, if written by an agent, is stamped `reflectionSource: "machine"`.
-- Intentions are set by the gardener, not derived by the tool.
+- Intentions are set by the gardener, not derived by the tool. Area and person intentions are the gardener's own words; never draft or suggest them.
 - PRUNING is a legitimate attitude. A habit being pruned is a conscious choice, not a failure.
 
 ## Edge cases

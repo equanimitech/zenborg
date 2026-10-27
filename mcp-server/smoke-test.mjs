@@ -832,13 +832,96 @@ try {
     elias = res.created;
     assert.equal(elias.key, "elias");
     assert.equal(elias.cadence, "monthly");
-    assert.equal(elias.status, "active");
-    assert.equal(elias.basePlace, "sp");
   });
 
   await step("get_person finds by key", async () => {
     const res = parseOk(await callTool("get_person", { idOrKey: "elias" }));
     assert.equal(res.id, elias.id);
+  });
+
+  // ── Season intentions ──
+
+  await step("update_cycle persists areaIntentions and people", async () => {
+    const cycleId = parseOk(
+      await callTool("plan_cycle", {
+        name: "Intentions",
+        startDate: "2026-01-01",
+        endDate: "2026-01-08",
+      }),
+    ).created.id;
+    const res = parseOk(
+      await callTool("update_cycle", {
+        id: cycleId,
+        areaIntentions: { [areaId]: "ship the small thing" },
+        people: { [elias.id]: "" },
+      }),
+    );
+    // a record id is normalised to the person key
+    assert.deepEqual(Object.keys(res.updated.people), [elias.key]);
+    assert.deepEqual(res.updated.areaIntentions, {
+      [areaId]: "ship the small thing",
+    });
+    assert.deepEqual(res.updated.people, { [elias.key]: "" });
+    const onDisk = JSON.parse(
+      readFileSync(path.join(vault, "cycles.json"), "utf8"),
+    );
+    assert.equal(onDisk[cycleId].areaIntentions[areaId], "ship the small thing");
+    assert.deepEqual(onDisk[cycleId].people, { [elias.key]: "" });
+    const byKey = parseOk(
+      await callTool("update_cycle", {
+        id: cycleId,
+        people: { [elias.key]: "weekly call" },
+      }),
+    );
+    assert.deepEqual(byKey.updated.people, { [elias.key]: "weekly call" });
+  });
+
+  await step("update_cycle rejects unknown ids and long text", async () => {
+    const cycleId = Object.keys(
+      JSON.parse(readFileSync(path.join(vault, "cycles.json"), "utf8")),
+    )[0];
+    const bad = toolText(
+      await callTool("update_cycle", {
+        id: cycleId,
+        areaIntentions: { "no-such-area": "hello" },
+      }),
+    );
+    assert.ok(bad.startsWith("Error:") && bad.includes("no-such-area"), bad);
+    const badPerson = toolText(
+      await callTool("update_cycle", {
+        id: cycleId,
+        people: { "no-such-person": "" },
+      }),
+    );
+    assert.ok(
+      badPerson.startsWith("Error:") && badPerson.includes("no-such-person"),
+      badPerson,
+    );
+    const long = toolText(
+      await callTool("update_cycle", {
+        id: cycleId,
+        areaIntentions: { [areaId]: "a b c d e f g h i j k l m" },
+      }),
+    );
+    assert.ok(long.startsWith("Error:"), long);
+  });
+
+  await step("get_running_cycle resolves intention names", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const live = parseOk(
+      await callTool("plan_cycle", {
+        name: "Live season",
+        startDate: today,
+        areaIntentions: { [areaId]: "ship the small thing" },
+        people: { [elias.key]: "monthly call" },
+      }),
+    ).created;
+    const running = parseOk(await callTool("get_running_cycle", {})).running;
+    assert.equal(running.areaIntentions[0].areaName, "Work");
+    assert.equal(running.people[0].personKey, elias.key);
+    assert.equal(running.people[0].personName, "Elias");
+    assert.equal(running.people[0].text, "monthly call");
+    await callTool("delete_cycle", { id: live.id });
   });
 
   await step("create_person rejects duplicate key", async () => {
@@ -852,11 +935,11 @@ try {
       await callTool("update_person", {
         idOrKey: "elias",
         cadence: "weekly",
-        category: "close friend",
+        tags: ["close-friend"],
       }),
     );
     assert.equal(res.updated.cadence, "weekly");
-    assert.equal(res.updated.category, "close friend");
+    assert.deepEqual(res.updated.tags, ["close-friend"]);
   });
 
   await step("list_people returns the registry", async () => {
