@@ -7,6 +7,7 @@
     "url": "https://equanimi.tech"
   },
   "license": "MIT",
+  "types": "./types/index.d.ts",
   "keywords": [
     "garden",
     "rituals",

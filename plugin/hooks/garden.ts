@@ -1,0 +1,113 @@
+/**
+ * The garden as the moment band reads it. Pure: no I/O, so it runs under
+ * `node --test` and inside the Claude Code mod alike.
+ */
+import type { Band, Tap } from "../types";
+import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
+
+export interface PhaseConfig {
+  phase: string;
+  label: string;
+  startHour: number;
+  endHour: number;
+}
+interface Named {
+  name: string;
+  emoji?: string | null;
+  areaId?: string | null;
+  order?: number;
+}
+export interface Moment extends Named {
+  id: string;
+  day?: string | null;
+  phase?: string | null;
+}
+export interface Habit extends Named {
+  id: string;
+  phase?: string | null;
+  isArchived?: boolean;
+}
+export interface Area {
+  id: string;
+  name: string;
+  emoji?: string | null;
+}
+export interface Vault {
+  active: { momentId?: string; at?: string };
+  moments: Record<string, Moment>;
+  habits: Record<string, Habit>;
+  areas: Record<string, Area>;
+  phases: Record<string, PhaseConfig>;
+}
+export interface Reading {
+  status: string;
+  band: Band | null;
+}
+
+/** A moment set longer ago than this reads as stale, as in moment-awareness. */
+export const STALE_AFTER_MIN = 120;
+const MAX_TAPS = 3;
+
+export function currentPhase(phases: PhaseConfig[], now: Date): PhaseConfig | null {
+  const hour = now.getHours();
+  for (const cfg of phases) {
+    const { startHour, endHour } = cfg;
+    const inside =
+      endHour <= startHour
+        ? hour >= startHour || hour < endHour
+        : hour >= startHour && hour < endHour;
+    if (inside) return cfg;
+  }
+  return null;
+}
+
+/** "this morning", "tonight". */
+const thisPhase = (label: string) =>
+  label.toLowerCase() === "night" ? "tonight" : `this ${label.toLowerCase()}`;
+
+export function reading(v: Vault, now: Date): Reading | null {
+  const phase = currentPhase(Object.values(v.phases), now);
+  if (!phase) return null;
+  const today = wakingDayKey(now);
+  const label = (x: Named) => {
+    const emoji = x.emoji ?? (x.areaId ? v.areas[x.areaId]?.emoji : undefined);
+    return emoji ? `${emoji} ${x.name}` : x.name;
+  };
+  const byOrder = (a: Named, b: Named) => (a.order ?? 0) - (b.order ?? 0);
+
+  // A pointer to a moment off today's board reads as none (staleReason).
+  const pointed = v.active.momentId ? v.moments[v.active.momentId] : undefined;
+  const active = pointed && staleReason(pointed, today) === null ? pointed : null;
+
+  const fromPhase =
+    active?.phase && active.phase !== phase.phase
+      ? (Object.values(v.phases).find((p) => p.phase === active.phase)?.label ?? active.phase).toLowerCase()
+      : null;
+  const ageMin = active && v.active.at ? (now.getTime() - Date.parse(v.active.at)) / 60_000 : 0;
+  const why = fromPhase !== null ? `from the ${fromPhase}` : `set ${Math.floor(ageMin / 60)}h ago`;
+
+  if (active && fromPhase === null && ageMin <= STALE_AFTER_MIN) {
+    return { status: `≋ ${label(active)}`, band: null };
+  }
+  const status = active ? `≋ ${label(active)} · ${why}` : `≋ ${phase.label}`;
+
+  const planted = Object.values(v.moments)
+    .filter((m) => m.day === today && m.phase === phase.phase && m.id !== active?.id)
+    .sort(byOrder);
+  const taps: Tap[] =
+    planted.length > 0
+      ? planted
+          .slice(0, MAX_TAPS)
+          .map((m) => ({ kind: "tend" as const, momentId: m.id, label: label(m) }))
+      : Object.values(v.habits)
+          .filter((h) => !h.isArchived && h.phase === phase.phase)
+          .sort(byOrder)
+          .slice(0, MAX_TAPS)
+          .map((h) => ({ kind: "plant" as const, habitId: h.id, label: `+ ${label(h)}` }));
+  if (taps.length === 0) return { status, band: null };
+
+  const line = active
+    ? `≋ ${active.name} ${fromPhase !== null ? "is" : "was"} ${why}`
+    : `≋ ${planted.length > 0 ? "No intention" : "Nothing planted"} ${thisPhase(phase.label)}`;
+  return { status, band: { day: today, phase: phase.phase, line, taps } };
+}
