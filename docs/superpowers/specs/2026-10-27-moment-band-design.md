@@ -37,7 +37,7 @@ None planted in this phase, habits whose phase is this phase (up to three, in ha
 - A `+` tap plants and tends: `add_moment { habitId, day: today, phase }`, then `set_active_moment` on the new id.
 - **Later** hides the band until the phase changes. Held in `$.state`, so it lasts the session, not across sessions.
 - No band when nothing is planted and no habit belongs to this phase. The status line still shows `≋ Morning`.
-- At most three taps plus Later. Area emoji only (the gardener chose them); `≋` is the only system mark.
+- At most three taps plus Later. Emoji only the gardener's own (the moment's, else the habit's, else the area's); `≋` is the only system mark.
 - No suggestion is highlighted or pre-focused (principle 9, Downstream Allocation). Taps are in board order.
 
 ### Stale
@@ -62,7 +62,8 @@ Only through `$.tool.call` on the zenborg MCP tools. The call runs the permissio
 | `plugin/hooks/moment-band.test.tsx` (new) | tests below |
 | `plugin/hooks/hooks.json` | `"modules": ["./moment-band.tsx"]` |
 | `plugin/hooks/moment-awareness.mts` | facts only: drop every "Propose…" sentence and tool hint; keep the active moment, area, staleness and phase as context for Claude |
-| `plugin/.claude-plugin/plugin.json` | `"types"` naming the contract for the band's one state value (Later's phase); version bump |
+| `plugin/.claude-plugin/plugin.json` | `"types"` naming the contract for the band's state; the version moves with the release commit |
+| `tsconfig.json` (root) | `plugin` excluded, so `next build` never typechecks a mod |
 
 ## Boundaries
 
@@ -73,7 +74,8 @@ Out of this slice:
 
 ## Risks
 
-- **Importing the domain file.** Whether a hooks module can import `../domain/attention/ActiveMoment.ts` at runtime. If not, copy `staleReason` and `wakingDayKey` into the module and extend the existing byte-for-byte test to pin that copy too.
+- **Importing the domain file.** Settled: a hooks module may import any `.ts` file of its plugin (mod API types header), so `ActiveMoment.ts` is imported, not copied.
+- **Local time.** `reading()` uses `Date.getHours()`; confirm the mod's environment reads local time, not UTC.
 - **Builds without mods.** How an older Claude Code reads `"modules"` in `hooks.json`. If it refuses the file, the shell hooks stop too. Check with `claude plugin validate` and one older build before release.
 - **Tool name.** The MCP tool is `mcp__zenborg__set_active_moment` only where the server is registered as `zenborg`. Resolve the name from `$.tool.list()` by suffix; no zenborg server, no band.
 - **Status line ownership.** oliba 0.19 gave the status line back. `$.ui.status` adds an entry; confirm it composes with a user's own `statusLine` command rather than replacing it.
