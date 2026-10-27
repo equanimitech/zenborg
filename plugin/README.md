@@ -25,3 +25,5 @@ node --test plugin/observe.test.mjs plugin/hooks/fences.test.mjs plugin/hooks/ga
 ```
 
 Domain types live in `domain/intervention/` — shared with `src/domain/intervention/` (to be deduplicated).
+
+Moment band: when the active moment is stale or none is set, a line above the prompt offers this phase's moments to tend, or routines to plant. The status line carries the active moment. Needs a Claude Code build that loads mods.
