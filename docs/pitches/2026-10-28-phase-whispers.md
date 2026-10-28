@@ -34,10 +34,11 @@ bet:     health + phase fit + season intention ─▶ 3 whispers + why ─▶ ga
 ## Elements
 
 - **`whispers(vault, day, phase, now)`**, pure, in `plugin/domain/attention/` next to `ActiveMoment.ts`, which the band already imports (`plugin/hooks/garden.ts:6`). It returns at most three `{ kind: habit | board, id, reason }`. Candidates are unarchived habits not already planted in that slot, plus board moments.
-- **Three factors, added up.**
+- **Four factors, added up.**
   1. **Thirst:** `computeThirst` without the plan bonus.
   2. **Phase fit:** the habit's `phase` matches, or its `schedule.weekdays` include the day and `startTime` falls in the phase; a mismatch scores 0 and is not filtered out.
   3. **Season intention:** a small boost when the area has an `areaIntentions` entry on the running cycle (`src/domain/entities/Cycle.ts:33`, shipped in #260).
+  4. **Where you are:** the working folder's area first, then areas tagged `craft`, reusing the banner's workspace ranking (branch `fix/band-ranks-by-workspace`). The reason reads "you're in Themia".
 
   Board moments score on phase fit and season intention only.
 - **The reason is the strongest factor, in words.** "9 days dry", "your evening sit", "season: Body, *move daily*". There are no numbers on screen beyond days-since, which the principles permit as neutral information. This is the BCT *prompts/cues* plus *self-monitoring of behaviour*. The cue explains itself, so the gardener can absorb it and stop needing it.
