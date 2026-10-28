@@ -21,6 +21,7 @@ export interface Moment extends Named {
   id: string;
   day?: string | null;
   phase?: string | null;
+  cyclePlanId?: string | null;
 }
 export interface Habit extends Named {
   id: string;

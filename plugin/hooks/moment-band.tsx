@@ -6,7 +6,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Tap } from '../types'
-import { labelOf, matchHabits, reading, type Vault } from './garden.ts'
+import { labelOf, matchHabits, reading } from './garden.ts'
+import { call, loadVault, toolNamed } from './vault-io.ts'
 
 const band = atom({ plugin: 'zenborg', key: 'band' } as const, null)
 // "<day> <phase>" the gardener set aside with Later.
@@ -14,43 +15,6 @@ const later = atom({ plugin: 'zenborg', key: 'later' } as const, null)
 
 // What the gardener has typed in the band's search field.
 const query = atom({ plugin: 'zenborg', key: 'query' } as const, '')
-
-// Fail soft: a missing or malformed file reads as empty.
-const readJson = async <T,>($: EngineInterface, path: string, empty: T): Promise<T> => {
-  try {
-    return (JSON.parse(await $.fs.read(path)) ?? empty) as T
-  } catch {
-    return empty
-  }
-}
-
-const loadVault = async ($: EngineInterface): Promise<Vault> => {
-  const root = (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
-  const [active, moments, habits, areas, phases] = await Promise.all([
-    readJson($, `${root}/activeMoment.json`, {}),
-    readJson($, `${root}/moments.json`, {}),
-    readJson($, `${root}/habits.json`, {}),
-    readJson($, `${root}/areas.json`, {}),
-    readJson($, `${root}/phaseConfigs.json`, {}),
-  ])
-  return { active, moments, habits, areas, phases }
-}
-
-// The zenborg MCP tool by suffix: the server may be registered under another name.
-const toolNamed = async ($: EngineInterface, name: string) =>
-  (await $.tool.list()).find(t => t.name.endsWith(`__${name}`))?.name
-
-// The tool's text, or undefined on a deny, an error, or no such tool.
-const call = async ($: EngineInterface, name: string, input: Record<string, unknown>) => {
-  const tool = await toolNamed($, name)
-  if (!tool) return undefined
-  try {
-    const r = await $.tool.call({ tool, ...input } as Parameters<EngineInterface['tool']['call']>[0])
-    return r.deny !== undefined || r.isError ? undefined : (r.text ?? '')
-  } catch {
-    return undefined
-  }
-}
 
 const createdId = (text: string | undefined) => {
   try {
@@ -60,7 +24,7 @@ const createdId = (text: string | undefined) => {
   }
 }
 
-const refresh = async ($: EngineInterface) => {
+export async function refresh($: EngineInterface) {
   const r = reading(await loadVault($), new Date(await $.clock.now()), await $.session.cwd())
   $.ui.status(r?.status)
   const canWrite = (await toolNamed($, 'set_active_moment')) !== undefined
@@ -86,23 +50,14 @@ const tap = async ($: EngineInterface, t: Tap, b: Band) => {
   await refresh($)
 }
 
+// The session's start and each main-loop turn call `refresh` from index.ts,
+// which owns those hooks: the engine takes one unmatched hook per event.
 export const register: Register = on => {
-  on('session.start', async ($, e, next) => {
-    const result = await next(e)
-    await refresh($)
-    return result
-  })
-
-  // Main loop only. The turn starts first; the garden is read after.
-  on('turn.start', async ($, e, next) => {
-    const result = await next(e)
-    if (e.agentId === undefined) await refresh($)
-    return result
-  })
-
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const b = await read($, band)
     if (b === null || e.props.hasSurvey || (await read($, later)) === `${b.day} ${b.phase}`) return next(e)
+    // The band is raised on these two alone; the check types the table with an Input.
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') return next(e)
     const { Box, Button, Input, Text } = $.ui.resolve(e)
     const q = await read($, query)
     // Search runs over every habit, planted by the same path as a default plant tap.

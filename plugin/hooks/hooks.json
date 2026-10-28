@@ -1,5 +1,5 @@
 {
-  "modules": ["./moment-band.tsx"],
+  "modules": ["./index.ts"],
   "hooks": {
     "SessionStart": [
       {
