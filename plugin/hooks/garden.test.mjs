@@ -133,3 +133,45 @@ test("matchHabits: limited to three by default", () => {
   assert.equal(matchHabits(many, "x").length, 3);
   assert.equal(matchHabits(many, "x", 4).length, 4);
 });
+
+test("band habits: workspace area, then craft areas, then the rest, order breaking ties", () => {
+  const A = {
+    w: { id: "w", name: "Workshop Alpha", tags: [], surfaces: { paths: ["/src/alpha"] } },
+    c: { id: "c", name: "Craft Beta", tags: ["craft"] },
+    r: { id: "r", name: "Rest Gamma", tags: ["texture"] },
+  };
+  const h = (id, areaId, order) => ({ id, name: id, phase: "MORNING", areaId, order });
+  const habits = { r1: h("r1", "r", 1), r2: h("r2", "r", 2), c1: h("c1", "c", 3), c2: h("c2", "c", 4), w1: h("w1", "w", 5) };
+  const ids = (cwd) => reading(vault({ areas: A, habits }), at(9), cwd).band.taps.map((t) => t.habitId);
+  assert.deepEqual(ids("/src/alpha/pkg"), ["w1", "c1", "c2"]);
+  assert.deepEqual(ids("/elsewhere"), ["c1", "c2", "r1"]);
+  assert.deepEqual(ids(undefined), ["c1", "c2", "r1"]);
+});
+
+test("band habits: cwd segment falls back to the squashed area name", () => {
+  const A = {
+    e: { id: "e", name: "equanimi.tech", tags: [] },
+    o: { id: "o", name: "Other", tags: [] },
+  };
+  const habits = {
+    o1: { id: "o1", name: "o1", phase: "MORNING", areaId: "o", order: 1 },
+    e1: { id: "e1", name: "e1", phase: "MORNING", areaId: "e", order: 2 },
+  };
+  const first = (cwd) => reading(vault({ areas: A, habits }), at(9), cwd).band.taps[0].habitId;
+  assert.equal(first("/home/me/Developer/equanimitech/app"), "e1");
+  assert.equal(first("/home/me/nowhere"), "o1");
+});
+
+test("band habits: a declared path beats the name fallback, deepest prefix wins", () => {
+  const A = {
+    n: { id: "n", name: "Zen", tags: [] },
+    d: { id: "d", name: "Declared", tags: [], surfaces: { paths: ["/w/zen"] } },
+    k: { id: "k", name: "Deeper", tags: [], surfaces: { paths: ["/w/zen/deep"] } },
+  };
+  const habits = Object.fromEntries(
+    ["n", "d", "k"].map((a, i) => [`${a}1`, { id: `${a}1`, name: a, phase: "MORNING", areaId: a, order: i }]),
+  );
+  const first = (cwd) => reading(vault({ areas: A, habits }), at(9), cwd).band.taps[0].habitId;
+  assert.equal(first("/w/zen/src"), "d1");
+  assert.equal(first("/w/zen/deep/x"), "k1");
+});
