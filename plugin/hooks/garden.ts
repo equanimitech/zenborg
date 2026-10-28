@@ -31,6 +31,9 @@ export interface Area {
   id: string;
   name: string;
   emoji?: string | null;
+  tags?: string[];
+  /** Territory the area declares; `paths` are absolute prefixes. */
+  surfaces?: { paths?: string[] } | null;
 }
 export interface Vault {
   active: { momentId?: string; at?: string };
@@ -84,7 +87,35 @@ export function matchHabits(habits: Record<string, Habit>, query: string, limit 
   return [...hits.filter((h) => fold(h.name).startsWith(q)), ...hits.filter((h) => !fold(h.name).startsWith(q))].slice(0, limit);
 }
 
-export function reading(v: Vault, now: Date): Reading | null {
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const under = (cwd: string, p: string) => cwd === p || cwd.startsWith(p.endsWith("/") ? p : `${p}/`);
+
+/**
+ * The area of a working directory. Declared `surfaces.paths` first (deepest
+ * prefix wins); otherwise a cwd segment equal to the squashed area name.
+ */
+export function areaOfCwd(areas: Record<string, Area>, cwd: string | undefined): string | undefined {
+  if (!cwd) return undefined;
+  let best: { id: string; len: number } | undefined;
+  for (const a of Object.values(areas)) {
+    for (const p of a.surfaces?.paths ?? []) {
+      if (under(cwd, p) && p.length > (best?.len ?? -1)) best = { id: a.id, len: p.length };
+    }
+  }
+  if (best) return best.id;
+  const segments = new Set(cwd.split("/").map(squash).filter(Boolean));
+  return Object.values(areas).find((a) => squash(a.name) !== "" && segments.has(squash(a.name)))?.id;
+}
+
+/** Workspace area, then craft areas, then the rest; the caller's order breaks ties (sort is stable). */
+const relevance = (areas: Record<string, Area>, cwd: string | undefined) => {
+  const here = areaOfCwd(areas, cwd);
+  const rank = (h: Named) =>
+    h.areaId && h.areaId === here ? 0 : h.areaId && areas[h.areaId]?.tags?.includes("craft") ? 1 : 2;
+  return (a: Named, b: Named) => rank(a) - rank(b);
+};
+
+export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
   const phase = currentPhase(Object.values(v.phases), now);
   if (!phase) return null;
   const today = wakingDayKey(now);
@@ -118,6 +149,7 @@ export function reading(v: Vault, now: Date): Reading | null {
       : Object.values(v.habits)
           .filter((h) => !h.isArchived && h.phase === phase.phase)
           .sort(byOrder)
+          .sort(relevance(v.areas, cwd))
           .slice(0, MAX_TAPS)
           .map((h) => ({ kind: "plant" as const, habitId: h.id, label: `+ ${label(h)}` }));
   // No taps still keeps the band, and its search, while there are habits to find.

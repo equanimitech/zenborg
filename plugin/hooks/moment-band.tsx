@@ -61,7 +61,7 @@ const createdId = (text: string | undefined) => {
 }
 
 const refresh = async ($: EngineInterface) => {
-  const r = reading(await loadVault($), new Date(await $.clock.now()))
+  const r = reading(await loadVault($), new Date(await $.clock.now()), await $.session.cwd())
   $.ui.status(r?.status)
   const canWrite = (await toolNamed($, 'set_active_moment')) !== undefined
   const next = canWrite ? (r?.band ?? null) : null

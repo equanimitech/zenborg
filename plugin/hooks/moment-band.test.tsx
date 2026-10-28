@@ -30,6 +30,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
   const toasts: string[] = []
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/g' : undefined }))
   on('clock.now', () => ({ value: NOW }))
+  on('session.cwd', () => ({ value: '/home/g/work' }))
   on('fs.read', (_, e) => {
     const name = e.path.replace(ROOT, '')
     if (!(name in files)) throw new Error(`ENOENT ${e.path}`)
