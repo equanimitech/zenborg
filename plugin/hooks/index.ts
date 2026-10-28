@@ -3,11 +3,11 @@
 import type { Register } from 'claude-code'
 
 import { register as band, refresh } from './moment-band.tsx'
-import { register as pane, redraw, registerCommand } from './phase-pane.tsx'
+import { register as pane, redraw, registerOpeners } from './phase-pane.tsx'
 
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
-    await registerCommand($)
+    await registerOpeners($)
     const result = await next(e)
     await refresh($)
     return result

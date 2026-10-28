@@ -4,7 +4,7 @@
  * `node --test` and inside the Claude Code mod alike.
  */
 import type { BoardOp, BoardProposal, BoardView } from "../types";
-import { labelOf, type Moment, type Vault } from "./garden.ts";
+import type { Moment, Vault } from "./garden.ts";
 
 export const PHASES = ["MORNING", "AFTERNOON", "EVENING", "NIGHT"] as const;
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -44,23 +44,117 @@ export const dayLabel = (day: string) => {
   return `${WEEKDAYS[t.getDay()]} ${t.getDate()} ${MONTHS[t.getMonth()]}`;
 };
 
+const PHASE_EMOJI: Record<string, string> = { MORNING: "🌅", AFTERNOON: "☀️", EVENING: "🌙", NIGHT: "🌌" };
+
+/** The phase config's emoji, else the phase's own. */
+export const phaseEmoji = (v: Vault, phase: string) =>
+  Object.values(v.phases).find((p) => p.phase === phase)?.emoji || PHASE_EMOJI[phase] || "";
+
+/** "🌙 Evening · Wed 28 Oct". */
+export const viewTitle = (v: Vault, view: BoardView) =>
+  `${phaseEmoji(v, view.phase)} ${phaseLabel(v, view.phase)} · ${dayLabel(view.day)}`.trim();
+
+/** A moment's own emoji, else its habit's, else none: the area's sits on its header. */
+export const momentLabel = (v: Vault) => (m: Moment) => {
+  const emoji = m.emoji || (m.habitId ? v.habits[m.habitId]?.emoji : undefined);
+  return emoji ? `${emoji} ${m.name}` : m.name;
+};
+
 export interface Row {
   id: string;
   label: string;
-  area: string;
+  isActive: boolean;
+}
+/** One area's moments under its header; `key` is the area id, or "none". */
+export interface Group {
+  key: string;
+  header: string;
+  rows: Row[];
 }
 
-const byOrder = (a: Moment, b: Moment) => (a.order ?? 0) - (b.order ?? 0);
+const byOrder = (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0);
 
-/** The shown (day, phase)'s moments, then the drawing board's, in board order. */
-export function boardOf(v: Vault, view: BoardView): { rows: Row[]; drawing: Row[] } {
-  const label = labelOf(v.areas);
-  const row = (m: Moment): Row => ({ id: m.id, label: label(m), area: (m.areaId && v.areas[m.areaId]?.name) || "" });
+/** Moments under their area's header: areas in their order, "no area" last, moments in board order. */
+export function groupByArea(v: Vault, moments: Moment[]): Group[] {
+  const label = momentLabel(v);
+  const keyOfMoment = (m: Moment) => (m.areaId && v.areas[m.areaId] ? m.areaId : "none");
+  const areas = Object.values(v.areas).sort(byOrder);
+  const groups: Group[] = [];
+  for (const key of [...areas.map((a) => a.id), "none"]) {
+    const area = v.areas[key];
+    const rows = moments
+      .filter((m) => keyOfMoment(m) === key)
+      .sort(byOrder)
+      .map((m) => ({ id: m.id, label: label(m), isActive: v.active.momentId === m.id }));
+    const header = area ? `${area.emoji ? `${area.emoji} ` : ""}${area.name}` : "no area";
+    if (rows.length > 0) groups.push({ key, header, rows });
+  }
+  return groups;
+}
+
+/** The shown (day, phase)'s moments, then the drawing board's, each grouped by area. */
+export function boardOf(v: Vault, view: BoardView): { here: Group[]; board: Group[] } {
   const all = Object.values(v.moments);
   return {
-    rows: all.filter((m) => m.day === view.day && m.phase === view.phase).sort(byOrder).map(row),
-    drawing: all.filter((m) => !m.day).sort(byOrder).map(row),
+    here: groupByArea(v, all.filter((m) => m.day === view.day && m.phase === view.phase)),
+    board: groupByArea(v, all.filter((m) => !m.day)),
   };
+}
+
+/** The moment rows the cursor walks, in drawn order; headers are not among them. */
+export const rowIds = (groups: Group[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
+
+/** The row the cursor sits on: its own while drawn, else the first. */
+export const cursorAt = (ids: string[], cursor: string | null) =>
+  cursor !== null && ids.includes(cursor) ? cursor : (ids[0] ?? null);
+
+/** Where the cursor goes when `id` leaves the view: the row after it, else the one before. */
+export const neighbor = (ids: string[], id: string) => {
+  const i = ids.indexOf(id);
+  return ids[i + 1] ?? ids[i - 1] ?? null;
+};
+
+/** True when the op takes its moment off the shown (day, phase) and its board. */
+export const leavesView = (op: BoardOp, view: BoardView) =>
+  op.op === "move" && (op.day !== view.day || op.phase !== view.phase);
+
+/** `delta` rows from the cursor, held at the ends. */
+export const walk = (ids: string[], at: string | null, delta: number) =>
+  ids[Math.min(ids.length - 1, Math.max(0, ids.indexOf(at ?? "") + delta))] ?? null;
+
+const WEEKDAY_WORDS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+/** One word of `/phase` args as a day, a phase, or both ("tonight"); undefined when it reads as neither. */
+const wordOf = (w: string, today: string): Partial<BoardView> | undefined => {
+  if (DAY.test(w)) return { day: w };
+  if (w === "today") return { day: today };
+  if (w === "tomorrow" || w === "tmr") return { day: addDays(today, 1) };
+  if (w === "yesterday") return { day: addDays(today, -1) };
+  if (w === "tonight") return { day: today, phase: "EVENING" };
+  const phase = PHASES.find((p) => p.toLowerCase() === w);
+  if (phase) return { phase };
+  const wd = w.length >= 3 ? WEEKDAY_WORDS.findIndex((d) => d.startsWith(w)) : -1;
+  if (wd < 0) return undefined;
+  return { day: addDays(today, (wd - dateOf(today).getDay() + 7) % 7) };
+};
+
+/**
+ * `/phase [day] [phase]` as a view: "tomorrow morning", "thu", "evening".
+ * A day alone opens on its morning (today's on the current phase); a phase alone is today's.
+ * Anything unreadable falls back to now, with a note saying so.
+ */
+export function parseWhen(args: string, today: string, current: BoardView): { view: BoardView | null; note: string } {
+  const words = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { view: null, note: "" };
+  let picked: Partial<BoardView> = {};
+  for (const w of words) {
+    const part = wordOf(w, today);
+    if (part === undefined) return { view: null, note: `could not read "${args.trim()}"; showing now` };
+    picked = { ...picked, ...part };
+  }
+  const day = picked.day ?? today;
+  const phase = picked.phase ?? (day === today ? current.phase : "MORNING");
+  return { view: { day, phase }, note: "" };
 }
 
 export interface Action {
@@ -107,9 +201,9 @@ export function opCall(v: Vault, op: BoardOp): { name: string; input: Record<str
   }
 }
 
-/** The op as a human line: "♟️ strategy → Thu morning". */
+/** The op as a human line, emojis as the rows show them: "♟️ strategy → Thu morning". */
 export function describe(v: Vault, op: BoardOp): string {
-  const label = labelOf(v.areas);
+  const label = momentLabel(v);
   const name = (id: string) => {
     const m = v.moments[id];
     return m ? label(m) : id;
@@ -125,7 +219,7 @@ export function describe(v: Vault, op: BoardOp): string {
       return `✕ delete ${name(op.id)}`;
     case "add": {
       const h = op.habitId ? v.habits[op.habitId] : undefined;
-      const what = h ? label(h) : (op.name ?? "");
+      const what = h ? (h.emoji ? `${h.emoji} ${h.name}` : h.name) : (op.name ?? "");
       return `+ ${what} → ${op.day && op.phase ? whereLabel(v, op.day, op.phase) : "board"}`;
     }
   }
