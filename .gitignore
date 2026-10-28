@@ -3,6 +3,8 @@
 # dependencies
 node_modules
 /plugin/__pycache__
+# written by Claude Code when it loads the plugin as a mod
+/plugin/tsconfig.json
 
 # Rust build artifacts (crates have their own targets when built standalone)
 src-tauri/crates/*/target/
