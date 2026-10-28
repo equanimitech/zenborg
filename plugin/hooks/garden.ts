@@ -8,6 +8,7 @@ import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
 export interface PhaseConfig {
   phase: string;
   label: string;
+  emoji?: string | null;
   startHour: number;
   endHour: number;
 }
@@ -21,6 +22,8 @@ export interface Moment extends Named {
   id: string;
   day?: string | null;
   phase?: string | null;
+  cyclePlanId?: string | null;
+  habitId?: string | null;
 }
 export interface Habit extends Named {
   id: string;
@@ -31,6 +34,7 @@ export interface Area {
   id: string;
   name: string;
   emoji?: string | null;
+  order?: number;
   tags?: string[];
   /** Territory the area declares; `paths` are absolute prefixes. */
   surfaces?: { paths?: string[] } | null;

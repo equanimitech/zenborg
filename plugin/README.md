@@ -27,3 +27,5 @@ node --test plugin/observe.test.mjs plugin/hooks/fences.test.mjs plugin/hooks/ga
 Domain types live in `domain/intervention/` — shared with `src/domain/intervention/` (to be deduplicated).
 
 Moment band: when the active moment is stale or none is set, a line above the prompt offers this phase's moments to tend, or routines to plant. The status line carries the active moment. Needs a Claude Code build that loads mods.
+
+Phase pane: `/phase [day] [phase]` (`/phase tomorrow morning`, `/phase thu`) opens a phase's moments beside the chat, grouped by area, the drawing board below; the `open_phase_pane` tool opens it from a skill (sunrise, sunset). `h`/`l` step the phase (and day), `0` returns to now, `j`/`k` walk the rows; on the focused row `p`/`n` move it a phase back or on, `t` to tomorrow, `b` to the board, `a` makes it active (today), and a board moment takes `i` to plant it in the shown phase. The line at the bottom asks Haiku for changes: it shows a preview, and nothing is written until Enter on the empty line (or `y`); `x` discards. Every write goes through the zenborg MCP tools.

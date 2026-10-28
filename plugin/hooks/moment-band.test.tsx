@@ -36,7 +36,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
     if (!(name in files)) throw new Error(`ENOENT ${e.path}`)
     return { value: JSON.stringify(files[name]) }
   })
-  on('tool.list', () => ({ value: (opts.tools ?? TOOLS).map(name => ({ name, description: '' })) }))
+  on('tool.list', () => ({ value: (opts.tools ?? TOOLS).map(name => ({ name, description: '', mcp: true })) }))
   on('tool.call', (_, e) => {
     // tool_use_id is the engine's envelope, not the tool's input.
     const { tool, tool_use_id: _envelope, ...input } = e as { tool: string; tool_use_id: string } & Record<string, unknown>
