@@ -53,6 +53,7 @@ import {
   DEFAULT_CAPACITY_DAYS,
 } from "../src/domain/entities/Allocation.ts";
 import { setAllocations } from "../src/domain/entities/Cycle.ts";
+import { appetiteCheck } from "../src/domain/spend/AppetiteCheck.ts";
 import {
   getCycleSpend,
   refreshSpend,
@@ -2615,7 +2616,7 @@ defineTool(server, {
   name: "get_cycle_spend",
   description:
     "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
-    "the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
+    "`check` (the weekly appetite check: per-allocation table with area, Bugs & ops vs 1/4 of capacity, days left to bet, and `themiaExtract`, the Themia-only subset safe to publish), the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
     "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> an allocation whose aim names the issue id (wins over labels) -> Bug, Backfill and Run: issues -> Bugs & ops -> project -> allocation link; " +
     "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
     "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows and the session map.",
@@ -2658,7 +2659,19 @@ defineTool(server, {
       return err(`from (${window.from}) is after to (${window.to})`);
     const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
     if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
-    return ok(result);
+    if (!c) return ok(result);
+    return ok({
+      ...result,
+      check: appetiteCheck(
+        c.allocations ?? [],
+        {
+          allocations: result.allocations,
+          unattributedPct: result.unattributed.pct,
+        },
+        c.capacityDays ?? DEFAULT_CAPACITY_DAYS,
+        readCollection(VAULT_ROOT, "areas"),
+      ),
+    });
   },
 });
 
