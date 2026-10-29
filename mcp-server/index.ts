@@ -47,6 +47,12 @@ import {
   buildPassAllowance,
   DEFAULT_PASS_ALLOWANCE,
 } from "../src/domain/intervention/Opening.ts";
+import {
+  type Allocation,
+  allocationErrors,
+  DEFAULT_CAPACITY_DAYS,
+} from "../src/domain/entities/Allocation.ts";
+import { getCycleSpend, today, writeSpendCache } from "./spend.js";
 import { buildRelatedHabits } from "./graph.js";
 import {
   computeHealth,
@@ -2476,6 +2482,126 @@ defineTool(server, {
     cycles[id] = next;
     writeCollection(VAULT_ROOT, "cycles", cycles);
     return ok({ updated: next });
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// BETTING TABLE: allocations on a cycle, and what the cycle spent on them
+// ────────────────────────────────────────────────────────────────────────
+
+function cycleOrActive(ref: string | undefined): Cycle | string {
+  const cycles = readCollection(VAULT_ROOT, "cycles");
+  if (ref) {
+    return findCycleByIdOrName(cycles, ref) ?? `Cycle not found or ambiguous: ${ref}`;
+  }
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  const active = Object.values(cycles)
+    .filter((c) => isCycleActive(c, t.getTime()))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  return active ?? "No active cycle; pass `cycle`.";
+}
+
+const AllocationSchema = z.object({
+  id: z.string().min(1).optional().describe("Omit to mint one."),
+  kind: z.enum(["bet", "lane"]).describe(
+    "bet: a defined outcome, ends at cool-down. lane: standing work, renews each cycle, needs an `aim`.",
+  ),
+  name: z.string().min(1).describe('A lane named "Bugs & ops" is capped at a quarter of capacity and receives Bug/Backfill/Run: issues.'),
+  area: z.string().min(1),
+  link: z
+    .string()
+    .min(1)
+    .describe("How the meter attributes: a Linear project URL, an absolute (or ~/) repo path, or a pitch path."),
+  appetiteDays: z.number().positive(),
+  aim: z.string().optional().describe("The one named aim for this cycle. Required on a lane."),
+});
+
+defineTool(server, {
+  name: "set_cycle_allocations",
+  description:
+    "Set a cycle's betting table: replaces ALL its allocations (bets and lanes) and optionally its capacity (default 12 days). " +
+    "Refused, with every reason, when appetites plus the half-day cool-down exceed capacity, the Bugs & ops lane exceeds a quarter of capacity, or a lane has no aim. " +
+    "Defaults to the active cycle.",
+  schema: {
+    cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle."),
+    capacityDays: z.number().positive().optional(),
+    allocations: z.array(AllocationSchema),
+  },
+  handler: async (params) => {
+    const found = cycleOrActive(params.cycle);
+    if (typeof found === "string") return err(found);
+    const capacityDays = params.capacityDays ?? found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
+    const allocations: Allocation[] = params.allocations.map((a) => ({
+      ...a,
+      id: a.id ?? crypto.randomUUID(),
+      name: a.name.trim(),
+    }));
+    const errors = allocationErrors(allocations, capacityDays);
+    if (errors.length > 0) return err(errors.join("; "));
+    const cycles = readCollection(VAULT_ROOT, "cycles");
+    const next: Cycle = { ...found, capacityDays, allocations, updatedAt: nowIso() };
+    cycles[found.id] = next;
+    writeCollection(VAULT_ROOT, "cycles", cycles);
+    return ok({ cycle: found.name, capacityDays, allocations });
+  },
+});
+
+defineTool(server, {
+  name: "list_cycle_allocations",
+  description:
+    "A cycle's betting table: capacity, allocations, days planned and days left to bet (after the half-day cool-down). Defaults to the active cycle.",
+  schema: { cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle.") },
+  annotations: { readOnlyHint: true },
+  handler: async ({ cycle }) => {
+    const found = cycleOrActive(cycle);
+    if (typeof found === "string") return err(found);
+    const capacityDays = found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
+    const allocations = found.allocations ?? [];
+    const planned = allocations.reduce((s, a) => s + a.appetiteDays, 0);
+    return ok({
+      cycle: found.name,
+      startDate: found.startDate,
+      endDate: found.endDate,
+      capacityDays,
+      plannedDays: planned,
+      daysLeftToBet: capacityDays - 0.5 - planned,
+      allocations,
+    });
+  },
+});
+
+defineTool(server, {
+  name: "get_cycle_spend",
+  description:
+    "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
+    "the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
+    "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> project -> allocation link; Bug, Backfill and Run: issues -> Bugs & ops; " +
+    "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
+    "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows.",
+  schema: {
+    cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle."),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive start day; overrides the cycle window."),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive end day; default today."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: (p) => {
+    const { days: _days, method: _method, ...rest } = p as Record<string, unknown>;
+    return rest;
+  },
+  handler: async ({ cycle, from, to }) => {
+    const found = cycleOrActive(cycle);
+    const override = from !== undefined || to !== undefined;
+    if (typeof found === "string" && !(override && !cycle)) return err(found);
+    const c = typeof found === "string" ? null : found;
+    const window = {
+      from: from ?? c?.startDate ?? today(),
+      to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
+    };
+    if (window.from > window.to) return err(`from (${window.from}) is after to (${window.to})`);
+    const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
+    if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
+    return ok(result);
   },
 });
 

@@ -318,11 +318,13 @@ export function calculateCycleBandwidth(
  * Sets a cycle's capacity and allocations, refusing a table that breaks an
  * invariant (see `allocationErrors`). Replaces the whole table.
  */
-export function setAllocations(
-  cycle: Cycle,
+export function setAllocations<
+  C extends Pick<Cycle, "capacityDays" | "allocations" | "updatedAt">,
+>(
+  cycle: C,
   allocations: readonly Allocation[],
   capacityDays: number = cycle.capacityDays ?? DEFAULT_CAPACITY_DAYS,
-): CycleResult {
+): C | { error: string } {
   const checked = validateAllocations(allocations, capacityDays);
   if ("error" in checked) return checked;
   return {

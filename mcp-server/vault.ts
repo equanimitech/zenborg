@@ -21,6 +21,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { z } from "zod";
+import type { Allocation } from "../src/domain/entities/Allocation.ts";
 import type { Cadence } from "./cadence.js";
 
 // ────────────────────────────────────────────────────────────────────────
@@ -220,6 +221,10 @@ export interface Cycle {
   people?: Record<string, string>;
   reflection?: string;
   reflectionSource?: ReflectionSource | null;
+  /** Days this cycle can spend; absent = 12. Mirrors src/domain/entities/Cycle.ts. */
+  capacityDays?: number;
+  /** The betting table. Mirrors src/domain/entities/Cycle.ts. */
+  allocations?: Allocation[];
   createdAt: string;
   updatedAt: string;
 }
