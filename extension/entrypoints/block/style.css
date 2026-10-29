@@ -54,7 +54,7 @@ body {
 
 .pass { display: grid; gap: 0.75rem; margin: 0 auto 2rem; max-width: 22rem; text-align: left; }
 .pass[hidden], .none[hidden] { display: none; }
-.why-label { color: var(--muted); }
+.why-label { color: var(--muted); text-transform: none; letter-spacing: 0; }
 .why {
   font: inherit; font-size: 0.9375rem; color: var(--ink);
   background: transparent; border: 1px solid var(--rule); border-radius: 2px;
