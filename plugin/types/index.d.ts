@@ -25,6 +25,8 @@ declare module 'claude-code' {
       band: Band | null
       later: string | null
       query: string
+      /** The reading's status text, drawn as the prompt hint's tail; null when there is none. */
+      status: string | null
       /** The pane's (day, phase); null follows the clock. */
       view: BoardView | null
       /** The focused row's moment id. */

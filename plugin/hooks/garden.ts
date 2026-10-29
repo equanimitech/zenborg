@@ -123,6 +123,9 @@ const relevance = (areas: Record<string, Area>, cwd: string | undefined) => {
   return (a: Named, b: Named) => rank(a) - rank(b);
 };
 
+// A moment or habit whose emoji is the glyph already carries it.
+const glyphed = (label: string) => (label.startsWith("≋") ? label : `≋ ${label}`);
+
 export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
   const phase = currentPhase(Object.values(v.phases), now);
   if (!phase) return null;
@@ -150,9 +153,9 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
           ? ` · ${Math.ceil(dur - ageMin)}m left`
           : ""
         : ` · ${Math.floor(Math.max(ageMin, 0))}m`;
-    return { status: `≋ ${label(active)}${time}`, band: null };
+    return { status: `${glyphed(label(active))}${time}`, band: null };
   }
-  const status = active ? `≋ ${label(active)} · ${why}` : `≋ ${phase.label}`;
+  const status = active ? `${glyphed(label(active))} · ${why}` : `≋ ${phase.label}`;
 
   const planted = Object.values(v.moments)
     .filter((m) => m.day === today && m.phase === phase.phase && m.id !== active?.id)
