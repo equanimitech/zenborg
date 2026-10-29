@@ -74,8 +74,11 @@ export interface Group {
 
 const byOrder = (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0);
 
-/** Moments under their area's header: areas in their order, "no area" last, moments in board order. */
-export function groupByArea(v: Vault, moments: Moment[]): Group[] {
+/**
+ * Moments under their area's header: areas in their order, "no area" last, moments in board order.
+ * `areaEmoji` lets a label fall back to its area's emoji, for rows drawn without the header.
+ */
+export function groupByArea(v: Vault, moments: Moment[], opts: { areaEmoji?: boolean } = {}): Group[] {
   const label = momentLabel(v);
   const keyOfMoment = (m: Moment) => (m.areaId && v.areas[m.areaId] ? m.areaId : "none");
   const areas = Object.values(v.areas).sort(byOrder);
@@ -85,18 +88,25 @@ export function groupByArea(v: Vault, moments: Moment[]): Group[] {
     const rows = moments
       .filter((m) => keyOfMoment(m) === key)
       .sort(byOrder)
-      .map((m) => ({ id: m.id, label: label(m), isActive: v.active.momentId === m.id }));
+      .map((m) => {
+        const text = label(m);
+        return {
+          id: m.id,
+          label: opts.areaEmoji && area?.emoji && text === m.name ? `${area.emoji} ${m.name}` : text,
+          isActive: v.active.momentId === m.id,
+        };
+      });
     const header = area ? `${area.emoji ? `${area.emoji} ` : ""}${area.name}` : "no area";
     if (rows.length > 0) groups.push({ key, header, rows });
   }
   return groups;
 }
 
-/** The shown (day, phase)'s moments, then the drawing board's, each grouped by area. */
+/** The shown (day, phase)'s moments (area emoji as fallback, drawn flat), then the drawing board's, each grouped by area. */
 export function boardOf(v: Vault, view: BoardView): { here: Group[]; board: Group[] } {
   const all = Object.values(v.moments);
   return {
-    here: groupByArea(v, all.filter((m) => m.day === view.day && m.phase === view.phase)),
+    here: groupByArea(v, all.filter((m) => m.day === view.day && m.phase === view.phase), { areaEmoji: true }),
     board: groupByArea(v, all.filter((m) => !m.day)),
   };
 }
