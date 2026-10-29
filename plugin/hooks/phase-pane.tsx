@@ -1,7 +1,8 @@
 // The phase pane: /phase [day] [phase] opens a phase's moments beside the
-// chat, grouped by area, with the drawing board below. One focused row carries
-// hotkeys (p, n, t, d, a) that move, delete or activate it; a line at the bottom asks Haiku for changes, shown as
-// a preview that writes nothing until Apply.
+// chat, grouped by area, with two rows of suggestions below: your rhythm and
+// your season. One focused row carries hotkeys (p, n, t, d, a) that move, delete
+// or activate it, or (i, z) plant or hide a suggestion; a line at the bottom
+// asks Haiku for changes, shown as a preview that writes nothing until Apply.
 // Every write goes through zenborg's MCP tools.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -29,6 +30,7 @@ import {
   type Group,
 } from './board.ts'
 import { currentPhase, type Vault } from './garden.ts'
+import { MATCH_SYSTEM, matchPrompt, parseMatches, quietIntentions, rhythmRow, runningCycle, type Suggestion } from './suggest.ts'
 import { call, loadVault } from './vault-io.ts'
 
 const PANE = 'zenborg-phase'
@@ -40,6 +42,8 @@ const armed = atom({ plugin: 'zenborg', key: 'armed' } as const, null)
 const ask = atom({ plugin: 'zenborg', key: 'ask' } as const, '')
 const proposal = atom({ plugin: 'zenborg', key: 'proposal' } as const, null)
 const note = atom({ plugin: 'zenborg', key: 'note' } as const, '')
+const season = atom({ plugin: 'zenborg', key: 'season' } as const, {})
+const hidden = atom({ plugin: 'zenborg', key: 'hidden' } as const, { day: '', ids: [] })
 const rev = atom({ plugin: 'zenborg', key: 'rev' } as const, 0)
 
 // Today and the clock's (day, phase).
@@ -67,7 +71,23 @@ async function openAt($: EngineInterface, args: string, focus: boolean) {
   await update($, note, () => when.note)
   const title = `${phaseEmoji(v, shown.phase)} ${phaseLabel(v, shown.phase)}`.trim()
   const opened = await $.ui.open({ id: PANE, title, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
+  await mapSeason($, v, today)
   return { opened, title: viewTitle(v, shown) }
+}
+
+// Haiku reads the running cycle's intentions into habit ids, once per cycle per
+// session: the cycle is marked first, so a failure or a second open never asks again.
+async function mapSeason($: EngineInterface, v: Vault, today: string) {
+  const cycle = runningCycle(v, today)
+  const prompt = cycle && matchPrompt(v, cycle)
+  if (!cycle || !prompt) return
+  let first = false
+  await update($, season, s => ((first = !(cycle.id in s)), first ? { ...s, [cycle.id]: {} } : s))
+  if (!first) return
+  const r = await $.model.complete({ model: HAIKU, system: MATCH_SYSTEM, prompt, effort: 'low', timeoutMs: 15_000 })
+  const matches = r.isAnswered ? parseMatches(v, cycle, r.text) : null
+  if (matches) await update($, season, s => ({ ...s, [cycle.id]: matches }))
+  await update($, rev, n => n + 1)
 }
 
 // Writes each op in order, then has the pane re-read the vault.
@@ -134,8 +154,16 @@ export const register: Register = on => {
     await read($, rev)
     const v = await loadVault($)
     const { today, shown, current } = await shownView($, v)
-    const { here, board } = boardOf(v, shown)
-    const ids = [...rowIds(here), ...rowIds(board)]
+    const { here } = boardOf(v, shown)
+    const hid = new Set((await read($, hidden)).day === today ? (await read($, hidden)).ids : [])
+    const cycle = runningCycle(v, today)
+    const matches = (cycle && (await read($, season))[cycle.id]) || {}
+    const opts = { skip: hid, view: shown }
+    const rhythm = rhythmRow(v, shown, today, opts)
+    const quiet = quietIntentions(v, today, matches, opts)
+    const sugId = (kind: string, s: Suggestion) => `sug:${kind}:${s.habitId}`
+    const sugs = new Map([...rhythm.map(s => [sugId('rhythm', s), s] as const), ...quiet.map(s => [sugId('season', s), s] as const)])
+    const ids = [...rowIds(here), ...sugs.keys()]
     const sel = cursorAt(ids, await read($, cursor))
     const p = await read($, proposal)
     const q = await read($, ask)
@@ -186,13 +214,31 @@ export const register: Register = on => {
         </Box>
       )
     }
-    const tree = (groups: Group[]) =>
-      groups.map(g => (
-        <Box key={`g-${g.key}`} flexDirection="column">
-          <Text bold>{g.header}</Text>
-          {g.rows.map((r, i) => row(r, `${i === g.rows.length - 1 ? '└' : '├'} `))}
+    // i plants the suggestion into the shown phase; z hides it for the waking day. Either hands the cursor on.
+    const plant = async (id: string, s: Suggestion) => {
+      await disarm()
+      await update($, cursor, () => neighbor(ids, id))
+      await run($, [{ op: 'add', habitId: s.habitId, day: shown.day, phase: shown.phase }])
+    }
+    const hide = async (id: string, s: Suggestion) => {
+      await disarm()
+      await update($, cursor, () => neighbor(ids, id))
+      await update($, hidden, h => ({ day: today, ids: [...(h.day === today ? h.ids : []), s.habitId] }))
+    }
+    const sugRow = (id: string, s: Suggestion) => {
+      const focused = id === sel
+      return (
+        <Box key={`s-${id}`} flexDirection="column">
+          <Button key={`row-${id}`} plain label={`${focused ? '›' : ' '} ${s.label}${s.note ? ` · ${s.note}` : ''}`} onPress={() => focus(() => id)} />
+          {focused && (
+            <Box gap={2} paddingLeft={4}>
+              <Button key="sug-plant" plain hotkey="i" label={`into ${phaseLabel(v, shown.phase).toLowerCase()}`} onPress={() => plant(id, s)} />
+              <Button key="sug-hide" plain hotkey="z" label="not now" onPress={() => hide(id, s)} />
+            </Box>
+          )}
         </Box>
-      ))
+      )
+    }
 
     return (
       <Box flexDirection="column" width={e.props.bodyColumns} gap={1}>
@@ -213,10 +259,13 @@ export const register: Register = on => {
           {here.length === 0 && <Text dimColor>nothing planted</Text>}
           {here.flatMap(g => g.rows).map(r => row(r, ''))}
         </Box>
-        {board.length > 0 && (
+        {sugs.size > 0 && (
           <Box flexDirection="column">
             <Text dimColor>── board ──</Text>
-            {tree(board)}
+            {rhythm.length > 0 && <Text bold>your rhythm</Text>}
+            {rhythm.map(s => sugRow(sugId('rhythm', s), s))}
+            {quiet.length > 0 && <Text bold>your season</Text>}
+            {quiet.map(s => sugRow(sugId('season', s), s))}
           </Box>
         )}
         {p && (

@@ -16,14 +16,15 @@ async function readJson<T>($: EngineInterface, path: string, empty: T): Promise<
 
 export async function loadVault($: EngineInterface): Promise<Vault> {
   const root = (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
-  const [active, moments, habits, areas, phases] = await Promise.all([
+  const [active, moments, habits, areas, phases, cycles] = await Promise.all([
     readJson($, `${root}/activeMoment.json`, {}),
     readJson($, `${root}/moments.json`, {}),
     readJson($, `${root}/habits.json`, {}),
     readJson($, `${root}/areas.json`, {}),
     readJson($, `${root}/phaseConfigs.json`, {}),
+    readJson($, `${root}/cycles.json`, {}),
   ])
-  return { active, moments, habits, areas, phases }
+  return { active, moments, habits, areas, phases, cycles }
 }
 
 // The zenborg MCP tool by suffix: the server may be registered under another name.

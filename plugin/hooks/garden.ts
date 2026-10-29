@@ -30,6 +30,16 @@ export interface Habit extends Named {
   id: string;
   phase?: string | null;
   isArchived?: boolean;
+  /** "PRUNING" marks a deliberate taper. */
+  attitude?: string | null;
+}
+export interface Cycle {
+  id: string;
+  /** "YYYY-MM-DD", inclusive both ends. */
+  startDate: string;
+  endDate: string;
+  /** What each area means this season, in the gardener's words. */
+  areaIntentions?: Record<string, string>;
 }
 export interface Area {
   id: string;
@@ -46,6 +56,7 @@ export interface Vault {
   habits: Record<string, Habit>;
   areas: Record<string, Area>;
   phases: Record<string, PhaseConfig>;
+  cycles: Record<string, Cycle>;
 }
 export interface Reading {
   status: string;

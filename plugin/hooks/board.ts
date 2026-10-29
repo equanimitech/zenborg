@@ -102,14 +102,10 @@ export function groupByArea(v: Vault, moments: Moment[], opts: { areaEmoji?: boo
   return groups;
 }
 
-/** The shown (day, phase)'s moments (area emoji as fallback, drawn flat), then the drawing board's, each grouped by area. */
-export function boardOf(v: Vault, view: BoardView): { here: Group[]; board: Group[] } {
-  const all = Object.values(v.moments);
-  return {
-    here: groupByArea(v, all.filter((m) => m.day === view.day && m.phase === view.phase), { areaEmoji: true }),
-    board: groupByArea(v, all.filter((m) => !m.day)),
-  };
-}
+/** The shown (day, phase)'s moments, grouped by area (area emoji as fallback, drawn flat). */
+export const boardOf = (v: Vault, view: BoardView): { here: Group[] } => ({
+  here: groupByArea(v, Object.values(v.moments).filter((m) => m.day === view.day && m.phase === view.phase), { areaEmoji: true }),
+});
 
 /** The moment rows the cursor walks, in drawn order; headers are not among them. */
 export const rowIds = (groups: Group[]) => groups.flatMap((g) => g.rows.map((r) => r.id));

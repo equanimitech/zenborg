@@ -36,6 +36,10 @@ declare module 'claude-code' {
       proposal: BoardProposal | null
       /** One short line under the proposal: asking, failed, applied. */
       note: string
+      /** Haiku's reading of each cycle's intentions: cycle id, then area id to habit ids. {} until it answers or when it fails. */
+      season: Record<string, Record<string, string[]>>
+      /** Suggested habit ids hidden for the waking day `day`. */
+      hidden: { day: string; ids: string[] }
       /** Bumped after every write, so the pane re-reads the vault. */
       rev: number
     }
