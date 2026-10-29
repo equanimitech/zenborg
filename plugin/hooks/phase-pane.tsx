@@ -154,32 +154,33 @@ export const register: Register = on => {
       await run($, [op])
     }
 
+    // One moment row with its hotkeys when focused; `branch` is the tree's, empty for the flat list.
+    const row = (r: Group['rows'][number], branch: string) => {
+      const m = v.moments[r.id]
+      const focused = r.id === sel
+      return (
+        <Box key={`r-${r.id}`} flexDirection="column">
+          <Button
+            key={`row-${r.id}`}
+            plain
+            label={`${focused ? '›' : ' '} ${branch}${r.label}${r.isActive ? ' ●' : ''}`}
+            onPress={() => update($, cursor, () => r.id)}
+          />
+          {focused && m && (
+            <Box gap={2} paddingLeft={branch ? 6 : 4}>
+              {actionsFor(v, m, shown, today).map(a => (
+                <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.label} onPress={() => act(r.id, a.op)} />
+              ))}
+            </Box>
+          )}
+        </Box>
+      )
+    }
     const tree = (groups: Group[]) =>
       groups.map(g => (
         <Box key={`g-${g.key}`} flexDirection="column">
           <Text bold>{g.header}</Text>
-          {g.rows.map((r, i) => {
-            const m = v.moments[r.id]
-            const focused = r.id === sel
-            const branch = i === g.rows.length - 1 ? '└' : '├'
-            return (
-              <Box key={`r-${r.id}`} flexDirection="column">
-                <Button
-                  key={`row-${r.id}`}
-                  plain
-                  label={`${focused ? '›' : ' '} ${branch} ${r.label}${r.isActive ? ' ●' : ''}`}
-                  onPress={() => update($, cursor, () => r.id)}
-                />
-                {focused && m && (
-                  <Box gap={2} paddingLeft={6}>
-                    {actionsFor(v, m, shown, today).map(a => (
-                      <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.label} onPress={() => act(r.id, a.op)} />
-                    ))}
-                  </Box>
-                )}
-              </Box>
-            )
-          })}
+          {g.rows.map((r, i) => row(r, `${i === g.rows.length - 1 ? '└' : '├'} `))}
         </Box>
       ))
 
@@ -200,7 +201,7 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection="column">
           {here.length === 0 && <Text dimColor>nothing planted</Text>}
-          {tree(here)}
+          {here.flatMap(g => g.rows).map(r => row(r, ''))}
         </Box>
         {board.length > 0 && (
           <Box flexDirection="column">

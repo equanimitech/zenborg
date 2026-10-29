@@ -38,6 +38,7 @@ const files = (): Record<string, unknown> => ({
     z: { id: 'z', name: 'loose', day: TODAY, phase: 'MORNING', order: 0 },
     b: { id: 'b', name: 'tea', habitId: 'h1', day: TODAY, phase: 'MORNING', areaId: 'body', order: 2 },
     a: { id: 'a', name: 'sit', emoji: '🧘', day: TODAY, phase: 'MORNING', areaId: 'body', order: 1 },
+    w: { id: 'w', name: 'walk', day: TODAY, phase: 'MORNING', areaId: 'body', order: 3 },
     c: { id: 'c', name: 'film', day: TODAY, phase: 'AFTERNOON', areaId: 'body' },
     d: { id: 'd', name: 'plan', emoji: '📐', day: null, phase: null, areaId: 'work' },
   },
@@ -87,7 +88,7 @@ const garden = (on: On, opts: { reply?: string; placed?: boolean } = {}) => {
 const label = async (ui: { find: (q: { key: string }) => Promise<{ props: Record<string, unknown> } | undefined> }, key: string) =>
   (await ui.find({ key }))?.props.label
 
-test('/phase opens on the current phase: moments under area headers, areas in order, no area last, then the board', async ($, on) => {
+test('/phase opens on the current phase: a flat list of moments (areas in order, no area last, no headers or branches), then the board as a tree', async ($, on) => {
   const { opened } = garden(on)
   await $.command.run({ command: 'phase', args: '', ...RUN })
   expect(opened[0]).toMatchObject({ id: 'zenborg-phase', title: '🌄 Morning', focus: true, closeOnEscape: true })
@@ -95,17 +96,21 @@ test('/phase opens on the current phase: moments under area headers, areas in or
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Text', text: '🌄 Morning · Tue 27 Oct · now' })).toBeDefined()
-    const headers = (await ui.findAll({ type: 'Text' })).map(t => t.text)
-    const at = (h: string) => headers.indexOf(h)
-    expect(at('🏃 Body')).toBeGreaterThan(-1)
-    expect(at('🏃 Body')).toBeLessThan(at('💼 Work'))
-    expect(at('💼 Work')).toBeLessThan(at('no area'))
-    expect(at('no area')).toBeLessThan(at('── board ──'))
-    // Own emoji, else the habit's; the active moment is marked.
-    expect(await label(ui, 'row-a')).toBe('› ├ 🧘 sit')
-    expect(await label(ui, 'row-b')).toBe('  └ 🍵 tea ●')
-    expect(await label(ui, 'row-s')).toBe('  └ ♟️ strategy')
-    expect(await label(ui, 'row-z')).toBe('  └ loose')
+    const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    // The current phase is flat: no area headers; the board keeps its tree.
+    expect(texts).not.toContain('🏃 Body')
+    expect(texts).not.toContain('no area')
+    expect(texts.indexOf('── board ──')).toBeGreaterThan(-1)
+    expect(texts.indexOf('── board ──')).toBeLessThan(texts.indexOf('💼 Work'))
+    const labels = (await ui.findAll({ type: 'Button' })).map(b => String(b.props.label))
+    const here = labels.slice(0, labels.findIndex(l => l.includes('plan')))
+    expect(here.some(l => l.includes('├') || l.includes('└'))).toBe(false)
+    // Own emoji, else the habit's, else the area's; the active moment is marked.
+    expect(await label(ui, 'row-a')).toBe('› 🧘 sit')
+    expect(await label(ui, 'row-b')).toBe('  🍵 tea ●')
+    expect(await label(ui, 'row-w')).toBe('  🏃 walk')
+    expect(await label(ui, 'row-s')).toBe('  ♟️ strategy')
+    expect(await label(ui, 'row-z')).toBe('  loose')
     expect(await label(ui, 'row-d')).toBe('  └ 📐 plan')
     expect(await ui.find({ key: 'row-c' })).toBeUndefined()
     await ui.unmount()
@@ -117,7 +122,7 @@ test('j walks the moment rows only, past the headers, held at the end', async ($
   const ui = await $.ui.mount(PANE)
   const focused = async () => (await ui.findAll({ type: 'Button' })).find(b => String(b.props.label).startsWith('›'))?.key
   expect(await focused()).toBe('row-a')
-  for (const key of ['row-b', 'row-s', 'row-z', 'row-d', 'row-d']) {
+  for (const key of ['row-b', 'row-w', 'row-s', 'row-z', 'row-d', 'row-d']) {
     await ui.press({ key: 'down' })
     expect(await focused()).toBe(key)
   }
@@ -133,7 +138,7 @@ test('a hotkey moves the focused row through update_moment; the cursor takes the
   await ui.press({ key: 'act-next' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__update_moment', input: { id: 'a', day: TODAY, phase: 'AFTERNOON' } }])
   expect(await ui.find({ key: 'row-a' })).toBeUndefined()
-  expect(await label(ui, 'row-b')).toBe('› └ 🍵 tea ●')
+  expect(await label(ui, 'row-b')).toBe('› 🍵 tea ●')
 
   // b sends tea to the board; it stays drawn there, and the cursor with it.
   await ui.press({ key: 'act-board' })
