@@ -71,7 +71,7 @@ Read yesterday's unplanted footprints from `get_day_trace` and suggest the momen
 
 Cross-check the board against the habits the season's intention names and the wilting habits, and suggest concrete moments for today or tomorrow from the ones with nothing planted: habit, day, phase. Prefer a habit's scheduled phase, and keep it to 3-5 suggestions. Plant only the ones the user accepts.
 
-Then call `mcp__zenborg__open_phase_pane` with `{ "day": "today" }` (add `"phase"` for the next phase when the current one is nearly over), so the gardener arranges the day in the pane while the conversation stays the ritual. If it answers that the pane waits undrawn, mention `/phase` once and go on.
+Then call `mcp__zenborg__open_phase_pane` with `{ "day": "today" }` (add `"phase"` for the next phase when the current one is nearly over), so the gardener arranges the day in the pane while the conversation stays the ritual. If it answers that the pane waits undrawn, or the tool isn't available, mention `/phase` once and go on.
 
 ### 5. Surface whispers
 

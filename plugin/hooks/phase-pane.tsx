@@ -113,6 +113,7 @@ async function apply($: EngineInterface) {
 // index.ts calls these from the session's start and each main-loop turn.
 export async function registerOpeners($: EngineInterface) {
   await $.command.register({ name: 'phase', description: "Open a phase's moments in a pane", argumentHint: '[day] [phase]' })
+  // The app's own MCP server may already be named zenborg; /phase still works.
   await $.tool.register({
     name: 'open_phase_pane',
     description:
@@ -125,7 +126,7 @@ export async function registerOpeners($: EngineInterface) {
       },
     },
     isDeferred: false,
-  })
+  }).catch(err => $.ui.log(`open_phase_pane not registered: ${err}`, { to: 'debug' }))
 }
 // Claude may have tended the garden this turn: the pane re-reads the vault.
 export async function redraw($: EngineInterface) {

@@ -171,3 +171,15 @@ test('a fresh moment: no band', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
 })
+
+test('session.start survives a refused open_phase_pane: first refresh still runs', async ($, on) => {
+  const { statuses } = garden(on, staleWithThree())
+  on('command.register', () => ({ value: { command: 'phase' } }))
+  on('tool.register', () => {
+    throw new Error('the session already has an MCP server named "zenborg"')
+  })
+  on('ui.log', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/home/g/work' })
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+})
