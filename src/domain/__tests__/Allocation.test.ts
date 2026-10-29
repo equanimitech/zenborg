@@ -10,7 +10,11 @@ const bet = (name: string, appetiteDays: number): Allocation => ({
   link: "https://linear.app/themia-sas/project/x",
   appetiteDays,
 });
-const lane = (name: string, appetiteDays: number, aim?: string): Allocation => ({
+const lane = (
+  name: string,
+  appetiteDays: number,
+  aim?: string,
+): Allocation => ({
   id: name,
   kind: "lane",
   name,
@@ -52,7 +56,9 @@ describe("allocation invariants (capacity 12)", () => {
 
   it("refuses a Bugs & ops lane above a quarter of capacity", () => {
     const r = setAllocations(cycle, [lane("Bugs & ops", 3.5, "aim")]);
-    expect(r).toEqual({ error: expect.stringContaining("quarter of capacity") });
+    expect(r).toEqual({
+      error: expect.stringContaining("quarter of capacity"),
+    });
     expect(allocationErrors([lane("bugs  &  OPS", 3, "aim")])).toEqual([]);
   });
 

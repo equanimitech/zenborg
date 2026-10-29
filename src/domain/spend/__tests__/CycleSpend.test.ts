@@ -10,11 +10,27 @@ import {
 } from "../CycleSpend";
 
 const P = "https://linear.app/themia-sas/project/rente";
-const alloc = (id: string, link: string, kind: "bet" | "lane" = "bet", name = id): Allocation => ({
-  id, kind, name, area: "x", link, appetiteDays: 5, aim: kind === "lane" ? "aim" : undefined,
+const alloc = (
+  id: string,
+  link: string,
+  kind: "bet" | "lane" = "bet",
+  name = id,
+): Allocation => ({
+  id,
+  kind,
+  name,
+  area: "x",
+  link,
+  appetiteDays: 5,
+  aim: kind === "lane" ? "aim" : undefined,
 });
 const rente = alloc("rente", P);
-const bugs = alloc("bugs", "https://linear.app/themia-sas/project/ops", "lane", "Bugs & ops");
+const bugs = alloc(
+  "bugs",
+  "https://linear.app/themia-sas/project/ops",
+  "lane",
+  "Bugs & ops",
+);
 const zen = alloc("zen", "/Users/me/Developer/equanimitech/zenborg");
 const table = [rente, bugs, zen];
 
@@ -31,7 +47,12 @@ const MIN = 60_000;
 const T0 = Date.parse("2026-10-27T08:00:00Z");
 const at = (...mins: number[]) => mins.map((m) => T0 + m * MIN);
 const session = (o: Partial<SessionFacts>): SessionFacts => ({
-  id: "s", prUrls: [], turns: [], main: [], agent: [], ...o,
+  id: "s",
+  prUrls: [],
+  turns: [],
+  main: [],
+  agent: [],
+  ...o,
 });
 const W = { fromMs: T0 - 3600_000, toMs: T0 + 24 * 3600_000 };
 
@@ -52,12 +73,20 @@ describe("merged hours", () => {
 
   it("charges interleaved sessions to whoever acts next, totals unchanged", () => {
     const a = session({ id: "a", branch: "dev-1-x", main: at(0, 2, 4) });
-    const b = session({ id: "b", cwd: "/Users/me/Developer/equanimitech/zenborg", main: at(1, 3) });
+    const b = session({
+      id: "b",
+      cwd: "/Users/me/Developer/equanimitech/zenborg",
+      main: at(1, 3),
+    });
     const r = computeSpend([a, b], table, join, W, "/Users/me");
     expect(r.totalHours * 60).toBeCloseTo(4);
     // gaps: 0->1 b, 1->2 a, 2->3 b, 3->4 a
-    expect(r.allocations.find((x) => x.id === "rente")!.hours * 60).toBeCloseTo(2);
-    expect(r.allocations.find((x) => x.id === "zen")!.hours * 60).toBeCloseTo(2);
+    expect(r.allocations.find((x) => x.id === "rente")!.hours * 60).toBeCloseTo(
+      2,
+    );
+    expect(r.allocations.find((x) => x.id === "zen")!.hours * 60).toBeCloseTo(
+      2,
+    );
     expect(r.unattributed.hours).toBe(0);
   });
 
@@ -76,7 +105,10 @@ describe("merged hours", () => {
 
   it("keeps only records inside the window", () => {
     const s = session({ main: at(0, 1, 2) });
-    const r = computeSpend([s], table, join, { fromMs: T0 + MIN, toMs: T0 + 10 * MIN });
+    const r = computeSpend([s], table, join, {
+      fromMs: T0 + MIN,
+      toMs: T0 + 10 * MIN,
+    });
     expect(r.totalHours * 60).toBeCloseTo(1);
   });
 
@@ -89,16 +121,21 @@ describe("merged hours", () => {
 });
 
 describe("attribution", () => {
-  const a = (s: Partial<SessionFacts>) => attribute(session(s), table, join, "/Users/me");
+  const a = (s: Partial<SessionFacts>) =>
+    attribute(session(s), table, join, "/Users/me");
 
   it("branch dev-NNNN -> issue -> project -> allocation", () => {
     expect(a({ branch: "dev-1-add-thing" })).toBe("rente");
   });
   it("PR link -> head branch via the join (workspace-root sessions)", () => {
-    expect(a({ branch: "HEAD", prUrls: ["https://github.com/o/r/pull/9"] })).toBe("rente");
+    expect(
+      a({ branch: "HEAD", prUrls: ["https://github.com/o/r/pull/9"] }),
+    ).toBe("rente");
   });
   it("issue id typed in a user turn", () => {
-    expect(a({ turns: [{ ts: 0, text: "continue DEV-1 please" }] })).toBe("rente");
+    expect(a({ turns: [{ ts: 0, text: "continue DEV-1 please" }] })).toBe(
+      "rente",
+    );
   });
   it("Bug label and Run: titles go to Bugs & ops, even inside a project", () => {
     expect(a({ branch: "dev-2-x" })).toBe("bugs");
@@ -113,8 +150,14 @@ describe("attribution", () => {
     expect(a({ branch: "dev-999-x" })).toBeNull();
   });
   it("cwd under a repo link, worktrees included", () => {
-    expect(a({ cwd: "/Users/me/Developer/equanimitech/zenborg/src" })).toBe("zen");
-    expect(a({ cwd: "/Users/me/Developer/equanimitech/zenborg/.claude/worktrees/x" })).toBe("zen");
+    expect(a({ cwd: "/Users/me/Developer/equanimitech/zenborg/src" })).toBe(
+      "zen",
+    );
+    expect(
+      a({
+        cwd: "/Users/me/Developer/equanimitech/zenborg/.claude/worktrees/x",
+      }),
+    ).toBe("zen");
     expect(a({ cwd: "/Users/me/Developer/equanimitech/other" })).toBeNull();
   });
   it("cwd at a repo holding exactly one pitch matches it; two is ambiguous", () => {
@@ -122,7 +165,9 @@ describe("attribution", () => {
     const pitch2 = alloc("p2", "~/Developer/equanimitech/docs/pitches/y.md");
     const cwd = "/Users/me/Developer/equanimitech/docs";
     expect(attribute(session({ cwd }), [pitch], join, "/Users/me")).toBe("p1");
-    expect(attribute(session({ cwd }), [pitch, pitch2], join, "/Users/me")).toBeNull();
+    expect(
+      attribute(session({ cwd }), [pitch, pitch2], join, "/Users/me"),
+    ).toBeNull();
   });
   it("evidence beats cwd", () => {
     expect(

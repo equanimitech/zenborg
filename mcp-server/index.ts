@@ -152,7 +152,10 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
-import { staleReason, wakingDayKey } from "../src/domain/attention/ActiveMoment.ts";
+import {
+  staleReason,
+  wakingDayKey,
+} from "../src/domain/attention/ActiveMoment.ts";
 import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
@@ -2492,7 +2495,9 @@ defineTool(server, {
 function cycleOrActive(ref: string | undefined): Cycle | string {
   const cycles = readCollection(VAULT_ROOT, "cycles");
   if (ref) {
-    return findCycleByIdOrName(cycles, ref) ?? `Cycle not found or ambiguous: ${ref}`;
+    return (
+      findCycleByIdOrName(cycles, ref) ?? `Cycle not found or ambiguous: ${ref}`
+    );
   }
   const t = new Date();
   t.setHours(0, 0, 0, 0);
@@ -2504,17 +2509,29 @@ function cycleOrActive(ref: string | undefined): Cycle | string {
 
 const AllocationSchema = z.object({
   id: z.string().min(1).optional().describe("Omit to mint one."),
-  kind: z.enum(["bet", "lane"]).describe(
-    "bet: a defined outcome, ends at cool-down. lane: standing work, renews each cycle, needs an `aim`.",
-  ),
-  name: z.string().min(1).describe('A lane named "Bugs & ops" is capped at a quarter of capacity and receives Bug/Backfill/Run: issues.'),
+  kind: z
+    .enum(["bet", "lane"])
+    .describe(
+      "bet: a defined outcome, ends at cool-down. lane: standing work, renews each cycle, needs an `aim`.",
+    ),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      'A lane named "Bugs & ops" is capped at a quarter of capacity and receives Bug/Backfill/Run: issues.',
+    ),
   area: z.string().min(1),
   link: z
     .string()
     .min(1)
-    .describe("How the meter attributes: a Linear project URL, an absolute (or ~/) repo path, or a pitch path."),
+    .describe(
+      "How the meter attributes: a Linear project URL, an absolute (or ~/) repo path, or a pitch path.",
+    ),
   appetiteDays: z.number().positive(),
-  aim: z.string().optional().describe("The one named aim for this cycle. Required on a lane."),
+  aim: z
+    .string()
+    .optional()
+    .describe("The one named aim for this cycle. Required on a lane."),
 });
 
 defineTool(server, {
@@ -2524,14 +2541,18 @@ defineTool(server, {
     "Refused, with every reason, when appetites plus the half-day cool-down exceed capacity, the Bugs & ops lane exceeds a quarter of capacity, or a lane has no aim. " +
     "Defaults to the active cycle.",
   schema: {
-    cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle."),
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
     capacityDays: z.number().positive().optional(),
     allocations: z.array(AllocationSchema),
   },
   handler: async (params) => {
     const found = cycleOrActive(params.cycle);
     if (typeof found === "string") return err(found);
-    const capacityDays = params.capacityDays ?? found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
+    const capacityDays =
+      params.capacityDays ?? found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
     const allocations: Allocation[] = params.allocations.map((a) => ({
       ...a,
       id: a.id ?? crypto.randomUUID(),
@@ -2540,7 +2561,12 @@ defineTool(server, {
     const errors = allocationErrors(allocations, capacityDays);
     if (errors.length > 0) return err(errors.join("; "));
     const cycles = readCollection(VAULT_ROOT, "cycles");
-    const next: Cycle = { ...found, capacityDays, allocations, updatedAt: nowIso() };
+    const next: Cycle = {
+      ...found,
+      capacityDays,
+      allocations,
+      updatedAt: nowIso(),
+    };
     cycles[found.id] = next;
     writeCollection(VAULT_ROOT, "cycles", cycles);
     return ok({ cycle: found.name, capacityDays, allocations });
@@ -2551,7 +2577,12 @@ defineTool(server, {
   name: "list_cycle_allocations",
   description:
     "A cycle's betting table: capacity, allocations, days planned and days left to bet (after the half-day cool-down). Defaults to the active cycle.",
-  schema: { cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle.") },
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+  },
   annotations: { readOnlyHint: true },
   handler: async ({ cycle }) => {
     const found = cycleOrActive(cycle);
@@ -2580,13 +2611,28 @@ defineTool(server, {
     "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
     "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows.",
   schema: {
-    cycle: z.string().optional().describe("Cycle id or exact name. Default: the active cycle."),
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive start day; overrides the cycle window."),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Inclusive end day; default today."),
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive start day; overrides the cycle window."),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive end day; default today."),
   },
   annotations: { readOnlyHint: true },
   concise: (p) => {
-    const { days: _days, method: _method, ...rest } = p as Record<string, unknown>;
+    const {
+      days: _days,
+      method: _method,
+      ...rest
+    } = p as Record<string, unknown>;
     return rest;
   },
   handler: async ({ cycle, from, to }) => {
@@ -2598,7 +2644,8 @@ defineTool(server, {
       from: from ?? c?.startDate ?? today(),
       to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
     };
-    if (window.from > window.to) return err(`from (${window.from}) is after to (${window.to})`);
+    if (window.from > window.to)
+      return err(`from (${window.from}) is after to (${window.to})`);
     const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
     if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
     return ok(result);
@@ -4382,7 +4429,9 @@ defineTool(server, {
     unlockNote: z
       .string()
       .optional()
-      .describe("How the block is lifted (REQUIRED for dry and rationed modes)"),
+      .describe(
+        "How the block is lifted (REQUIRED for dry and rationed modes)",
+      ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
     ),

@@ -118,9 +118,11 @@ const BRANCH = /\bdev-(\d+)/i;
 const expandHome = (p: string, home: string) =>
   p.startsWith("~/") ? `${home}${p.slice(1)}` : p;
 const isPath = (link: string) => link.startsWith("/") || link.startsWith("~/");
-const hasExtension = (p: string) => /\.[A-Za-z0-9]+$/.test(p.split("/").pop() ?? "");
+const hasExtension = (p: string) =>
+  /\.[A-Za-z0-9]+$/.test(p.split("/").pop() ?? "");
 const under = (child: string, parent: string) =>
-  child === parent || child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
+  child === parent ||
+  child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
 
 function allocationOfIssue(
   issue: LinearJoin["issues"][string] | undefined,
@@ -176,7 +178,8 @@ export function attribute(
     // allocation order breaks ties
     return allocations
       .filter((a) => votes.has(a.id))
-      .reduce((best, a) => (votes.get(a.id)! > votes.get(best.id)! ? a : best)).id;
+      .reduce((best, a) => (votes.get(a.id)! > votes.get(best.id)! ? a : best))
+      .id;
   }
 
   if (!s.cwd) return null;
@@ -225,14 +228,16 @@ export function computeSpend(
         bucket.turns++;
         dayRow(dayOf(t.ts)).turns++;
       }
-    for (const stream of s.agent) bucket.agentHours += activeHours(stream.filter(inW));
+    for (const stream of s.agent)
+      bucket.agentHours += activeHours(stream.filter(inW));
   }
 
   points.sort((a, b) => a.t - b.t);
   for (let i = 1; i < points.length; i++) {
     const d = dayOf(points[i].t);
     if (d !== dayOf(points[i - 1].t)) continue;
-    const h = Math.min((points[i].t - points[i - 1].t) / 1000, GAP_CAP_S) / 3600;
+    const h =
+      Math.min((points[i].t - points[i - 1].t) / 1000, GAP_CAP_S) / 3600;
     buckets.get(points[i].key)!.hours += h;
     dayRow(d).hours += h;
   }
@@ -250,7 +255,10 @@ export function computeSpend(
       const days = b.hours / HOURS_PER_DAY;
       return { ...b, id: a.id, days, pct: (days / a.appetiteDays) * 100 };
     }),
-    unattributed: { ...un, pct: totalHours > 0 ? (un.hours / totalHours) * 100 : 0 },
+    unattributed: {
+      ...un,
+      pct: totalHours > 0 ? (un.hours / totalHours) * 100 : 0,
+    },
     days,
   };
 }

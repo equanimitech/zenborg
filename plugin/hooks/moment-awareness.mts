@@ -102,7 +102,10 @@ async function main(): Promise<void> {
     momentId?: string;
     at?: string;
   };
-  const momentsMap = readJSON(join(VAULT, "moments.json")) as Record<string, Moment>;
+  const momentsMap = readJSON(join(VAULT, "moments.json")) as Record<
+    string,
+    Moment
+  >;
   const areasMap = readJSON(join(VAULT, "areas.json")) as Record<string, Area>;
   const phaseCfgsMap = readJSON(join(VAULT, "phaseConfigs.json")) as Record<
     string,
@@ -133,7 +136,9 @@ async function main(): Promise<void> {
     } else if (active) {
       const area = active.areaId ? areasMap[active.areaId] : null;
       const ago = activeMoment.at ? minutesAgo(activeMoment.at) : 0;
-      const areaLabel = area ? ` (${area.emoji ?? ""} ${area.name})`.trim() : "";
+      const areaLabel = area
+        ? ` (${area.emoji ?? ""} ${area.name})`.trim()
+        : "";
       const phaseChanged = active.phase && active.phase !== phase!.phase;
       const stale = ago > 120;
 
@@ -162,7 +167,9 @@ async function main(): Promise<void> {
   say(
     `${released}No active intention. ` +
       `Phase: ${phase!.label} (${phase!.startHour}:00–${phase!.endHour}:00). ` +
-      (planted ? `Planted this phase: ${planted}.` : "Nothing planted this phase."),
+      (planted
+        ? `Planted this phase: ${planted}.`
+        : "Nothing planted this phase."),
   );
 }
 

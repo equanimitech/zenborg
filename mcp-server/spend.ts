@@ -66,7 +66,8 @@ export function readSession(file: string): SessionFacts {
   };
   const sidechain: number[] = [];
   for (const r of records(file)) {
-    if (r.type === "pr-link" && typeof r.prUrl === "string") s.prUrls.push(r.prUrl);
+    if (r.type === "pr-link" && typeof r.prUrl === "string")
+      s.prUrls.push(r.prUrl);
     if (r.cwd && !s.cwd) s.cwd = r.cwd;
     if (r.gitBranch && r.gitBranch !== "HEAD") s.branch = r.gitBranch;
     const t = ms(r);
@@ -88,12 +89,19 @@ export function readSession(file: string): SessionFacts {
   const subDir = path.join(path.dirname(file), s.id, "subagents");
   if (fs.existsSync(subDir))
     for (const f of fs.readdirSync(subDir).filter((f) => f.endsWith(".jsonl")))
-      s.agent.push([...records(path.join(subDir, f))].map(ms).filter((t) => !Number.isNaN(t)));
+      s.agent.push(
+        [...records(path.join(subDir, f))]
+          .map(ms)
+          .filter((t) => !Number.isNaN(t)),
+      );
   return s;
 }
 
 /** Sessions whose transcript was touched since the window opened. */
-export function readSessions(projectsDir: string, fromMs: number): SessionFacts[] {
+export function readSessions(
+  projectsDir: string,
+  fromMs: number,
+): SessionFacts[] {
   if (!fs.existsSync(projectsDir)) return [];
   const out: SessionFacts[] = [];
   for (const dir of fs.readdirSync(projectsDir)) {
@@ -107,14 +115,20 @@ export function readSessions(projectsDir: string, fromMs: number): SessionFacts[
   return out;
 }
 
-export const joinPath = (vault: string) => path.join(vault, "cache", "linear-join.json");
-export const spendCachePath = (vault: string) => path.join(vault, "cache", "cycle-spend.json");
+export const joinPath = (vault: string) =>
+  path.join(vault, "cache", "linear-join.json");
+export const spendCachePath = (vault: string) =>
+  path.join(vault, "cache", "cycle-spend.json");
 
 export function readJoin(vault: string): { join: LinearJoin; status: string } {
   try {
     const j = JSON.parse(fs.readFileSync(joinPath(vault), "utf8"));
     return {
-      join: { generatedAt: j.generatedAt, issues: j.issues ?? {}, prs: j.prs ?? {} },
+      join: {
+        generatedAt: j.generatedAt,
+        issues: j.issues ?? {},
+        prs: j.prs ?? {},
+      },
       status: `loaded${j.generatedAt ? ` (generated ${j.generatedAt})` : ""}`,
     };
   } catch {
@@ -147,7 +161,10 @@ export function getCycleSpend(
   const { join, status } = readJoin(vault);
   const home = opts.home ?? os.homedir();
   const spend = computeSpend(
-    readSessions(opts.projectsDir ?? path.join(home, ".claude", "projects"), window.fromMs),
+    readSessions(
+      opts.projectsDir ?? path.join(home, ".claude", "projects"),
+      window.fromMs,
+    ),
     allocations,
     join,
     window,
@@ -162,7 +179,12 @@ function addDay(day: string): string {
 }
 
 /** Rounded, named, hook-ready. */
-function shape(spend: Spend, allocations: readonly Allocation[], p: SpendParams, join: string) {
+function shape(
+  spend: Spend,
+  allocations: readonly Allocation[],
+  p: SpendParams,
+  join: string,
+) {
   const byId = new Map(allocations.map((a) => [a.id, a]));
   return {
     from: p.from,
@@ -201,7 +223,11 @@ function shape(spend: Spend, allocations: readonly Allocation[], p: SpendParams,
 export type CycleSpendResult = ReturnType<typeof getCycleSpend>;
 
 /** What a hook needs, written beside the join. */
-export function writeSpendCache(vault: string, cycleId: string, result: CycleSpendResult) {
+export function writeSpendCache(
+  vault: string,
+  cycleId: string,
+  result: CycleSpendResult,
+) {
   const file = spendCachePath(vault);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ cycleId, ...result }));
