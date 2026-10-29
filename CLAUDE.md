@@ -69,7 +69,9 @@ app must not trash the real vault.
 
 - **One writer per collection.** Zenborg is the writer for every collection above, and for
   `activeMoment`. The plugin reads `areas`, `dayNotes` and `activeMoment` live. Readers
-  never mutate — not even to add a missing record.
+  never mutate — not even to add a missing record. Declared plugin writes, caches only:
+  `<vault>/cache/spend-warnings/` (per-session warned level) and the spend cache
+  refresh it triggers via `zenborg-mcp refresh-spend`.
 - **`id` is a UUID.** Stable, opaque, never regenerated. The filename is the id, never a
   slug of the name.
 - **Time is UTC, ISO-8601, milliseconds.** Local time is computed at render, never stored.
