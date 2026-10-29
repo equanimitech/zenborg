@@ -83,13 +83,16 @@ const fold = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").to
 
 /** Unarchived habits of any phase whose name contains the query; prefix matches first, then by order. */
 export function matchHabits(habits: Record<string, Habit>, query: string, limit = MAX_TAPS): Habit[] {
+  return matchNamed(Object.values(habits).filter((h) => !h.isArchived), query).slice(0, limit);
+}
+
+/** Items whose name contains the query, accent- and case-folded; prefix matches first, then by order. */
+export function matchNamed<T extends Named>(items: T[], query: string): T[] {
   const q = fold(query.trim());
   if (!q) return [];
   const byOrder = (a: Named, b: Named) => (a.order ?? 0) - (b.order ?? 0);
-  const hits = Object.values(habits)
-    .filter((h) => !h.isArchived && fold(h.name).includes(q))
-    .sort(byOrder);
-  return [...hits.filter((h) => fold(h.name).startsWith(q)), ...hits.filter((h) => !fold(h.name).startsWith(q))].slice(0, limit);
+  const hits = items.filter((x) => fold(x.name).includes(q)).sort(byOrder);
+  return [...hits.filter((x) => fold(x.name).startsWith(q)), ...hits.filter((x) => !fold(x.name).startsWith(q))];
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -172,4 +175,60 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
     ? `≋ ${active.name} ${fromPhase !== null ? "is" : "was"} ${why}`
     : `≋ ${planted.length > 0 ? "No intention" : "Nothing planted"} ${thisPhase(phase.label)}`;
   return { status, band: { day: today, phase: phase.phase, line, taps } };
+}
+
+export type NowPlan =
+  | { kind: "reply"; text: string }
+  | { kind: "set"; momentId: string; text: string }
+  | { kind: "move"; momentId: string; day: string; phase: string; text: string }
+  | { kind: "plant"; habitId: string; day: string; phase: string; text: string }
+  | { kind: "create"; name: string; areaId?: string; day: string; phase: string; text: string };
+
+/**
+ * What `/now <words>` does: a planted moment (this phase, then another), a
+ * drawing-board moment, a habit, else a new standalone moment. Pure.
+ */
+export function resolveNow(v: Vault, words: string, now: Date, cwd?: string): NowPlan {
+  const phase = currentPhase(Object.values(v.phases), now);
+  if (!phase) return { kind: "reply", text: "now: no phase right now" };
+  const today = wakingDayKey(now);
+  const label = labelOf(v.areas);
+  const moments = Object.values(v.moments);
+  const planted = moments.filter((m) => m.day === today);
+  const here = planted.filter((m) => m.phase === phase.phase);
+  const q = words.trim().replace(/\s+/g, " ");
+
+  if (!q) {
+    const names = here.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((m) => m.name);
+    return { kind: "reply", text: names.length ? `now: ${names.join(" · ")}` : "now: nothing planted this phase" };
+  }
+
+  const steps: [Moment[], (m: Moment) => NowPlan][] = [
+    [here, (m) => ({ kind: "set", momentId: m.id, text: `≋ ${label(m)}, now` })],
+    [planted, (m) => ({ kind: "set", momentId: m.id, text: `≋ ${label(m)}, now` })],
+    [
+      moments.filter((m) => !m.day),
+      (m) => ({ kind: "move", momentId: m.id, day: today, phase: phase.phase, text: `≋ ${label(m)}, from the board` }),
+    ],
+  ];
+  for (const [pool, plan] of steps) {
+    const hit = matchNamed(pool, q)[0];
+    if (hit) return plan(hit);
+  }
+  const habit = matchHabits(v.habits, q, 1)[0];
+  if (habit) {
+    return { kind: "plant", habitId: habit.id, day: today, phase: phase.phase, text: `≋ ${label(habit)}, planted` };
+  }
+
+  if (q.split(" ").length > 3) return { kind: "reply", text: "now: 3 words or fewer, nothing changed" };
+  const areaId = areaOfCwd(v.areas, cwd);
+  const area = areaId ? v.areas[areaId] : undefined;
+  return {
+    kind: "create",
+    name: q,
+    areaId,
+    day: today,
+    phase: phase.phase,
+    text: `≋ new moment "${q}" planted${area ? ` in ${area.name}` : ""}`,
+  };
 }

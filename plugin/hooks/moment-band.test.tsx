@@ -178,6 +178,6 @@ test('session.start registers /phase and sets the status line', async ($, on) =>
   on('command.register', (_, e) => (commands.push(e.name), { value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/home/g/work' })
-  expect(commands).toEqual(['phase'])
+  expect(commands).toEqual(['phase', 'now'])
   expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
 })
