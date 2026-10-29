@@ -37,11 +37,11 @@ describe("chipLines", () => {
   afterEach(() => vi.useRealTimers());
 
   it("floors the pool's minutes against the budget", () => {
-    expect(chipLines(fences, spent, "www.youtube.com", SAT)).toEqual(["12 / 60 min"]);
+    expect(chipLines(fences, spent, "www.youtube.com", SAT)).toEqual(["12 / 60 min", "worth staying?"]);
   });
   it("reads zero when the count is from another day or missing", () => {
-    expect(chipLines(fences, { ...spent, day: "2026-10-23" }, "youtube.com", SAT)).toEqual(["0 / 60 min"]);
-    expect(chipLines(fences, null, "youtube.com", SAT)).toEqual(["0 / 60 min"]);
+    expect(chipLines(fences, { ...spent, day: "2026-10-23" }, "youtube.com", SAT)).toEqual(["0 / 60 min", "worth staying?"]);
+    expect(chipLines(fences, null, "youtube.com", SAT)).toEqual(["0 / 60 min", "worth staying?"]);
   });
   it("shows nothing on excluded or unrelated hosts", () => {
     expect(chipLines(fences, spent, "music.youtube.com", SAT)).toEqual([]);

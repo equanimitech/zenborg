@@ -1,6 +1,6 @@
 /**
  * The on-page chip's text, pure. One line per budgeted pool that covers `host`
- * today: `12 / 60 min`. Excluded hosts and out-of-window days yield nothing,
+ * today: `12 / 60 min`, then one closing question, `worth staying?`. Excluded hosts and out-of-window days yield nothing,
  * because `fencesFor` already skips them. A stale `rationSpent` reads as zero.
  */
 
@@ -18,5 +18,6 @@ export function chipLines(fences: Fences, spent: RationSpent | null, host: strin
     seen.add(b.pool);
     lines.push(`${Math.floor(minutes[b.pool] ?? 0)} / ${b.minutes} min`);
   }
+  if (lines.length > 0) lines.push("worth staying?");
   return lines;
 }
