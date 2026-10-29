@@ -1,3 +1,9 @@
+import {
+  type Allocation,
+  DEFAULT_CAPACITY_DAYS,
+  validateAllocations,
+} from "./Allocation";
+
 /**
  * Cycle - Time container for moments
  *
@@ -37,6 +43,10 @@ export interface Cycle {
    * or "" for "on the roster, nothing to say yet".
    */
   people?: Record<string, string>;
+  /** Days this cycle can spend. Absent = DEFAULT_CAPACITY_DAYS (12). */
+  capacityDays?: number;
+  /** The betting table: bets and lanes drawing on `capacityDays`. */
+  allocations?: Allocation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -298,4 +308,27 @@ export function calculateCycleBandwidth(
       (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
     ) + 1;
   return days * 3 * momentsPerDay; // 3 phases per day
+}
+
+// ============================================================================
+// Betting table
+// ============================================================================
+
+/**
+ * Sets a cycle's capacity and allocations, refusing a table that breaks an
+ * invariant (see `allocationErrors`). Replaces the whole table.
+ */
+export function setAllocations(
+  cycle: Cycle,
+  allocations: readonly Allocation[],
+  capacityDays: number = cycle.capacityDays ?? DEFAULT_CAPACITY_DAYS,
+): CycleResult {
+  const checked = validateAllocations(allocations, capacityDays);
+  if ("error" in checked) return checked;
+  return {
+    ...cycle,
+    capacityDays,
+    allocations: checked.allocations,
+    updatedAt: new Date().toISOString(),
+  };
 }
