@@ -198,6 +198,8 @@ describe("getCycleSpend on transcripts", () => {
     expect(r.unattributed.turns).toBe(1);
     expect(r.agentHours).toBeCloseTo(0.1, 1); // 10->13 = 3 min of agent time
     expect(r.linearJoin).toMatch(/^loaded/);
+    // A -> bugs, B -> rente; the unattributed session is not in the map.
+    expect(Object.values(r.sessions).sort()).toEqual(["bugs", "rente"]);
   });
 
   it("reports a missing join instead of pretending", () => {

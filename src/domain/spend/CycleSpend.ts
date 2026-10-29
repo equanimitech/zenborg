@@ -69,6 +69,8 @@ export interface Spend {
   unattributed: Bucket & { pct: number };
   /** Paris day -> merged hours and turns. */
   days: Record<string, { hours: number; turns: number }>;
+  /** Session id -> allocation id, for every session that matched one. */
+  sessions: Record<string, string>;
 }
 
 const dayFmt = new Intl.DateTimeFormat("en-CA", {
@@ -308,8 +310,10 @@ export function computeSpend(
   const dayRow = (d: string) => (days[d] ??= { hours: 0, turns: 0 });
 
   const points: { t: number; key: string }[] = [];
+  const attributed: Spend["sessions"] = {};
   for (const s of sessions) {
     const key = attribute(s, allocations, join, home) ?? UNATTRIBUTED;
+    if (key !== UNATTRIBUTED) attributed[s.id] = key;
     const bucket = buckets.get(key)!;
     for (const t of s.main) if (inW(t)) points.push({ t, key });
     for (const t of s.turns)
@@ -349,5 +353,6 @@ export function computeSpend(
       pct: totalHours > 0 ? (un.hours / totalHours) * 100 : 0,
     },
     days,
+    sessions: attributed,
   };
 }

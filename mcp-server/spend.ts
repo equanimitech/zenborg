@@ -235,6 +235,8 @@ function shape(
       turns: spend.unattributed.turns,
       agentHours: round(spend.unattributed.agentHours),
     },
+    /** Session id -> allocation id: hooks look their session up here. */
+    sessions: spend.sessions,
     days: Object.fromEntries(
       Object.entries(spend.days)
         .sort(([a], [b]) => a.localeCompare(b))
