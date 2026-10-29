@@ -5,6 +5,7 @@
  */
 
 import { fencesFor } from "./parse";
+import { pickQuestion, STAYING } from "./questions";
 import { localDay, type RationSpent } from "./ration";
 import type { Fences } from "./types";
 
@@ -18,6 +19,6 @@ export function chipLines(fences: Fences, spent: RationSpent | null, host: strin
     seen.add(b.pool);
     lines.push(`${Math.floor(minutes[b.pool] ?? 0)} / ${b.minutes} min`);
   }
-  if (lines.length > 0) lines.push("worth staying?");
+  if (lines.length > 0) lines.push(pickQuestion(STAYING, host, now));
   return lines;
 }

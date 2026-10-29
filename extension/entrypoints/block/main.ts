@@ -6,6 +6,7 @@
  * and writes nothing; it asks the background, which checks and records.
  */
 import "@/styles/fonts.css";
+import { ENTRY, pickQuestion } from "@/modules/fence/questions";
 import { passLabel, returnTarget, type PassAllowance } from "@/modules/fence/lifts";
 
 interface Info {
@@ -25,6 +26,7 @@ const use = $<HTMLButtonElement>("use");
 const none = $<HTMLParagraphElement>("none");
 
 $("host").textContent = host;
+if (host) $("why-label").textContent = pickQuestion(ENTRY, host, Date.now());
 
 const goOn = (): void => location.replace(returnTarget(blockedUrl, host));
 
