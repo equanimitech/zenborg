@@ -65,8 +65,9 @@ const files = (): Record<string, unknown> => ({
 
 // Stands for the engine: the vault on disk, the clock, the zenborg MCP tools
 // (update_moment moves a moment, as the server would), Haiku, and the surface.
-const garden = (on: On, opts: { reply?: string; placed?: boolean } = {}) => {
+const garden = (on: On, opts: { reply?: string; placed?: boolean; extra?: Record<string, unknown> } = {}) => {
   const vault = files()
+  Object.assign(vault['moments.json'] as object, opts.extra)
   const calls: { tool: string; input: Record<string, unknown> }[] = []
   const asks: { model: string }[] = []
   const opened: Record<string, unknown>[] = []
@@ -204,6 +205,8 @@ test('an intention Haiku maps to no habit gets no season row', async ($, on) => 
   garden(on, { reply: '{"body":[]}' })
   await $.command.run({ command: 'phase', args: '', ...RUN })
   const ui = await $.ui.mount(PANE)
+  // The mapping lands after /phase returns, with the fallback row showing meanwhile.
+  for (let i = 0; i < 50 && (await ui.find({ type: 'Text', text: 'your season' })); i++) await new Promise(r => setTimeout(r, 10))
   expect(await ui.find({ type: 'Text', text: 'your season' })).toBeUndefined()
   await ui.unmount()
 })
@@ -318,5 +321,14 @@ test('Haiku not answering shows a short line and changes nothing', async ($, on)
   await ui.input({ key: 'ask', text: 'move everything' })
   expect(await ui.find({ type: 'Text', text: 'haiku did not answer (api-error); nothing changed' })).toBeDefined()
   expect(calls).toEqual([])
+  await ui.unmount()
+})
+
+test('a habit shown under your rhythm is not offered again under your season', async ($, on) => {
+  // Guitar is planted on three mornings, so it leads the rhythm row.
+  garden(on, { extra: history([['hg', '2026-10-26', 'MORNING'], ['hg', '2026-10-25', 'MORNING'], ['hg', '2026-10-24', 'MORNING']]) })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ key: 'row-sug:rhythm:hg' })).toBeDefined()
+  expect(await ui.find({ key: 'row-sug:season:hg' })).toBeUndefined()
   await ui.unmount()
 })

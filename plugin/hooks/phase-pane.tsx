@@ -27,7 +27,7 @@ import {
   stepView,
   viewTitle,
   walk,
-  type Group,
+  type Row,
 } from './board.ts'
 import { currentPhase, type Vault } from './garden.ts'
 import { MATCH_SYSTEM, matchPrompt, parseMatches, quietIntentions, rhythmRow, runningCycle, type Suggestion } from './suggest.ts'
@@ -71,7 +71,8 @@ async function openAt($: EngineInterface, args: string, focus: boolean) {
   await update($, note, () => when.note)
   const title = `${phaseEmoji(v, shown.phase)} ${phaseLabel(v, shown.phase)}`.trim()
   const opened = await $.ui.open({ id: PANE, title, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
-  await mapSeason($, v, today)
+  // Not awaited: the fallback rows show at once, and the rev bump redraws when the mapping lands.
+  mapSeason($, v, today).catch(() => {})
   return { opened, title: viewTitle(v, shown) }
 }
 
@@ -160,7 +161,8 @@ export const register: Register = on => {
     const matches = (cycle && (await read($, season))[cycle.id]) || {}
     const opts = { skip: hid, view: shown }
     const rhythm = rhythmRow(v, shown, today, opts)
-    const quiet = quietIntentions(v, today, matches, opts)
+    // A habit already in your rhythm is not offered again under your season.
+    const quiet = quietIntentions(v, today, matches, { ...opts, skip: new Set([...hid, ...rhythm.map(s => s.habitId)]) })
     const sugId = (kind: string, s: Suggestion) => `sug:${kind}:${s.habitId}`
     const sugs = new Map([...rhythm.map(s => [sugId('rhythm', s), s] as const), ...quiet.map(s => [sugId('season', s), s] as const)])
     const ids = [...rowIds(here), ...sugs.keys()]
@@ -192,8 +194,8 @@ export const register: Register = on => {
       await run($, [op])
     }
 
-    // One moment row with its hotkeys when focused; `branch` is the tree's, empty for the flat list.
-    const row = (r: Group['rows'][number], branch: string) => {
+    // One moment row with its hotkeys when focused.
+    const row = (r: Row) => {
       const m = v.moments[r.id]
       const focused = r.id === sel
       return (
@@ -201,11 +203,11 @@ export const register: Register = on => {
           <Button
             key={`row-${r.id}`}
             plain
-            label={`${focused ? '›' : ' '} ${branch}${r.label}${r.isActive ? ' ●' : ''}`}
+            label={`${focused ? '›' : ' '} ${r.label}${r.isActive ? ' ●' : ''}`}
             onPress={() => focus(() => r.id)}
           />
           {focused && m && (
-            <Box gap={2} paddingLeft={branch ? 6 : 4}>
+            <Box gap={2} paddingLeft={4}>
               {actionsFor(v, m, shown, today).map(a => (
                 <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.key === 'delete' && armedId === r.id ? 'd again to delete' : a.label} onPress={() => act(r.id, a.op)} />
               ))}
@@ -257,7 +259,7 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection="column">
           {here.length === 0 && <Text dimColor>nothing planted</Text>}
-          {here.flatMap(g => g.rows).map(r => row(r, ''))}
+          {here.flatMap(g => g.rows).map(r => row(r))}
         </Box>
         {sugs.size > 0 && (
           <Box flexDirection="column">
