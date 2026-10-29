@@ -106,6 +106,78 @@ function fixture() {
   return { projects, vault };
 }
 
+const Z = "/Users/me/zen";
+const zen = alloc("zen", Z);
+const tool = (min: number, input: object, name = "Edit", extra: object = {}) =>
+  asstRec(min, {
+    message: { content: [{ type: "tool_use", name, input }] },
+    ...extra,
+  });
+
+describe("path evidence on transcripts", () => {
+  const run = (files: Record<string, string[]>, sub?: string[]) => {
+    const { projects, vault } = fixture();
+    for (const [id, lines] of Object.entries(files)) {
+      fs.mkdirSync(path.join(projects, "-p"), { recursive: true });
+      fs.writeFileSync(
+        path.join(projects, "-p", `${id}.jsonl`),
+        lines.join("\n"),
+      );
+    }
+    if (sub) {
+      const d = path.join(projects, "-p", "s", "subagents");
+      fs.mkdirSync(d, { recursive: true });
+      fs.writeFileSync(path.join(d, "x.jsonl"), sub.join("\n"));
+    }
+    const r = getCycleSpend(
+      vault,
+      [zen],
+      { from: "2026-10-27", to: "2026-10-27" },
+      { projectsDir: projects, home: tmp },
+    );
+    return r.allocations[0].turns;
+  };
+  it("tool_use inputs vote (file_path, Bash command)", () => {
+    expect(
+      run({ s: [userRec(0, "go"), tool(1, { file_path: `${Z}/a.ts` })] }),
+    ).toBe(1);
+    expect(
+      run({
+        s: [
+          userRec(0, "go"),
+          tool(1, { command: `cd ${Z}/.claude/worktrees/w && ls` }, "Bash"),
+        ],
+      }),
+    ).toBe(1);
+  });
+  it("reminder text and tool results do not vote", () => {
+    expect(
+      run({
+        s: [
+          userRec(0, [
+            {
+              type: "text",
+              text: `<system-reminder>${Z}/x</system-reminder>go`,
+            },
+          ]),
+          userRec(1, [{ type: "tool_result", content: `${Z}/a.ts` }]),
+          asstRec(2, {
+            message: { content: [{ type: "text", text: `${Z}/a.ts` }] },
+          }),
+        ],
+      }),
+    ).toBe(0);
+  });
+  it("a subagent in a zenborg worktree moves the parent's hours", () => {
+    const sub = [
+      tool(1, { command: `cd ${Z}/.claude/worktrees/w` }, "Bash", {
+        isSidechain: true,
+      }),
+    ];
+    expect(run({ s: [userRec(0, "go"), asstRec(1)] }, sub)).toBe(1);
+  });
+});
+
 describe("getCycleSpend on transcripts", () => {
   it("merges parallel sessions, attributes by PR/typed id, ignores reminders, keeps agents apart", () => {
     const { projects, vault } = fixture();

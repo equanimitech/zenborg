@@ -27,6 +27,10 @@ export interface SessionFacts {
   turns: { ts: number; text: string }[];
   /** Main-loop record timestamps (ms). */
   main: number[];
+  /** Paths from the main loop's own tool_use inputs (assistant records only), one per occurrence. */
+  paths?: string[];
+  /** One entry per subagent file: the cwds and tool_use paths it touched. */
+  subagents?: string[][];
   /** Sidechain streams (ms): in-file sidechain records, one per subagent file. */
   agent: number[][];
 }
@@ -124,6 +128,44 @@ const under = (child: string, parent: string) =>
   child === parent ||
   child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
 
+const MAX_PATH_VOTES = 3; // per allocation per session: weak evidence, capped
+const SUBAGENT_VOTE = 3;
+// Tokens holding a slash: /abs, ~/x, or rel/ative.
+const PATH_TOKEN = /[~\w.@-]*\/[^\s"'`()<>,;]*/g;
+
+/**
+ * The path-linked allocation a path belongs to, deepest link wins. Absolute
+ * and `~/` paths must sit under the link; a relative one must start with the
+ * link's last k segments (`equanimitech/zenborg/x`, `zenborg/src`). A worktree
+ * counts as its repo.
+ */
+function allocationOfPath(
+  raw: string,
+  allocations: readonly Allocation[],
+  home: string,
+): Allocation | undefined {
+  const tok = expandHome(raw.split("/.claude/worktrees/")[0], home).replace(
+    /\/+$/,
+    "",
+  );
+  const abs = tok.startsWith("/");
+  let best: { a: Allocation; len: number } | undefined;
+  for (const a of allocations) {
+    if (!isPath(a.link)) continue;
+    const link = expandHome(a.link, home).replace(/\/$/, "");
+    const segs = link.split("/").filter(Boolean);
+    const hit = abs
+      ? under(tok, link)
+      : segs.some((_, i) => {
+          const suffix = segs.slice(i).join("/");
+          return tok === suffix || tok.startsWith(`${suffix}/`);
+        });
+    if (hit && (!best || link.length > best.len))
+      best = { a, len: link.length };
+  }
+  return best?.a;
+}
+
 function allocationOfIssue(
   issue: LinearJoin["issues"][string] | undefined,
   allocations: readonly Allocation[],
@@ -146,10 +188,12 @@ function allocationOfIssue(
  * The allocation a session belongs to, or null (unattributed, never Bugs & ops).
  *
  * Evidence, strongest first: issue ids from the branch and from PR head
- * branches (via the join), issue ids and link strings typed in user turns.
- * Votes are summed per allocation. No votes: the working directory.
- * Never reads anything but user turns, branch and PR links: MEMORY.md injects
- * ids into every session.
+ * branches (via the join), subagents that worked under a link (3 each), issue
+ * ids, link strings and paths under a link typed in user turns, then the main
+ * loop's own tool_use paths (1 each, capped). Votes are summed per
+ * allocation. No votes: the working directory.
+ * Never reads anything but user turns, assistant tool_use inputs, branch and
+ * PR links: MEMORY.md and hooks inject ids and paths into every session.
  */
 export function attribute(
   s: SessionFacts,
@@ -172,7 +216,31 @@ export function attribute(
   for (const t of s.turns) {
     for (const m of new Set([...t.text.matchAll(ISSUE)].map((x) => x[1])))
       issueVote(m, 1);
-    for (const a of allocations) if (t.text.includes(a.link)) vote(a, 2);
+    const typed = new Set<Allocation>(
+      allocations.filter((a) => t.text.includes(a.link)),
+    );
+    for (const tok of t.text.match(PATH_TOKEN) ?? []) {
+      const a = allocationOfPath(tok, allocations, home);
+      if (a) typed.add(a);
+    }
+    for (const a of typed) vote(a, 2);
+  }
+  // Main-loop tool calls: weak, capped per allocation.
+  const toolHits = new Map<Allocation, number>();
+  for (const p of s.paths ?? []) {
+    const a = allocationOfPath(p, allocations, home);
+    if (a) toolHits.set(a, (toolHits.get(a) ?? 0) + 1);
+  }
+  for (const [a, n] of toolHits) vote(a, Math.min(n, MAX_PATH_VOTES));
+  // Subagents: each votes for where it worked, strongly.
+  for (const paths of s.subagents ?? []) {
+    const hits = new Map<Allocation, number>();
+    for (const p of paths) {
+      const a = allocationOfPath(p, allocations, home);
+      if (a) hits.set(a, (hits.get(a) ?? 0) + 1);
+    }
+    const top = [...hits].sort((x, y) => y[1] - x[1])[0];
+    if (top) vote(top[0], SUBAGENT_VOTE);
   }
   if (votes.size > 0) {
     // allocation order breaks ties

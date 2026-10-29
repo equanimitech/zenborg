@@ -169,6 +169,35 @@ describe("attribution", () => {
       attribute(session({ cwd }), [pitch, pitch2], join, "/Users/me"),
     ).toBeNull();
   });
+  const Z = "/Users/me/Developer/equanimitech/zenborg";
+  it("subagent working in a zenborg worktree moves the parent to zen", () => {
+    expect(
+      a({
+        cwd: "/Users/me/Developer/themia",
+        subagents: [[`${Z}/.claude/worktrees/x/src/a.ts`]],
+      }),
+    ).toBe("zen");
+  });
+  it("main-loop tool paths vote weakly and are capped", () => {
+    const many = Array(50).fill(`${Z}/src/a.ts`);
+    expect(a({ paths: many })).toBe("zen");
+    // cap: 50 tool paths = 3 votes, so one branch (3) + a typed issue (1) beats them
+    expect(
+      a({ paths: many, branch: "dev-1-x", turns: [{ ts: 0, text: "DEV-1" }] }),
+    ).toBe("rente");
+  });
+  it("typed paths under a link: absolute, ~/ and trailing segments", () => {
+    for (const text of [
+      `look at ${Z}/src/x.ts`,
+      "look at ~/Developer/equanimitech/zenborg/src/x.ts",
+      "see equanimitech/zenborg/docs/a.md",
+      "see zenborg/src/domain",
+    ])
+      expect(a({ turns: [{ ts: 0, text }] })).toBe("zen");
+    expect(
+      a({ turns: [{ ts: 0, text: "see zenborgish/src or other/zenborg2/x" }] }),
+    ).toBeNull();
+  });
   it("evidence beats cwd", () => {
     expect(
       a({ cwd: "/Users/me/Developer/equanimitech/zenborg", branch: "dev-1-x" }),

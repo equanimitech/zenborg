@@ -56,6 +56,22 @@ function* records(file: string): Generator<Record<string, any>> {
 const ms = (r: Record<string, any>) =>
   typeof r.timestamp === "string" ? Date.parse(r.timestamp) : Number.NaN;
 
+const ABS_IN_COMMAND = /(?:~|\/)[\w.@-]*\/[^\s"'`;|&<>()]*/g;
+
+/** Paths in an assistant record's tool_use inputs. Never tool results or text. */
+function toolPaths(r: Record<string, any>): string[] {
+  if (r.type !== "assistant" || !Array.isArray(r.message?.content)) return [];
+  const out: string[] = [];
+  for (const c of r.message.content) {
+    if (c?.type !== "tool_use" || !c.input) continue;
+    for (const k of ["file_path", "path", "notebook_path"])
+      if (typeof c.input[k] === "string") out.push(c.input[k]);
+    if (typeof c.input.command === "string")
+      out.push(...(c.input.command.match(ABS_IN_COMMAND) ?? []));
+  }
+  return out;
+}
+
 /** One session transcript (plus its subagent files) as facts. */
 export function readSession(file: string): SessionFacts {
   const s: SessionFacts = {
@@ -63,6 +79,8 @@ export function readSession(file: string): SessionFacts {
     prUrls: [],
     turns: [],
     main: [],
+    paths: [],
+    subagents: [],
     agent: [],
   };
   const sidechain: number[] = [];
@@ -81,6 +99,7 @@ export function readSession(file: string): SessionFacts {
     }
     if (r.type !== "user" && r.type !== "assistant") continue;
     s.main.push(t);
+    s.paths!.push(...toolPaths(r));
     if (r.type === "user" && !r.isMeta) {
       const text = userText(r.message?.content).replace(REMINDER, "").trim();
       if (text && !text.startsWith("<")) s.turns.push({ ts: t, text });
@@ -89,12 +108,15 @@ export function readSession(file: string): SessionFacts {
   s.agent.push(sidechain);
   const subDir = path.join(path.dirname(file), s.id, "subagents");
   if (fs.existsSync(subDir))
-    for (const f of fs.readdirSync(subDir).filter((f) => f.endsWith(".jsonl")))
-      s.agent.push(
-        [...records(path.join(subDir, f))]
-          .map(ms)
-          .filter((t) => !Number.isNaN(t)),
+    for (const f of fs
+      .readdirSync(subDir)
+      .filter((f) => f.endsWith(".jsonl"))) {
+      const rs = [...records(path.join(subDir, f))];
+      s.agent.push(rs.map(ms).filter((t) => !Number.isNaN(t)));
+      s.subagents!.push(
+        rs.flatMap((r) => [...(r.cwd ? [r.cwd] : []), ...toolPaths(r)]),
       );
+    }
   return s;
 }
 
