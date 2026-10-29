@@ -141,6 +141,27 @@ describe("attribution", () => {
     expect(a({ branch: "dev-2-x" })).toBe("bugs");
     expect(a({ turns: [{ ts: 0, text: "DEV-3" }] })).toBe("bugs");
   });
+  it("an issue named in a lane's aim goes to that lane, not Bugs & ops", () => {
+    const trust = {
+      ...alloc("trust", "https://linear.app/themia-sas/project/trust", "lane"),
+      aim: "run verified + write bugs closed (dev-2653, DEV-95)",
+    };
+    const j: LinearJoin = {
+      ...join,
+      issues: {
+        ...join.issues,
+        "DEV-2653": { labels: ["Bug"] },
+        "DEV-955": { labels: ["Backfill"] },
+        "DEV-77": { labels: ["Bug"] },
+      },
+    };
+    const t = [rente, bugs, trust];
+    const of = (b: string) =>
+      attribute(session({ branch: b }), t, j, "/Users/me");
+    expect(of("dev-2653-x")).toBe("trust");
+    expect(of("dev-77-x")).toBe("bugs"); // named in no aim
+    expect(of("dev-955-x")).toBe("bugs"); // DEV-95 must not capture DEV-955
+  });
   it("ignores issue ids that are not user turns (MEMORY.md trap) and P-DEV ids", () => {
     // facts only carry user turns; a reminder-laden turn is stripped by the reader.
     expect(a({ turns: [{ ts: 0, text: "see P-DEV-1" }] })).toBeNull();
