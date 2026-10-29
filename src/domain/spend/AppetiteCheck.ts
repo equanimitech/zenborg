@@ -81,11 +81,12 @@ export function appetiteCheck(
   }));
   const lane = allocations.find(isBugsOpsLane);
   const bugsDays = lane ? (spent.get(lane.id)?.days ?? 0) : 0;
+  const bugsPct = round((bugsDays / capacityDays) * 100, 0);
   const bugsOps = lane && {
     days: bugsDays,
-    pctOfCapacity: round((bugsDays / capacityDays) * 100, 0),
+    pctOfCapacity: bugsPct,
     limitPctOfCapacity: BUGS_OPS_SHARE * 100,
-    over: bugsDays / capacityDays > BUGS_OPS_SHARE,
+    over: bugsPct > BUGS_OPS_SHARE * 100,
   };
   const planned = allocations.reduce((s, a) => s + a.appetiteDays, 0);
   return {

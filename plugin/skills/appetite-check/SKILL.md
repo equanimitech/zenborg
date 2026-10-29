@@ -72,6 +72,11 @@ Unattributed: x % of merged time matched no allocation.
 Bugs & ops: x d = y % of capacity (limit 25 %).
 ```
 
+**Bugs & ops line, both drafts**: take it from `check.themiaExtract.bugsOps`
+only. If that is undefined, omit the line entirely. Never fill it from the
+whole-pool `check.bugsOps`: it can include personal allocations, which never
+leave zenborg.
+
 **Slack message**, short (`smart-brevity`), **no `|` characters and no
 markdown tables** (he pastes these); one allocation per line:
 

@@ -57,4 +57,16 @@ describe("appetiteCheck", () => {
     expect(x.themiaExtract.bugsOps).toBeUndefined();
     expect(x.themiaExtract.rows.map((y) => y.name)).not.toContain("Bugs & ops");
   });
+
+  it("rounds once: 25.4 % shows 25 and is not over, 25.6 % shows 26 and is over", () => {
+    const at = (days: number) =>
+      appetiteCheck(
+        table,
+        { ...spend, allocations: [{ id: "b", days, pct: 0 }] },
+        100,
+        areas,
+      ).bugsOps;
+    expect(at(25.4)).toMatchObject({ pctOfCapacity: 25, over: false });
+    expect(at(25.6)).toMatchObject({ pctOfCapacity: 26, over: true });
+  });
 });
