@@ -172,14 +172,12 @@ test('a fresh moment: no band', async ($, on) => {
   await ui.unmount()
 })
 
-test('session.start survives a refused open_phase_pane: first refresh still runs', async ($, on) => {
+test('session.start registers /phase and sets the status line', async ($, on) => {
   const { statuses } = garden(on, staleWithThree())
-  on('command.register', () => ({ value: { command: 'phase' } }))
-  on('tool.register', () => {
-    throw new Error('the session already has an MCP server named "zenborg"')
-  })
-  on('ui.log', () => ({ value: undefined }))
+  const commands: string[] = []
+  on('command.register', (_, e) => (commands.push(e.name), { value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/home/g/work' })
+  expect(commands).toEqual(['phase'])
   expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
 })

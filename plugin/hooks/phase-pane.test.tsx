@@ -171,28 +171,6 @@ test('/phase reads a day and a phase; anything else falls back to now with a not
   await ui.unmount()
 })
 
-type Call = Parameters<EngineInterface['tool']['call']>[0]
-
-test('the open_phase_pane tool opens the pane at its day and phase, without taking the keyboard', async ($, on) => {
-  const { opened, calls } = garden(on)
-  const r = await $.tool.call({ tool: 'mcp__zenborg__open_phase_pane', day: 'tomorrow', phase: 'MORNING' } as Call)
-  expect(r.text).toBe('Opened the phase pane at 🌄 Morning · Wed 28 Oct.')
-  expect(opened[0]).toMatchObject({ id: 'zenborg-phase', title: '🌄 Morning', closeOnEscape: true })
-  expect(opened[0]?.focus).toBeUndefined()
-  expect(calls).toEqual([])
-  const ui = await $.ui.mount(PANE)
-  expect(await ui.find({ type: 'Text', text: '🌄 Morning · Wed 28 Oct' })).toBeDefined()
-  await ui.unmount()
-})
-
-test('the tool says when the pane waits undrawn, and how to show it', async ($, on) => {
-  garden(on, { placed: false })
-  const r = await $.tool.call({ tool: 'mcp__zenborg__open_phase_pane', day: 'tomorrow', phase: 'MORNING' } as Call)
-  expect(r.text).toBe(
-    'The pane is open but not drawn (unasked below 144 columns (now 100)). The gardener can type /phase tomorrow MORNING to show it.',
-  )
-})
-
 test("Haiku's reply is previewed strictly with the rows' emojis: unknown ids and ops dropped, nothing written before Apply", async ($, on) => {
   const reply = `\`\`\`json
 [{"op":"move","id":"b","day":"2026-10-29","phase":"MORNING"},

@@ -1,7 +1,7 @@
 // The phase pane: /phase [day] [phase] opens a phase's moments beside the
 // chat, grouped by area, with the drawing board below. One focused row carries
 // hotkeys that move it; a line at the bottom asks Haiku for changes, shown as
-// a preview that writes nothing until Apply. A tool opens it for a skill.
+// a preview that writes nothing until Apply.
 // Every write goes through zenborg's MCP tools.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -113,20 +113,6 @@ async function apply($: EngineInterface) {
 // index.ts calls these from the session's start and each main-loop turn.
 export async function registerOpeners($: EngineInterface) {
   await $.command.register({ name: 'phase', description: "Open a phase's moments in a pane", argumentHint: '[day] [phase]' })
-  // The app's own MCP server may already be named zenborg; /phase still works.
-  await $.tool.register({
-    name: 'open_phase_pane',
-    description:
-      "Open the gardener's phase pane beside the chat at a day and phase, so they can arrange moments there by keyboard. Use at a ritual's arranging moment (sunrise: today; sunset: tomorrow morning). Writes nothing.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        day: { type: 'string', description: 'YYYY-MM-DD, today, tomorrow, or a weekday. Default today.' },
-        phase: { type: 'string', enum: ['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'], description: 'Default: the current phase today, else morning.' },
-      },
-    },
-    isDeferred: false,
-  }).catch(err => $.ui.log(`open_phase_pane not registered: ${err}`, { to: 'debug' }))
 }
 // Claude may have tended the garden this turn: the pane re-reads the vault.
 export async function redraw($: EngineInterface) {
@@ -138,18 +124,6 @@ export const register: Register = on => {
     await openAt($, e.args, true)
     return {}
   })
-
-  // A model's call is no person's ask: the pane opens without the keyboard,
-  // and on a narrow terminal it waits undrawn until they type /phase.
-  on('tool.call', { tool: 'mcp__zenborg__open_phase_pane' }, async ($, e) => {
-    const input = e as unknown as { day?: unknown; phase?: unknown }
-    const args = [input.day, input.phase].filter(x => typeof x === 'string').join(' ')
-    const { opened, title } = await openAt($, args, false)
-    const text = opened.isPlaced
-      ? `Opened the phase pane at ${title}.`
-      : `The pane is open but not drawn (${opened.reason}). The gardener can type /phase ${args} to show it.`
-    return { result: { isPlaced: opened.isPlaced }, text }
-  }).catch(() => ({ result: {}, text: 'The phase pane could not open. The gardener can type /phase.', isError: true as const }))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const t = $.ui.resolve(e)

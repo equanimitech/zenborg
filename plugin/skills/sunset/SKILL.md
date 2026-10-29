@@ -84,7 +84,7 @@ If the user wants to look ahead:
 
 If the user names tomorrow's plans, use tend with `day = tomorrow`.
 
-To arrange tomorrow, call `mcp__zenborg__open_phase_pane` with `{ "day": "tomorrow", "phase": "MORNING" }`: the moving happens in the pane, the conversation stays the ritual. If it answers that the pane waits undrawn, or the tool isn't available, mention `/phase tomorrow morning` once and go on.
+To arrange tomorrow, tell the gardener once to type `/phase tomorrow morning`: the moving happens in the pane, the conversation stays the ritual. Then go on.
 
 ### 7. Write the day to journal oracle
 
