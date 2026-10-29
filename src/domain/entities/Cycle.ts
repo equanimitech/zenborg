@@ -1,7 +1,7 @@
 import {
   type Allocation,
+  allocationErrors,
   DEFAULT_CAPACITY_DAYS,
-  validateAllocations,
 } from "./Allocation";
 
 /**
@@ -325,12 +325,12 @@ export function setAllocations<
   allocations: readonly Allocation[],
   capacityDays: number = cycle.capacityDays ?? DEFAULT_CAPACITY_DAYS,
 ): C | { error: string } {
-  const checked = validateAllocations(allocations, capacityDays);
-  if ("error" in checked) return checked;
+  const errors = allocationErrors(allocations, capacityDays);
+  if (errors.length > 0) return { error: errors.join("; ") };
   return {
     ...cycle,
     capacityDays,
-    allocations: checked.allocations,
+    allocations: [...allocations],
     updatedAt: new Date().toISOString(),
   };
 }

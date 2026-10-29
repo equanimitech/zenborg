@@ -49,9 +49,10 @@ import {
 } from "../src/domain/intervention/Opening.ts";
 import {
   type Allocation,
-  allocationErrors,
+  COOL_DOWN_DAYS,
   DEFAULT_CAPACITY_DAYS,
 } from "../src/domain/entities/Allocation.ts";
+import { setAllocations } from "../src/domain/entities/Cycle.ts";
 import { getCycleSpend, today, writeSpendCache } from "./spend.js";
 import { buildRelatedHabits } from "./graph.js";
 import {
@@ -2551,25 +2552,21 @@ defineTool(server, {
   handler: async (params) => {
     const found = cycleOrActive(params.cycle);
     if (typeof found === "string") return err(found);
-    const capacityDays =
-      params.capacityDays ?? found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
     const allocations: Allocation[] = params.allocations.map((a) => ({
       ...a,
       id: a.id ?? crypto.randomUUID(),
       name: a.name.trim(),
     }));
-    const errors = allocationErrors(allocations, capacityDays);
-    if (errors.length > 0) return err(errors.join("; "));
+    const next = setAllocations(found, allocations, params.capacityDays);
+    if ("error" in next) return err(next.error);
     const cycles = readCollection(VAULT_ROOT, "cycles");
-    const next: Cycle = {
-      ...found,
-      capacityDays,
-      allocations,
-      updatedAt: nowIso(),
-    };
     cycles[found.id] = next;
     writeCollection(VAULT_ROOT, "cycles", cycles);
-    return ok({ cycle: found.name, capacityDays, allocations });
+    return ok({
+      cycle: found.name,
+      capacityDays: next.capacityDays,
+      allocations: next.allocations,
+    });
   },
 });
 
@@ -2596,7 +2593,7 @@ defineTool(server, {
       endDate: found.endDate,
       capacityDays,
       plannedDays: planned,
-      daysLeftToBet: capacityDays - 0.5 - planned,
+      daysLeftToBet: capacityDays - COOL_DOWN_DAYS - planned,
       allocations,
     });
   },

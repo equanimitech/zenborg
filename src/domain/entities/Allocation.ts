@@ -78,14 +78,3 @@ export function allocationErrors(
 
   return errors;
 }
-
-/** The table, or the first error. */
-export function validateAllocations(
-  allocations: readonly Allocation[],
-  capacityDays: number = DEFAULT_CAPACITY_DAYS,
-): { allocations: Allocation[] } | { error: string } {
-  const errors = allocationErrors(allocations, capacityDays);
-  return errors.length > 0
-    ? { error: errors.join("; ") }
-    : { allocations: [...allocations] };
-}

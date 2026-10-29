@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
-import { spendLine } from "./spend-line.ts";
+import { parisDay, spendLine } from "./spend-line.ts";
 import { refreshSpendInBackground } from "./spend-refresh.ts";
 
 const VAULT =
@@ -70,7 +70,7 @@ function cycleLine(): string {
   try {
     const line = spendLine(
       readJSON(join(VAULT, "cache", "cycle-spend.json")),
-      new Date().toISOString().slice(0, 10),
+      parisDay(Date.now()),
     );
     return line ? ` Cycle: ${line}.` : "";
   } catch {

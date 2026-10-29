@@ -18,6 +18,20 @@ export interface CachedSpend {
 }
 
 const SHOWN = 3;
+
+const dayFmt = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Paris",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+/**
+ * Paris day, turning over at 03:00. Same as `dayOf` in
+ * src/domain/spend/CycleSpend.ts (copied: the plugin ships alone; the drift
+ * is pinned in mcp-server/spend-refresh.test.ts).
+ */
+export const parisDay = (ms: number): string =>
+  dayFmt.format(ms - 3 * 3_600_000);
 const n = (x: number) => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 
 /** Most-spent allocations first, % on the first, then the unattributed share. */
@@ -36,7 +50,8 @@ export function spendLine(
     );
   if (spend?.unattributed)
     parts.push(`unattributed ${spend.unattributed.pct} %`);
-  const asOf = spend?.computedAt?.slice(0, 10);
+  const at = spend?.computedAt ? Date.parse(spend.computedAt) : Number.NaN;
+  const asOf = Number.isNaN(at) ? undefined : parisDay(at);
   if (asOf && today && asOf !== today) parts.push(`as of ${asOf}`);
   return parts.join(" · ");
 }
