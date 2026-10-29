@@ -53,7 +53,12 @@ import {
   DEFAULT_CAPACITY_DAYS,
 } from "../src/domain/entities/Allocation.ts";
 import { setAllocations } from "../src/domain/entities/Cycle.ts";
-import { getCycleSpend, today, writeSpendCache } from "./spend.js";
+import {
+  getCycleSpend,
+  refreshSpend,
+  today,
+  writeSpendCache,
+} from "./spend.js";
 import { buildRelatedHabits } from "./graph.js";
 import {
   computeHealth,
@@ -137,6 +142,13 @@ import {
 const vault = resolveVault();
 logVaultBanner(vault);
 const VAULT_ROOT = vault.root;
+
+// One-shot CLI, no MCP: `zenborg-mcp refresh-spend [--vault <dir>]`.
+// The plugin's SessionStart hook spawns it (the cached plugin has no repo).
+if (process.argv[2] === "refresh-spend") {
+  console.log(refreshSpend(VAULT_ROOT));
+  process.exit(0);
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // Phase auto-derive

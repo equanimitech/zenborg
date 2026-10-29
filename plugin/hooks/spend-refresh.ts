@@ -1,12 +1,15 @@
 /**
  * When SessionStart should refresh `<vault>/cache/cycle-spend.json`, and how it
- * kicks the refresh off: detached, never awaited. The CLI (`pnpm spend:refresh`)
+ * kicks the refresh off: detached, never awaited. `zenborg-mcp refresh-spend`
  * recomputes and takes the lock; this only decides and spawns.
  */
 import { spawn } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+/** Where the app installs the MCP binary; Claude Code's MCP config points here too. */
+export const ZENBORG_MCP_BIN =
+  "/Applications/zenborg.app/Contents/MacOS/zenborg-mcp";
 
 export const CACHE_MAX_AGE_MS = 30 * 60_000;
 /** A lock older than this is a crashed refresh (a run takes ~5 s). */
@@ -40,22 +43,10 @@ export function refreshSpendInBackground(vault: string): void {
       )
     )
       return;
-    const script = join(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../scripts/spend-refresh.mts",
-    );
-    if (!existsSync(script)) return; // plugin installed without the repo
-    spawn(
-      process.execPath,
-      [
-        "--experimental-transform-types",
-        "--disable-warning=ExperimentalWarning",
-        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
-        script,
-        "--vault",
-        vault,
-      ],
-      { detached: true, stdio: "ignore" },
-    ).unref();
+    if (!existsSync(ZENBORG_MCP_BIN)) return; // app not installed
+    spawn(ZENBORG_MCP_BIN, ["refresh-spend", "--vault", vault], {
+      detached: true,
+      stdio: "ignore",
+    }).unref();
   } catch {}
 }

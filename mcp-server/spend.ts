@@ -24,6 +24,7 @@ import {
   type Spend,
   type Window,
 } from "../src/domain/spend/CycleSpend.ts";
+import { LOCK_STALE_MS } from "../plugin/hooks/spend-refresh.ts";
 
 const REMINDER =
   /<system-reminder>[\s\S]*?<\/system-reminder>|<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/g;
@@ -234,3 +235,50 @@ export function writeSpendCache(
 }
 
 export const today = () => dayOf(Date.now());
+
+/**
+ * Recompute the active cycle's spend and write the cache; returns a one-line
+ * status. One refresh at a time: `cache/cycle-spend.lock`, stolen once stale.
+ * Behind `zenborg-mcp refresh-spend` (the SessionStart hook) and
+ * `pnpm spend:refresh`.
+ */
+export function refreshSpend(vault: string): string {
+  const lock = path.join(vault, "cache", "cycle-spend.lock");
+  fs.mkdirSync(path.dirname(lock), { recursive: true });
+  try {
+    fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
+  } catch {
+    if (Date.now() - fs.statSync(lock).mtimeMs < LOCK_STALE_MS)
+      return "another refresh is running; skipping";
+    fs.writeFileSync(lock, String(process.pid)); // steal the stale lock
+  }
+  try {
+    let cycles: Record<
+      string,
+      {
+        id: string;
+        startDate: string;
+        endDate: string | null;
+        allocations?: Allocation[];
+      }
+    > = {};
+    try {
+      cycles = JSON.parse(
+        fs.readFileSync(path.join(vault, "cycles.json"), "utf8"),
+      );
+    } catch {} // fail soft: no cycles.json = no active cycle
+    const t = today();
+    const c = Object.values(cycles)
+      .filter((c) => c.startDate <= t && (c.endDate === null || c.endDate >= t))
+      .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+    if (!c) return "no active cycle; nothing to refresh";
+    const result = getCycleSpend(vault, c.allocations ?? [], {
+      from: c.startDate,
+      to: t,
+    });
+    writeSpendCache(vault, c.id, result);
+    return `cycle-spend.json written: ${result.totalHours} h, ${result.allocations.length} allocations, join ${result.linearJoin}`;
+  } finally {
+    fs.rmSync(lock, { force: true });
+  }
+}
