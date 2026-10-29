@@ -2616,7 +2616,7 @@ defineTool(server, {
   description:
     "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
     "the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
-    "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> project -> allocation link; Bug, Backfill and Run: issues -> Bugs & ops; " +
+    "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> an allocation whose aim names the issue id (wins over labels) -> Bug, Backfill and Run: issues -> Bugs & ops -> project -> allocation link; " +
     "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
     "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows.",
   schema: {
