@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
+import { spendLine } from "./spend-line.ts";
 
 const VAULT =
   process.env.ZENBORG_HOME ||
@@ -62,6 +63,25 @@ function currentPhase(configs: PhaseConfig[]): PhaseConfig | null {
   return null;
 }
 
+/** The cycle's spend line, from the cache; empty when there is none. */
+function cycleLine(): string {
+  try {
+    const line = spendLine(
+      readJSON(join(VAULT, "cache", "cycle-spend.json")),
+      new Date().toISOString().slice(0, 10),
+    );
+    return line ? ` Cycle: ${line}.` : "";
+  } catch {
+    return "";
+  }
+}
+
+/** The one zenborg line: the intention, then the cycle. */
+function say(body: string): never {
+  process.stdout.write(`<zenborg-intention: ${body}${cycleLine()}>`);
+  process.exit(0);
+}
+
 function minutesAgo(iso: string): number {
   return Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
 }
@@ -91,7 +111,11 @@ async function main(): Promise<void> {
 
   const phases = Object.values(phaseCfgsMap);
   const phase = currentPhase(phases);
-  if (!phase) silent();
+  if (!phase) {
+    const line = cycleLine();
+    if (line) process.stdout.write(`<zenborg-intention:${line}>`);
+    silent();
+  }
 
   const today = wakingDayKey();
   const phaseMoments = Object.values(momentsMap).filter(
@@ -117,17 +141,14 @@ async function main(): Promise<void> {
         const why = phaseChanged
           ? `phase changed (was ${active.phase}, now ${phase!.label})`
           : `set ${ago}m ago`;
-        process.stdout.write(
-          `<zenborg-intention: stale active "${active.name}"${areaLabel}: ${why}.>`,
-        );
+        say(`stale active "${active.name}"${areaLabel}: ${why}.`);
       } else {
-        process.stdout.write(
-          `<zenborg-intention: active "${active.name}"${areaLabel}, ` +
+        say(
+          `active "${active.name}"${areaLabel}, ` +
             `set ${ago}m ago. Phase: ${phase!.label}. ` +
-            `Clear on /close-up or when the gardener switches.>`,
+            `Clear on /close-up or when the gardener switches.`,
         );
       }
-      process.exit(0);
     }
   }
 
@@ -138,13 +159,11 @@ async function main(): Promise<void> {
       return `"${m.name}"${area ? ` (${area.name})` : ""}`;
     })
     .join(", ");
-  process.stdout.write(
-    `<zenborg-intention: ${released}No active intention. ` +
+  say(
+    `${released}No active intention. ` +
       `Phase: ${phase!.label} (${phase!.startHour}:00–${phase!.endHour}:00). ` +
-      (planted ? `Planted this phase: ${planted}.` : "Nothing planted this phase.") +
-      ">",
+      (planted ? `Planted this phase: ${planted}.` : "Nothing planted this phase."),
   );
-  process.exit(0);
 }
 
 main().catch(() => process.exit(0));
