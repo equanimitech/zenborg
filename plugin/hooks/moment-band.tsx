@@ -16,7 +16,7 @@ const later = atom({ plugin: 'zenborg', key: 'later' } as const, null)
 // What the gardener has typed in the band's search field.
 const query = atom({ plugin: 'zenborg', key: 'query' } as const, '')
 
-const createdId = (text: string | undefined) => {
+export const createdId = (text: string | undefined) => {
   try {
     return text ? (JSON.parse(text).created?.id as string | undefined) : undefined
   } catch {

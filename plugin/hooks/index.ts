@@ -3,11 +3,13 @@
 import type { Register } from 'claude-code'
 
 import { register as band, refresh } from './moment-band.tsx'
+import { register as now, registerNow } from './now.ts'
 import { register as pane, redraw, registerOpeners } from './phase-pane.tsx'
 
 export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await registerOpeners($)
+    await registerNow($)
     const result = await next(e)
     await refresh($)
     // Idle sessions still age the moment; timers end on module reload.
@@ -26,5 +28,6 @@ export const register: Register = (on, options) => {
   })
 
   band(on, options)
+  now(on, options)
   pane(on, options)
 }

@@ -196,3 +196,39 @@ test("timer: minutes left with a duration, rounded up; quiet once time is up", (
 test("timer: no active.at means no counter", () => {
   assert.equal(timed({}, {}), "≋ 🍿 film");
 });
+
+const { resolveNow } = await import("./garden.ts");
+const nowVault = () =>
+  vault({
+    areas: { ...areas, th: { id: "th", name: "Themia", surfaces: { paths: ["/w/themia"] } } },
+    moments: {
+      s: moment("s", "Stratégie", "MORNING", { emoji: "♟️" }),
+      l: moment("l", "lunch", "AFTERNOON"),
+      c: { id: "c", name: "call", emoji: "📞" },
+      x: { id: "x", name: "old call", day: "2026-10-20", phase: "MORNING" },
+    },
+    habits: { h: { id: "h", name: "singing", emoji: "🎸", phase: "EVENING" }, g: { id: "g", name: "gone", isArchived: true } },
+  });
+const plan = (words, cwd) => resolveNow(nowVault(), words, at(9), cwd);
+
+test("/now resolves: this phase, other phase, board, habit, new", () => {
+  assert.deepEqual(plan("strat"), { kind: "set", momentId: "s", text: "≋ ♟️ Stratégie, now" });
+  assert.deepEqual(plan("lun"), { kind: "set", momentId: "l", text: "≋ lunch, now" });
+  assert.deepEqual(plan("call"), {
+    kind: "move", momentId: "c", day: TODAY, phase: "MORNING", text: "≋ 📞 call, from the board",
+  });
+  assert.deepEqual(plan("sing"), {
+    kind: "plant", habitId: "h", day: TODAY, phase: "MORNING", text: "≋ 🎸 singing, planted",
+  });
+  assert.equal(plan("gone").kind, "create");
+  assert.deepEqual(plan("deep work", "/w/themia/x"), {
+    kind: "create", name: "deep work", areaId: "th", day: TODAY, phase: "MORNING",
+    text: '≋ new moment "deep work" planted in Themia',
+  });
+  assert.equal(plan("deep work").text, '≋ new moment "deep work" planted');
+});
+
+test("/now: more than 3 new words refuses, no words hints", () => {
+  assert.deepEqual(plan("a b c d"), { kind: "reply", text: "now: 3 words or fewer, nothing changed" });
+  assert.deepEqual(plan(""), { kind: "reply", text: "now: Stratégie" });
+});
