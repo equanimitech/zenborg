@@ -29,6 +29,8 @@ declare module 'claude-code' {
       view: BoardView | null
       /** The focused row's moment id. */
       cursor: string | null
+      /** The moment id whose delete awaits a second press; null when none. */
+      armed: string | null
       /** The instruction typed for Haiku. */
       ask: string
       proposal: BoardProposal | null

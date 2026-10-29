@@ -1,6 +1,6 @@
 // The phase pane: /phase [day] [phase] opens a phase's moments beside the
 // chat, grouped by area, with the drawing board below. One focused row carries
-// hotkeys that move it; a line at the bottom asks Haiku for changes, shown as
+// hotkeys (p, n, t, d, a) that move, delete or activate it; a line at the bottom asks Haiku for changes, shown as
 // a preview that writes nothing until Apply.
 // Every write goes through zenborg's MCP tools.
 import { atom, read, update } from 'claude-code'
@@ -36,6 +36,7 @@ const HAIKU = 'claude-haiku-5-5'
 
 const view = atom({ plugin: 'zenborg', key: 'view' } as const, null)
 const cursor = atom({ plugin: 'zenborg', key: 'cursor' } as const, null)
+const armed = atom({ plugin: 'zenborg', key: 'armed' } as const, null)
 const ask = atom({ plugin: 'zenborg', key: 'ask' } as const, '')
 const proposal = atom({ plugin: 'zenborg', key: 'proposal' } as const, null)
 const note = atom({ plugin: 'zenborg', key: 'note' } as const, '')
@@ -139,17 +140,26 @@ export const register: Register = on => {
     const p = await read($, proposal)
     const q = await read($, ask)
     const n = await read($, note)
+    const armedId = await read($, armed)
     const atNow = shown.day === current.day && shown.phase === current.phase
 
     // Shows `next` (null: now) and retitles the pane's tab to its phase.
     const goTo = async (next: BoardView | null) => {
+      await update($, armed, () => null)
       const phase = (next ?? current).phase
       await update($, view, () => next)
       await $.ui.open({ id: PANE, title: `${phaseEmoji(v, phase)} ${phaseLabel(v, phase)}`.trim(), closeOnEscape: true })
     }
     const step = (delta: number) => goTo(stepView(shown, delta))
-    // A move off this view hands the cursor to the next row first.
+    const disarm = () => update($, armed, () => null)
+    const focus = async (f: (c: string | null) => string | null) => {
+      await disarm()
+      await update($, cursor, f)
+    }
+    // A move off this view hands the cursor to the next row first. The first delete press only arms.
     const act = async (id: string, op: BoardOp) => {
+      if (op.op === 'delete' && (await read($, armed)) !== id) return update($, armed, () => id)
+      await disarm()
       if (leavesView(op, shown)) await update($, cursor, () => neighbor(ids, id))
       await run($, [op])
     }
@@ -164,12 +174,12 @@ export const register: Register = on => {
             key={`row-${r.id}`}
             plain
             label={`${focused ? '›' : ' '} ${branch}${r.label}${r.isActive ? ' ●' : ''}`}
-            onPress={() => update($, cursor, () => r.id)}
+            onPress={() => focus(() => r.id)}
           />
           {focused && m && (
             <Box gap={2} paddingLeft={branch ? 6 : 4}>
               {actionsFor(v, m, shown, today).map(a => (
-                <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.label} onPress={() => act(r.id, a.op)} />
+                <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.key === 'delete' && armedId === r.id ? 'd again to delete' : a.label} onPress={() => act(r.id, a.op)} />
               ))}
             </Box>
           )}
@@ -194,8 +204,8 @@ export const register: Register = on => {
           <Box gap={2}>
             <Button key="view-prev" plain hotkey="h" label={`◂ ${phaseLabel(v, stepView(shown, -1).phase).toLowerCase()}`} onPress={() => step(-1)} />
             <Button key="view-next" plain hotkey="l" label={`${phaseLabel(v, stepView(shown, 1).phase).toLowerCase()} ▸`} onPress={() => step(1)} />
-            <Button key="down" plain hotkey="j" label="↓" onPress={() => update($, cursor, c => walk(ids, cursorAt(ids, c), 1))} />
-            <Button key="up" plain hotkey="k" label="↑" onPress={() => update($, cursor, c => walk(ids, cursorAt(ids, c), -1))} />
+            <Button key="down" plain hotkey="j" label="↓" onPress={() => focus(c => walk(ids, cursorAt(ids, c), 1))} />
+            <Button key="up" plain hotkey="k" label="↑" onPress={() => focus(c => walk(ids, cursorAt(ids, c), -1))} />
             {!atNow && <Button key="view-now" plain hotkey="0" label="now" onPress={() => goTo(null)} />}
           </Box>
         </Box>
