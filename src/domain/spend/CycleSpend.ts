@@ -124,10 +124,21 @@ const under = (child: string, parent: string) =>
   child === parent ||
   child.startsWith(parent.endsWith("/") ? parent : `${parent}/`);
 
+/** The allocation whose aim names this issue id (whole id: DEV-95 is not DEV-955). */
+const namedInAim = (key: string, allocations: readonly Allocation[]) =>
+  allocations.find((a) =>
+    [...(a.aim ?? "").matchAll(ISSUE)].some(
+      (m) => `DEV-${m[1]}` === key.toUpperCase(),
+    ),
+  );
+
 function allocationOfIssue(
+  key: string,
   issue: LinearJoin["issues"][string] | undefined,
   allocations: readonly Allocation[],
 ): Allocation | undefined {
+  const named = namedInAim(key, allocations);
+  if (named) return named;
   if (!issue) return undefined;
   const labels = (issue.labels ?? []).map((l) => l.toLowerCase());
   if (
@@ -147,6 +158,8 @@ function allocationOfIssue(
  *
  * Evidence, strongest first: issue ids from the branch and from PR head
  * branches (via the join), issue ids and link strings typed in user turns.
+ * An issue id named in an allocation's aim goes to that allocation, before the
+ * Bug/Backfill/Run: label rule and the project link.
  * Votes are summed per allocation. No votes: the working directory.
  * Never reads anything but user turns, branch and PR links: MEMORY.md injects
  * ids into every session.
@@ -161,7 +174,10 @@ export function attribute(
   const vote = (a: Allocation | undefined, w: number) =>
     a && votes.set(a.id, (votes.get(a.id) ?? 0) + w);
   const issueVote = (n: string, w: number) =>
-    vote(allocationOfIssue(join.issues[`DEV-${n}`], allocations), w);
+    vote(
+      allocationOfIssue(`DEV-${n}`, join.issues[`DEV-${n}`], allocations),
+      w,
+    );
 
   const b = s.branch && BRANCH.exec(s.branch);
   if (b) issueVote(b[1], 3);
