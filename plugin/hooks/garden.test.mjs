@@ -232,3 +232,11 @@ test("/now: more than 3 new words refuses, no words hints", () => {
   assert.deepEqual(plan("a b c d"), { kind: "reply", text: "now: 3 words or fewer, nothing changed" });
   assert.deepEqual(plan(""), { kind: "reply", text: "now: Stratégie" });
 });
+
+test("a label that already starts with the glyph is not prefixed twice", () => {
+  const v = vault({
+    moments: { s: { id: "s", name: "zenborg", emoji: "≋", day: TODAY, phase: "MORNING" } },
+    active: { momentId: "s", at: new Date(at(9).getTime() - 60_000).toISOString() },
+  });
+  assert.equal(reading(v, at(9)).status, "≋ zenborg · 1m");
+});

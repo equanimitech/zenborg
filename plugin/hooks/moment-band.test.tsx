@@ -12,6 +12,12 @@ const BAND = {
   surface: 'terminal',
   props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
+const HINT = {
+  plugin: 'zenborg',
+  component: 'PromptHint',
+  surface: 'terminal',
+  props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
+} as const
 const TOOLS = ['mcp__zenborg__set_active_moment', 'mcp__zenborg__add_moment']
 
 const base = () => ({
@@ -52,9 +58,19 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
+    // The engine's hint line draws the tail it is handed.
+    if (e.component === 'PromptHint') return <Text>{`hint|${e.props.tail ?? ''}`}</Text>
     return <Text>engine</Text>
   })
   return { calls, statuses, toasts }
+}
+
+// What the prompt hint draws after a refresh.
+const tailOf = async ($: Parameters<TestBody>[0]) => {
+  const ui = await $.ui.mount(HINT)
+  const text = (await ui.find({ type: 'Text', text: /^hint\|/ }))?.text
+  await ui.unmount()
+  return text?.slice(5)
 }
 
 const staleWithThree = () => ({
@@ -71,7 +87,8 @@ const staleWithThree = () => ({
 test('a stale moment: status line, band with three taps; a tap tends it and the band leaves', async ($, on) => {
   const { calls, statuses } = garden(on, staleWithThree())
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
+  expect(statuses).toEqual([])
 
   const ui = await $.ui.mount(BAND)
   expect(await ui.find({ type: 'Text', text: '≋ film is from the afternoon' })).toBeDefined()
@@ -84,7 +101,7 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   await ui.press({ key: 'tap-1' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 tea · 0m')
+  expect(await tailOf($)).toBe('≋ 🥐 tea · 0m')
   await ui.unmount()
 })
 
@@ -152,9 +169,9 @@ test('a failing write toasts once and leaves the band as it was', async ($, on) 
 })
 
 test('no zenborg MCP server: status line only, the drawing goes to the engine', async ($, on) => {
-  const { statuses } = garden(on, staleWithThree(), { tools: ['Read'] })
+  garden(on, staleWithThree(), { tools: ['Read'] })
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
@@ -172,12 +189,30 @@ test('a fresh moment: no band', async ($, on) => {
   await ui.unmount()
 })
 
-test('session.start registers /phase and sets the status line', async ($, on) => {
+test('session.start registers /phase and sets the hint tail', async ($, on) => {
   const { statuses } = garden(on, staleWithThree())
   const commands: string[] = []
   on('command.register', (_, e) => (commands.push(e.name), { value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/home/g/work' })
   expect(commands).toEqual(['phase', 'now'])
-  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
+  expect(statuses).toEqual([])
+})
+
+test('a label that already starts with the glyph is not prefixed twice', async ($, on) => {
+  garden(on, {
+    ...base(),
+    'moments.json': { n: { id: 'n', name: 'zenborg', emoji: '≋', day: TODAY, phase: 'MORNING' } },
+    'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
+  })
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  expect(await tailOf($)).toBe('≋ zenborg · 1m')
+})
+
+test('no status leaves the hint as the engine drew it', async ($, on) => {
+  garden(on, base())
+  const ui = await $.ui.mount(HINT)
+  expect((await ui.find({ type: 'Text', text: /^hint\|/ }))?.text).toBe('hint|')
+  await ui.unmount()
 })
