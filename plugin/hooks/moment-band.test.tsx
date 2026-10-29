@@ -84,7 +84,7 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   await ui.press({ key: 'tap-1' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 tea')
+  expect(statuses.at(-1)).toBe('≋ 🥐 tea · 0m')
   await ui.unmount()
 })
 

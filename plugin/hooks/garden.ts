@@ -24,6 +24,7 @@ export interface Moment extends Named {
   phase?: string | null;
   cyclePlanId?: string | null;
   habitId?: string | null;
+  durationMin?: number | null;
 }
 export interface Habit extends Named {
   id: string;
@@ -138,7 +139,15 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
   const why = fromPhase !== null ? `from the ${fromPhase}` : `set ${Math.floor(ageMin / 60)}h ago`;
 
   if (active && fromPhase === null && ageMin <= STALE_AFTER_MIN) {
-    return { status: `≋ ${label(active)}`, band: null };
+    const dur = active.durationMin;
+    const time = !v.active.at
+      ? ""
+      : dur
+        ? ageMin < dur
+          ? ` · ${Math.ceil(dur - ageMin)}m left`
+          : ""
+        : ` · ${Math.floor(Math.max(ageMin, 0))}m`;
+    return { status: `≋ ${label(active)}${time}`, band: null };
   }
   const status = active ? `≋ ${label(active)} · ${why}` : `≋ ${phase.label}`;
 
