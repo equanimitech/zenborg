@@ -9,7 +9,7 @@
  * whoever acted next. Parallel sessions never double-count. Never sum per
  * session. Calibrated on cycle 22 (docs: themia/.claude/attently/work-inflow.md).
  */
-import { type Allocation, isBugsOpsLane } from "../entities/Allocation";
+import { type Allocation, isBugsOpsLane } from "../entities/Allocation.ts";
 
 export const GAP_CAP_S = 300;
 /** 6 merged hours = 1 day. */

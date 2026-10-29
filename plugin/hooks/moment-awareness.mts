@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
 import { spendLine } from "./spend-line.ts";
+import { refreshSpendInBackground } from "./spend-refresh.ts";
 
 const VAULT =
   process.env.ZENBORG_HOME ||
@@ -65,6 +66,7 @@ function currentPhase(configs: PhaseConfig[]): PhaseConfig | null {
 
 /** The cycle's spend line, from the cache; empty when there is none. */
 function cycleLine(): string {
+  refreshSpendInBackground(VAULT); // detached; this run prints the cache as it is
   try {
     const line = spendLine(
       readJSON(join(VAULT, "cache", "cycle-spend.json")),
