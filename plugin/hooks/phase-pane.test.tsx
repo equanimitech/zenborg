@@ -66,6 +66,7 @@ const garden = (on: On, opts: { reply?: string; placed?: boolean } = {}) => {
     const moments = vault['moments.json'] as Record<string, Record<string, unknown>>
     const m = moments[input.id as string]
     if (tool.endsWith('__update_moment') && m) moments[m.id as string] = { ...m, day: input.day, phase: input.phase ?? null }
+    if (tool.endsWith('__delete_moment') && m) delete moments[m.id as string]
     return { result: {}, text: '{}' }
   })
   on('model.complete', (_, e) => {
@@ -131,7 +132,7 @@ test('j walks the moment rows only, past the headers, held at the end', async ($
   await ui.unmount()
 })
 
-test('a hotkey moves the focused row through update_moment; the cursor takes the next row, then follows a moment to the board', async ($, on) => {
+test('a hotkey moves the focused row through update_moment; the cursor takes the next row', async ($, on) => {
   const { calls } = garden(on)
   const ui = await $.ui.mount(PANE)
   expect((await ui.find({ key: 'act-next' }))?.props.hotkey).toBe('n')
@@ -140,15 +141,39 @@ test('a hotkey moves the focused row through update_moment; the cursor takes the
   expect(await ui.find({ key: 'row-a' })).toBeUndefined()
   expect(await label(ui, 'row-b')).toBe('› 🍵 tea ●')
 
-  // b sends tea to the board; it stays drawn there, and the cursor with it.
-  await ui.press({ key: 'act-board' })
-  expect(calls[1]).toEqual({ tool: 'mcp__zenborg__update_moment', input: { id: 'b', day: null } })
-  expect(await label(ui, 'row-b')).toBe('› └ 🍵 tea ●')
 
   // l steps the view to the afternoon, where sit now is, and retitles.
   await ui.press({ key: 'view-next' })
   expect(await ui.find({ type: 'Text', text: '☀️ Afternoon · Tue 27 Oct' })).toBeDefined()
   expect(await ui.find({ key: 'row-a' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('d needs two presses to delete; the cursor takes the next row; b is gone', async ($, on) => {
+  const { calls } = garden(on)
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ key: 'act-board' })).toBeUndefined()
+  expect((await ui.find({ key: 'act-delete' }))?.props.hotkey).toBe('d')
+  await ui.press({ key: 'act-delete' })
+  expect(calls).toEqual([])
+  expect(await label(ui, 'act-delete')).toBe('d again to delete')
+  await ui.press({ key: 'act-delete' })
+  expect(calls).toEqual([{ tool: 'mcp__zenborg__delete_moment', input: { id: 'a' } }])
+  expect(await ui.find({ key: 'row-a' })).toBeUndefined()
+  expect(await label(ui, 'row-b')).toBe('› 🍵 tea ●')
+  expect(await label(ui, 'act-delete')).toBe('delete')
+  await ui.unmount()
+})
+
+test('d, then j, then d does not delete', async ($, on) => {
+  const { calls } = garden(on)
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'act-delete' })
+  await ui.press({ key: 'down' })
+  expect(await label(ui, 'act-delete')).toBe('delete')
+  await ui.press({ key: 'act-delete' })
+  expect(calls).toEqual([])
+  expect(await label(ui, 'act-delete')).toBe('d again to delete')
   await ui.unmount()
 })
 

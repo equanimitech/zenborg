@@ -126,7 +126,7 @@ export const neighbor = (ids: string[], id: string) => {
 
 /** True when the op takes its moment off the shown (day, phase) and its board. */
 export const leavesView = (op: BoardOp, view: BoardView) =>
-  op.op === "move" && (op.day !== view.day || op.phase !== view.phase);
+  op.op === "delete" || (op.op === "move" && (op.day !== view.day || op.phase !== view.phase));
 
 /** `delta` rows from the cursor, held at the ends. */
 export const walk = (ids: string[], at: string | null, delta: number) =>
@@ -174,7 +174,7 @@ export interface Action {
   op: BoardOp;
 }
 
-/** The focused row's hotkeys. A planted moment steps a phase, goes to tomorrow, back to the board, or becomes active (today only); a board moment is planted into the shown phase. */
+/** The focused row's hotkeys. A planted moment steps a phase, goes to tomorrow, is deleted (d, confirmed by the pane with a second press), or becomes active (today only); a board moment is planted into the shown phase. */
 export function actionsFor(v: Vault, m: Moment, view: BoardView, today: string): Action[] {
   if (!m.day || !m.phase) {
     return [{ key: "here", hotkey: "i", label: `into ${phaseLabel(v, view.phase).toLowerCase()}`, op: { op: "move", id: m.id, ...view } }];
@@ -186,7 +186,7 @@ export function actionsFor(v: Vault, m: Moment, view: BoardView, today: string):
     { key: "prev", hotkey: "p", label: `◂ ${phaseLabel(v, prev.phase).toLowerCase()}`, op: { op: "move", id: m.id, ...prev } },
     { key: "next", hotkey: "n", label: `${phaseLabel(v, next.phase).toLowerCase()} ▸`, op: { op: "move", id: m.id, ...next } },
     { key: "tomorrow", hotkey: "t", label: "tomorrow", op: { op: "move", id: m.id, day: addDays(m.day, 1), phase: m.phase } },
-    { key: "board", hotkey: "b", label: "board", op: { op: "unallocate", id: m.id } },
+    { key: "delete", hotkey: "d", label: "delete", op: { op: "delete", id: m.id } },
   ];
   return m.day === today ? [...acts, { key: "active", hotkey: "a", label: "active", op: { op: "active", id: m.id } }] : acts;
 }
