@@ -19,7 +19,7 @@ test("a fresh active moment: status only, no band", () => {
     vault({ active: { momentId: "n", at: at(8).toISOString() }, moments: { n: filmMoment("MORNING") } }),
     at(9),
   );
-  assert.deepEqual(r, { status: "≋ 🍿 film", band: null });
+  assert.deepEqual(r, { status: "≋ 🍿 film · 60m", band: null });
 });
 
 test("an active moment from another phase offers three of this phase's moments, in order", () => {
@@ -174,4 +174,25 @@ test("band habits: a declared path beats the name fallback, deepest prefix wins"
   const first = (cwd) => reading(vault({ areas: A, habits }), at(9), cwd).band.taps[0].habitId;
   assert.equal(first("/w/zen/src"), "d1");
   assert.equal(first("/w/zen/deep/x"), "k1");
+});
+
+const timed = (extra, active = { at: at(8).toISOString() }, now = at(8, 23)) =>
+  reading(
+    vault({ active: { momentId: "n", ...active }, moments: { n: { ...filmMoment("MORNING"), ...extra } } }),
+    now,
+  ).status;
+
+test("timer: elapsed minutes without a duration, floored, 0m under a minute", () => {
+  assert.equal(timed({}), "≋ 🍿 film · 23m");
+  assert.equal(timed({}, undefined, new Date(at(8).getTime() + 30_000)), "≋ 🍿 film · 0m");
+});
+
+test("timer: minutes left with a duration, rounded up; quiet once time is up", () => {
+  assert.equal(timed({ durationMin: 30 }), "≋ 🍿 film · 7m left");
+  assert.equal(timed({ durationMin: 23 }), "≋ 🍿 film");
+  assert.equal(timed({ durationMin: 20 }), "≋ 🍿 film");
+});
+
+test("timer: no active.at means no counter", () => {
+  assert.equal(timed({}, {}), "≋ 🍿 film");
 });

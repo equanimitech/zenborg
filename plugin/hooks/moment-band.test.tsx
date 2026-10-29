@@ -84,7 +84,7 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   await ui.press({ key: 'tap-1' })
   expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 tea')
+  expect(statuses.at(-1)).toBe('≋ 🥐 tea · 0m')
   await ui.unmount()
 })
 
@@ -170,4 +170,14 @@ test('a fresh moment: no band', async ($, on) => {
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
+})
+
+test('session.start registers /phase and sets the status line', async ($, on) => {
+  const { statuses } = garden(on, staleWithThree())
+  const commands: string[] = []
+  on('command.register', (_, e) => (commands.push(e.name), { value: { command: e.name } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/home/g/work' })
+  expect(commands).toEqual(['phase'])
+  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
 })

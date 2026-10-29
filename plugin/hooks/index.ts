@@ -10,6 +10,8 @@ export const register: Register = (on, options) => {
     await registerOpeners($)
     const result = await next(e)
     await refresh($)
+    // Idle sessions still age the moment; timers end on module reload.
+    $.clock.every(60_000, () => refresh($))
     return result
   })
 
