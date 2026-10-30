@@ -77,8 +77,8 @@ test('5: nothing matches, a new moment in the cwd area; 4+ words change nothing'
 
 test('a failed write says so', async ($, on) => {
   garden(on, { fail: true })
-  expect(await reply($, 'strat')).toBe('zenborg: not saved, try again')
-  expect(await reply($, 'call')).toBe('zenborg: not saved, try again')
+  expect(await reply($, 'strat')).toBe('zenborg: not saved (set_active_moment failed: Error: no)')
+  expect(await reply($, 'call')).toBe('zenborg: not saved (update_moment failed: Error: no)')
 })
 
 test('no words: this phase hint, no writes', async ($, on) => {

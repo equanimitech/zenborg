@@ -44,12 +44,11 @@ const tap = async ($: EngineInterface, t: Tap, b: Band) => {
   await update($, band, cur => ((taken = cur !== null), null))
   if (!taken) return
   await update($, query, () => '')
-  const momentId =
-    t.kind === 'tend'
-      ? t.momentId
-      : createdId(await call($, 'add_moment', { habitId: t.habitId, day: b.day, phase: b.phase }))
+  const added = t.kind === 'tend' ? undefined : await call($, 'add_moment', { habitId: t.habitId, day: b.day, phase: b.phase })
+  const momentId = t.kind === 'tend' ? t.momentId : added?.ok ? createdId(added.text) : undefined
   const set = momentId === undefined ? undefined : await call($, 'set_active_moment', { momentIdOrName: momentId })
-  if (set === undefined) $.ui.toast('zenborg: not saved, try again')
+  const why = added && !added.ok ? added.why : set && !set.ok ? set.why : set ? undefined : 'no moment id returned'
+  if (why) $.ui.toast(`zenborg: not saved (${why})`)
   await refresh($)
 }
 

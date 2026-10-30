@@ -65,7 +65,7 @@ const files = (): Record<string, unknown> => ({
 
 // Stands for the engine: the vault on disk, the clock, the zenborg MCP tools
 // (update_moment moves a moment, as the server would), Haiku, and the surface.
-const garden = (on: On, opts: { reply?: string; placed?: boolean; extra?: Record<string, unknown> } = {}) => {
+const garden = (on: On, opts: { reply?: string; placed?: boolean; extra?: Record<string, unknown>; deny?: string } = {}) => {
   const vault = files()
   Object.assign(vault['moments.json'] as object, opts.extra)
   const calls: { tool: string; input: Record<string, unknown> }[] = []
@@ -82,6 +82,7 @@ const garden = (on: On, opts: { reply?: string; placed?: boolean; extra?: Record
   on('tool.call', (_, e) => {
     const { tool, tool_use_id: _envelope, ...input } = e as { tool: string; tool_use_id: string } & Record<string, unknown>
     calls.push({ tool, input })
+    if (opts.deny && tool.endsWith('__delete_moment')) return { deny: opts.deny }
     const moments = vault['moments.json'] as Record<string, Record<string, unknown>>
     const m = moments[input.id as string]
     if (tool.endsWith('__update_moment') && m) moments[m.id as string] = { ...m, day: input.day, phase: input.phase ?? null }
@@ -241,6 +242,16 @@ test('d needs two presses to delete; the cursor takes the next row; b is gone', 
   expect(await ui.find({ key: 'row-a' })).toBeUndefined()
   expect(await label(ui, 'row-b')).toBe('› 🍵 tea ●')
   expect(await label(ui, 'act-delete')).toBe('delete')
+  await ui.unmount()
+})
+
+test('a denied delete puts the permissions reason in the note, and the moment stays', async ($, on) => {
+  garden(on, { deny: 'irreversible deletion' })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'act-delete' })
+  await ui.press({ key: 'act-delete' })
+  expect(await ui.find({ type: 'Text', text: 'not saved (blocked by permissions: delete_moment (irreversible deletion)): ✕ delete 🧘 sit' })).toBeDefined()
+  expect(await ui.find({ key: 'row-a' })).toBeDefined()
   await ui.unmount()
 })
 

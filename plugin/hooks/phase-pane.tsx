@@ -94,12 +94,14 @@ async function mapSeason($: EngineInterface, v: Vault, today: string) {
 // Writes each op in order, then has the pane re-read the vault.
 async function run($: EngineInterface, ops: BoardOp[]) {
   const v = await loadVault($)
-  const failed: string[] = []
+  const failed = new Map<string, string[]>() // reason -> the ops it stopped
   for (const op of ops) {
     const { name, input } = opCall(v, op)
-    if ((await call($, name, input)) === undefined) failed.push(describe(v, op))
+    const r = await call($, name, input)
+    if (!r.ok) failed.set(r.why, [...(failed.get(r.why) ?? []), describe(v, op)])
   }
-  await update($, note, () => (failed.length ? `not saved: ${failed.join('; ')}` : ''))
+  const line = [...failed].map(([why, ds]) => `not saved (${why}): ${ds.join('; ')}`).join(' | ')
+  await update($, note, () => line)
   await update($, rev, n => n + 1)
 }
 

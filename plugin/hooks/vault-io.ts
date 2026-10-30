@@ -32,14 +32,28 @@ export async function toolNamed($: EngineInterface, name: string) {
   return (await $.tool.list()).find(t => t.name.endsWith(`__${name}`))?.name
 }
 
-// The tool's text, or undefined on a deny, an error, or no such tool.
-export async function call($: EngineInterface, name: string, input: Record<string, unknown>) {
+// What a zenborg tool call came to: its text, or why it did not happen.
+export type Called = { ok: true; text: string } | { ok: false; why: string }
+
+// First line of a message, short enough for one line.
+function brief(m: string) {
+  const line = m.trim().split('\n')[0] ?? ''
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line
+}
+
+// The tool's text, or the reason for a missing tool, a permission deny, or an error.
+export async function call($: EngineInterface, name: string, input: Record<string, unknown>): Promise<Called> {
   const tool = await toolNamed($, name)
-  if (!tool) return undefined
+  if (!tool) return { ok: false, why: 'zenborg MCP not connected' }
   try {
     const r = await $.tool.call({ tool, ...input } as Parameters<EngineInterface['tool']['call']>[0])
-    return r.deny !== undefined || r.isError ? undefined : (r.text ?? '')
-  } catch {
-    return undefined
+    if (r.deny !== undefined) {
+      const msg = brief(String(r.deny))
+      return { ok: false, why: `blocked by permissions: ${name}${msg && msg.length <= 40 ? ` (${msg})` : ''}` }
+    }
+    if (r.isError) return { ok: false, why: `${name} failed: ${brief(r.text ?? '') || 'error'}` }
+    return { ok: true, text: r.text ?? '' }
+  } catch (e) {
+    return { ok: false, why: `${name} failed: ${brief(e instanceof Error ? e.message : String(e)) || 'error'}` }
   }
 }
