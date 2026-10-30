@@ -5,6 +5,7 @@ import {
   computeSpend,
   dayOf,
   dayStartMs,
+  joinGaps,
   type LinearJoin,
   type SessionFacts,
 } from "../CycleSpend";
@@ -223,5 +224,51 @@ describe("attribution", () => {
     expect(
       a({ cwd: "/Users/me/Developer/equanimitech/zenborg", branch: "dev-1-x" }),
     ).toBe("rente");
+  });
+});
+
+describe("joinGaps", () => {
+  const s = (o: Partial<SessionFacts>): SessionFacts => ({
+    id: "s",
+    prUrls: [],
+    turns: [],
+    main: [],
+    agent: [],
+    ...o,
+  });
+  const turn = (text: string) => ({ ts: 0, text });
+  const empty: LinearJoin = { issues: {}, prs: {} };
+
+  it("reads the branch id and typed ids, upper-cased, deduped, sorted", () => {
+    const g = joinGaps(
+      [s({ branch: "dev-2016-x", turns: [turn("see dev-100 and DEV-2016")] })],
+      empty,
+    );
+    expect(g.issues).toEqual(["DEV-100", "DEV-2016"]);
+  });
+  it("lists a PR missing from the join", () => {
+    expect(joinGaps([s({ prUrls: ["u1", "u1"] })], empty).prs).toEqual(["u1"]);
+  });
+  it("reads the id from a known PR's head branch", () => {
+    const g = joinGaps([s({ prUrls: ["u1"] })], {
+      issues: {},
+      prs: { u1: "dev-2702-fix" },
+    });
+    expect(g).toEqual({ issues: ["DEV-2702"], prs: [] });
+  });
+  it("excludes ids already in the join", () => {
+    const g = joinGaps([s({ branch: "dev-5-a" })], {
+      issues: { "DEV-5": {} },
+      prs: {},
+    });
+    expect(g.issues).toEqual([]);
+  });
+  it("ignores ids that are not in user turns (system reminders, paths)", () => {
+    // readSession strips reminders before turns; the lookbehind skips handoff-dev-N.
+    const g = joinGaps(
+      [s({ turns: [turn("open handoff-DEV-77 notes")] })],
+      empty,
+    );
+    expect(g.issues).toEqual([]);
   });
 });

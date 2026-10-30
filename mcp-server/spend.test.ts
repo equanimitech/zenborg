@@ -3,7 +3,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Allocation } from "../src/domain/entities/Allocation.ts";
-import { getCycleSpend, spendCachePath, writeSpendCache } from "./spend.js";
+import {
+  getCycleSpend,
+  linearJoinGaps,
+  mergeLinearJoin,
+  spendCachePath,
+  writeSpendCache,
+} from "./spend.js";
 
 const P = "https://linear.app/themia-sas/project/rente";
 const alloc = (
@@ -228,5 +234,65 @@ describe("getCycleSpend on transcripts", () => {
     const cached = JSON.parse(fs.readFileSync(spendCachePath(vault), "utf8"));
     expect(cached.cycleId).toBe("cyc");
     expect(cached.allocations).toHaveLength(2);
+  });
+});
+
+describe("linear join gaps and merge", () => {
+  const pr = "https://github.com/o/r/pull/42";
+  const gaps = (headBranch: (u: string) => string | null) => {
+    const { projects, vault } = fixture();
+    fs.mkdirSync(path.join(projects, "-g"), { recursive: true });
+    fs.writeFileSync(
+      path.join(projects, "-g", "g.jsonl"),
+      [
+        userRec(0, [
+          {
+            type: "text",
+            text: "<system-reminder>DEV-55</system-reminder>do DEV-99",
+          },
+        ]),
+        line({ type: "pr-link", prUrl: pr, timestamp: iso(1) }),
+        asstRec(2),
+      ].join("\n"),
+    );
+    const r = linearJoinGaps(
+      vault,
+      { from: "2026-10-27", to: "2026-10-27" },
+      { projectsDir: projects, home: tmp, headBranch },
+    );
+    return { r, vault };
+  };
+
+  it("resolves missing PRs, folds their ids in, ignores reminders", () => {
+    const { r, vault } = gaps(() => "dev-2702-fix");
+    expect(r.prsAdded).toBe(1);
+    expect(r.missingIssues).toEqual(["DEV-2702", "DEV-99"]);
+    const j = JSON.parse(fs.readFileSync(r.joinPath, "utf8"));
+    expect(j.prs[pr]).toBe("dev-2702-fix");
+    expect(j.prs["https://github.com/o/r/pull/9"]).toBe("dev-7-fix"); // kept
+    expect(Object.keys(j.issues)).toEqual(["DEV-1", "DEV-7"]);
+    expect(vault).toBeTruthy();
+  });
+  it("a failing gh lookup is reported, not fatal", () => {
+    const { r } = gaps(() => null);
+    expect(r.prsFailed).toEqual([pr]);
+    expect(r.missingIssues).toEqual(["DEV-99"]);
+  });
+  it("merge keeps existing entries, stamps the day, refreshes the cache", () => {
+    const { vault } = fixture();
+    const out = mergeLinearJoin(vault, { "DEV-99": { labels: ["Bug"] } });
+    const j = JSON.parse(
+      fs.readFileSync(path.join(vault, "cache", "linear-join.json"), "utf8"),
+    );
+    expect(Object.keys(j.issues).sort()).toEqual(["DEV-1", "DEV-7", "DEV-99"]);
+    expect(j.prs["https://github.com/o/r/pull/9"]).toBe("dev-7-fix");
+    expect(j.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(out.merged).toBe(1);
+    expect(out.totalIssues).toBe(3);
+  });
+  it("merge creates the file when absent", () => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "spend-"));
+    const out = mergeLinearJoin(tmp, { "DEV-5": {} });
+    expect(out.totalIssues).toBe(1);
   });
 });

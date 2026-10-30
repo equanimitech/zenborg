@@ -2,7 +2,7 @@
 name: appetite-check
 description: Weekly appetite check for the cycle's betting table - days spent against appetite for every allocation, the unattributed share, Bugs & ops against a quarter of capacity, days left to bet; asks what was cut this week; drafts a Themia-only extract for a Linear doc and Slack and posts nothing without approval. Use when Rafa says "/appetite-check", "appetite check", "weekly check", "how are the bets doing", "where did the week go", "close the week" (Friday), or after `season` sets the betting table. Do NOT trigger for planning the cycle or the betting table itself (season), the day-close (sunset), or a session-close (close-up).
 user-invocable: true
-allowed-tools: [Read, mcp__zenborg__get_cycle_spend, mcp__zenborg__list_cycle_allocations, mcp__plugin_linear_linear__save_document, mcp__plugin_linear_linear__list_documents, mcp__claude_ai_Slack__slack_send_message_draft]
+allowed-tools: [Read, mcp__zenborg__get_linear_join_gaps, mcp__zenborg__merge_linear_join, mcp__plugin_linear_linear__get_issue, mcp__zenborg__get_cycle_spend, mcp__zenborg__list_cycle_allocations, mcp__plugin_linear_linear__save_document, mcp__plugin_linear_linear__list_documents, mcp__claude_ai_Slack__slack_send_message_draft]
 ---
 
 # Appetite check
@@ -14,6 +14,8 @@ Read-only until the last beat. **Draft, show, wait.** Nothing reaches Linear or
 Slack before an explicit yes.
 
 ## 1. Read the meter
+
+Fill the Linear join first: call `mcp__zenborg__get_linear_join_gaps`. For each id in `missingIssues`, call `mcp__plugin_linear_linear__get_issue` with `fields: ["title","labels","project"]` (project as `{name, url}`), then pass them all to `mcp__zenborg__merge_linear_join` as `issues: { "DEV-NNNN": {title, labels, project} }`. Skip when `missingIssues` is empty.
 
 Call `mcp__zenborg__get_cycle_spend` with no arguments (active cycle, fresh
 numbers). Use `check` in the result; do not recompute. If it errors with no
