@@ -21,7 +21,7 @@ const query = atom({ plugin: 'zenborg', key: 'query' } as const, '')
 
 export const createdId = (text: string | undefined) => {
   try {
-    return text ? (JSON.parse(text).created?.id as string | undefined) : undefined
+    return text ? ((JSON.parse(text).id ?? JSON.parse(text).created?.id) as string | undefined) : undefined
   } catch {
     return undefined
   }

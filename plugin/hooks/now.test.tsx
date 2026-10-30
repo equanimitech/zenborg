@@ -34,7 +34,7 @@ const garden = (on: On, opts: { fail?: boolean } = {}) => {
     const { tool, tool_use_id: _e, ...input } = e as { tool: string; tool_use_id: string } & Record<string, unknown>
     calls.push({ tool: tool.replace('mcp__zenborg__', ''), input })
     if (opts.fail) return { result: {}, text: 'Error: no', isError: true }
-    return { result: {}, text: JSON.stringify({ created: { id: 'new1' } }) }
+    return { result: {}, text: JSON.stringify({ id: 'new1', name: 'build' }) }
   })
   on('ui.status', () => ({ value: undefined }))
   return calls

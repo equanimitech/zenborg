@@ -48,7 +48,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
     const { tool, tool_use_id: _envelope, ...input } = e as { tool: string; tool_use_id: string } & Record<string, unknown>
     calls.push({ tool, input })
     if (opts.fail) return { result: {}, text: 'Error: no', isError: true }
-    if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ created: { id: 'new1' } }) }
+    if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ id: 'new1', name: 'build' }) }
     files['activeMoment.json'] = { momentId: input.momentIdOrName, at: new Date(NOW).toISOString() }
     files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'sit', day: TODAY, phase: 'MORNING' } }
     return { result: {}, text: JSON.stringify({ set: {} }) }
