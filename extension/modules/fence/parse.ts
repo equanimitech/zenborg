@@ -435,6 +435,7 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
       ...(rungs ? { rungs } : {}),
       ...(schedule ? { schedule } : {}),
       ...(budget ? { budget } : {}),
+      ...readPool(id, value),
       deliveryProbability: readProbability(value.deliveryProbability),
       ...readOutcome(value),
     };
@@ -447,6 +448,13 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
  * what DNR's `requestDomains` already does — the two must not disagree. */
 function covers(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
+}
+
+/** The policy's own pass pool: the `passAllowance` stamp plus the policy named in `watering:<name>:browser:<host>`. */
+function readPool(id: string, value: Record<string, unknown>): Pick<Fence, "pool"> {
+  const policy = /^watering:(.+):browser:/.exec(id)?.[1];
+  const a = isRecord(value.passAllowance) ? readAllowance(value.passAllowance) : null;
+  return policy && a ? { pool: { policy, ...a } } : {};
 }
 
 /**

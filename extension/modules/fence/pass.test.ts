@@ -9,7 +9,7 @@ const state = {
   fences: {} as Fences,
   openings: [] as Opening[],
   passes: [] as Lift[],
-  hostEvents: [] as { id: string; kind: string; ts: number }[],
+  hostEvents: [] as { id: string; kind: string; ts: number; payload?: Record<string, unknown> }[],
   synced: 0,
 };
 const item = <K extends "openings" | "passes">(k: K) => ({
@@ -113,5 +113,19 @@ describe("usePass", () => {
 
   it("offers no pass when nothing time-blocks the host", async () => {
     expect(await usePass("example.com", "why", vi.fn())).toEqual({ ok: true, alreadyOpen: true });
+  });
+
+  it("counts a policy's own pool apart from the shared one", async () => {
+    const own = { ...timeBlock("porn.com"), id: "watering:no-porn:browser:porn.com", passAllowance: { perMonth: 4, hours: 0.5 } };
+    state.fences = parseFences({ y: timeBlock("youtube.com"), p: own }, NOW)!.fences;
+    const ev = (id: string, policy?: string) => ({ id, kind: "pass_used", ts: at(2026, 10, 2, 20), ...(policy ? { payload: { policy } } : {}) });
+    state.hostEvents = [ev("a", "no-porn"), ev("b", "no-porn"), ev("c")];
+
+    expect((await blockInfo("porn.com")).pass).toMatchObject({ left: 2, perMonth: 4, hours: 0.5, policy: "no-porn" });
+    expect((await blockInfo("youtube.com")).pass).toMatchObject({ left: 3, perMonth: 4, hours: 3 });
+
+    const write = vi.fn();
+    await usePass("porn.com", "x", write);
+    expect(write).toHaveBeenCalledWith("pass_used", expect.objectContaining({ policy: "no-porn", until: NOW + 1_800_000 }));
   });
 });

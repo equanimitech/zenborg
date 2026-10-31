@@ -275,3 +275,28 @@ describe("declareWateringHours — rationed", () => {
     expect("problems" in result && result.problems.join()).toMatch(/rationed/);
   });
 });
+
+describe("declareWateringHours — own pass pool", () => {
+  const base = {
+    name: "no-porn",
+    mode: "dry" as const,
+    window: { fromHour: 0, toHour: 24 },
+    waters: ["Wellness"],
+    restricts: { hosts: ["a.com"], paths: ["/x"] },
+    unlockNote: "Later.",
+  };
+
+  it("stamps passes on browser rules only, and keeps them on re-declaration", async () => {
+    const { d, stored } = deps();
+    await declareWateringHours(d, { ...base, passes: { perMonth: 4, hours: 0.5 } });
+    expect(stored()["watering:no-porn:browser:a.com"].passAllowance).toEqual({ perMonth: 4, hours: 0.5 });
+    expect(stored()["watering:no-porn:session"]?.passAllowance).toBeUndefined();
+    await declareWateringHours(d, base);
+    expect(stored()["watering:no-porn:browser:a.com"].passAllowance).toEqual({ perMonth: 4, hours: 0.5 });
+  });
+
+  it("refuses a bad allowance", async () => {
+    const r = await declareWateringHours(deps().d, { ...base, passes: { perMonth: 1, hours: 25 } });
+    expect("problems" in r && r.problems.join()).toMatch(/passes/);
+  });
+});

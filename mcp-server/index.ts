@@ -4360,7 +4360,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the shared allowance. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -4454,6 +4454,15 @@ defineTool(server, {
       .optional()
       .describe(
         "How the block is lifted (REQUIRED for dry and rationed modes)",
+      ),
+    passes: z
+      .object({
+        perMonth: z.number().int().min(0),
+        hours: z.number().gt(0).max(24),
+      })
+      .optional()
+      .describe(
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the shared pool. Omitted on a re-declaration, the stored one is kept.",
       ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',

@@ -161,16 +161,20 @@ export function blockHitPayload(domain: string, fences: readonly { readonly id: 
 
 /** Passes spent this local month, from `pass_used` events. Counted, never scored. */
 export function passesUsedThisMonth(
-  events: readonly { readonly kind: string; readonly ts: number }[],
-  now: number
+  events: readonly { readonly kind: string; readonly ts: number; readonly payload?: Readonly<Record<string, unknown>> }[],
+  now: number,
+  policy?: string
 ): number {
   const since = startOfLocalMonth(now);
-  return events.filter((e) => e.kind === PASS_USED_KIND && e.ts >= since && e.ts <= now).length;
+  // A pass belongs to the pool it was spent from: a policy's own, or (no policy) the shared one.
+  return events.filter(
+    (e) => e.kind === PASS_USED_KIND && e.ts >= since && e.ts <= now && e.payload?.policy === policy
+  ).length;
 }
 
-/** `pass_used`: the domain, the one line of why, and when it closes. Nothing else. */
-export function passUsedPayload(domain: string, reason: string, until: number) {
-  return { domain, reason, until };
+/** `pass_used`: the domain, the one line of why, when it closes, and the policy whose own pool paid. */
+export function passUsedPayload(domain: string, reason: string, until: number, policy?: string) {
+  return { domain, reason, until, ...(policy ? { policy } : {}) };
 }
 
 /** `opening_active`: hosts, when it closes, and the declared why. */
