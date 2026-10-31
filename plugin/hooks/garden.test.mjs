@@ -22,6 +22,12 @@ test("a fresh active moment: status only, no band", () => {
   assert.deepEqual(r, { status: "≋ 🍿 film · 60m", band: null });
 });
 
+test("a timed switch counts down to its until", () => {
+  const active = { momentId: "n", at: at(8).toISOString(), until: at(9, 15).toISOString() };
+  const r = reading(vault({ active, moments: { n: filmMoment("MORNING") } }), at(9));
+  assert.equal(r.status, "≋ 🍿 film · 15m left");
+});
+
 test("an active moment from another phase offers three of this phase's moments, in order", () => {
   const r = reading(
     vault({

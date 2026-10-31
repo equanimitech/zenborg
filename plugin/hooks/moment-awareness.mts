@@ -10,7 +10,11 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
+import {
+  resolvePointer,
+  staleReason,
+  wakingDayKey,
+} from "../domain/attention/ActiveMoment.ts";
 import { parisDay, spendLine } from "./spend-line.ts";
 import { refreshSpendInBackground } from "./spend-refresh.ts";
 
@@ -100,10 +104,15 @@ function drainStdin(): Promise<void> {
 async function main(): Promise<void> {
   await drainStdin();
 
-  const activeMoment = readJSON(join(VAULT, "activeMoment.json")) as {
-    momentId?: string;
-    at?: string;
-  };
+  // The pointer in force: a timed switch past its `until` reads as its return.
+  const activeMoment: { momentId?: string; at?: string } =
+    resolvePointer(
+      readJSON(join(VAULT, "activeMoment.json")) as {
+        momentId: string;
+        at: string;
+      },
+      Date.now(),
+    ) ?? {};
   const momentsMap = readJSON(join(VAULT, "moments.json")) as Record<
     string,
     Moment

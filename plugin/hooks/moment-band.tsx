@@ -6,7 +6,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Band, Tap } from '../types'
-import { labelOf, matchHabits, reading } from './garden.ts'
+import { STALE_AFTER_MIN, labelOf, matchHabits, reading } from './garden.ts'
 import { call, loadVault, toolNamed } from './vault-io.ts'
 
 const band = atom({ plugin: 'zenborg', key: 'band' } as const, null)
@@ -38,6 +38,15 @@ export async function refresh($: EngineInterface) {
   await update($, band, () => next)
 }
 
+// The set_active_moment ceiling (MAX_SWITCH_MIN in the MCP).
+const MAX_SWITCH_MIN = 240
+
+// How long a band pick holds: the moment's own duration, else the band's horizon.
+async function switchMinutes($: EngineInterface, momentId: string): Promise<number> {
+  const own = (await loadVault($)).moments[momentId]?.durationMin
+  return Math.min(own && own > 0 ? own : STALE_AFTER_MIN, MAX_SWITCH_MIN)
+}
+
 const tap = async ($: EngineInterface, t: Tap, b: Band) => {
   // Takes the band down first; a second press finds nothing to take.
   let taken = false
@@ -46,7 +55,11 @@ const tap = async ($: EngineInterface, t: Tap, b: Band) => {
   await update($, query, () => '')
   const added = t.kind === 'tend' ? undefined : await call($, 'add_moment', { habitId: t.habitId, day: b.day, phase: b.phase })
   const momentId = t.kind === 'tend' ? t.momentId : added?.ok ? createdId(added.text) : undefined
-  const set = momentId === undefined ? undefined : await call($, 'set_active_moment', { momentIdOrName: momentId })
+  // The same timed switch as the browser gate: the moment's own length, else the
+  // band's staleness horizon; at the end the pointer returns to what was before.
+  const minutes = momentId === undefined ? undefined : await switchMinutes($, momentId)
+  const set =
+    momentId === undefined ? undefined : await call($, 'set_active_moment', { momentIdOrName: momentId, minutes })
   const why = added && !added.ok ? added.why : set && !set.ok ? set.why : set ? undefined : 'no moment id returned'
   if (why) $.ui.toast(`zenborg: not saved (${why})`)
   await refresh($)

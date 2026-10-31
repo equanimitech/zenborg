@@ -3,6 +3,7 @@
 // Function declarations: the validator follows `$` past an import only into those.
 import type { EngineInterface } from 'claude-code'
 
+import { resolvePointer } from '../domain/attention/ActiveMoment.ts'
 import type { Vault } from './garden.ts'
 
 // Fail soft: a missing or malformed file reads as empty.
@@ -24,7 +25,9 @@ export async function loadVault($: EngineInterface): Promise<Vault> {
     readJson($, `${root}/phaseConfigs.json`, {}),
     readJson($, `${root}/cycles.json`, {}),
   ])
-  return { active, moments, habits, areas, phases, cycles }
+  // The pointer in force: a timed switch past its `until` reads as where it returns.
+  const inForce = resolvePointer(active as Vault['active'] & { momentId: string; at: string }, await $.clock.now()) ?? {}
+  return { active: inForce, moments, habits, areas, phases, cycles }
 }
 
 // The zenborg MCP tool by suffix: the server may be registered under another name.

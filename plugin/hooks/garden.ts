@@ -51,7 +51,8 @@ export interface Area {
   surfaces?: { paths?: string[] } | null;
 }
 export interface Vault {
-  active: { momentId?: string; at?: string };
+  /** The pointer in force (already resolved); `until` marks a timed switch. */
+  active: { momentId?: string; at?: string; until?: string };
   moments: Record<string, Moment>;
   habits: Record<string, Habit>;
   areas: Record<string, Area>;
@@ -157,9 +158,14 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
 
   if (active && fromPhase === null && ageMin <= STALE_AFTER_MIN) {
     const dur = active.durationMin;
+    // A timed switch counts down to its `until`; at the end the pointer has
+    // already returned, so the line goes quiet on its own.
+    const leftMin = v.active.until ? (Date.parse(v.active.until) - now.getTime()) / 60_000 : NaN;
     const time = !v.active.at
       ? ""
-      : dur
+      : leftMin > 0
+        ? ` · ${Math.ceil(leftMin)}m left`
+        : dur
         ? ageMin < dur
           ? ` · ${Math.ceil(dur - ageMin)}m left`
           : ""

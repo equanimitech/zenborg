@@ -20,14 +20,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { type Pointer, resolvePointer } from "@/domain/attention/ActiveMoment";
 import { isTauri } from "./is-tauri.ts";
 
 const FILE = "activeMoment";
 
-export interface ActiveMomentPointer {
-  momentId: string;
-  at: string;
-}
+/** `until` + `returnTo` mark a timed switch; see `resolvePointer`. */
+export type ActiveMomentPointer = Pointer;
 
 function isPointer(value: unknown): value is ActiveMomentPointer {
   if (!value || typeof value !== "object") return false;
@@ -36,7 +35,8 @@ function isPointer(value: unknown): value is ActiveMomentPointer {
 }
 
 /**
- * Read the pointer. `null` means no intention — which is also what a missing or
+ * Read the pointer in force — a timed switch past its `until` reads as the
+ * moment it returns to. `null` means no intention — which is also what a missing or
  * malformed file means. Fail-soft is the vault's rule, and a pointer nobody can
  * parse must never be worse than none.
  */
@@ -48,7 +48,7 @@ export async function readActiveMoment(): Promise<ActiveMomentPointer | null> {
   if (raw === null) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    return isPointer(parsed) ? parsed : null;
+    return isPointer(parsed) ? resolvePointer(parsed, Date.now()) : null;
   } catch {
     return null;
   }

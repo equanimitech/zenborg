@@ -15,7 +15,23 @@
 
 import { clickGateHit, createReplay, type ClickGate } from "./click";
 import { safeRedirect, type GateFriction } from "./decide";
-import { showGate } from "./overlay";
+import type { StartOffer } from "./intention";
+import { showGate, showReflection, type StartChoice } from "./overlay";
+
+/** The overlay's start option: a choice is sent to the background, which asks the writer. */
+function startOption(offer: StartOffer | undefined) {
+  if (offer === undefined) return undefined;
+  return {
+    ...offer,
+    onStart: (choice: StartChoice): void => {
+      void browser.runtime
+        .sendMessage({ type: "kairos-gate-start", momentId: offer.momentId, ...choice })
+        .catch(() => {
+          // Background asleep: the page proceeds as a plain click-through.
+        });
+    },
+  };
+}
 
 const POLL_MS = 30_000;
 
@@ -27,6 +43,10 @@ interface GateVerdictMessage {
   readonly friction?: GateFriction;
   readonly proceed?: { label?: string; action?: { type?: string; to?: string } };
   readonly abort?: { label?: string };
+  /** A moment planted today for this host, offered for a timed start. */
+  readonly start?: StartOffer;
+  /** A gate-started switch has ended here: ask what it gave. */
+  readonly reflect?: { name?: string };
   /** @deprecated pre-2026-08-08 background. */
   readonly prompt?: string;
 }
@@ -46,6 +66,13 @@ export function armDwellGate(): void {
     } catch {
       return; // Background asleep or reloading — try again next tick.
     }
+    if (typeof verdict.reflect?.name === "string") {
+      showing = true;
+      const text = await showReflection(verdict.reflect.name);
+      showing = false;
+      void browser.runtime.sendMessage({ type: "kairos-gate-reflect", text }).catch(() => {});
+      return;
+    }
     if (verdict.fire !== true) {
       return;
     }
@@ -61,6 +88,7 @@ export function armDwellGate(): void {
       dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
       proceedLabel: verdict.proceed?.label ?? "Keep watching",
       abortLabel: verdict.abort?.label ?? "Close the tab",
+      start: startOption(verdict.start),
     });
     showing = false;
     // Report how it ended. The background writes the completion — the page is
@@ -157,6 +185,7 @@ export function armClickGate(gates: readonly ClickGate[]): void {
         dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
         proceedLabel: verdict.proceed?.label ?? "Continue",
         abortLabel: verdict.abort?.label ?? "Not now",
+        start: startOption(verdict.start),
       });
       // Settled exactly as a dwell gate is, so the crossing counts and the ladder climbs.
       if (verdict.ruleId !== undefined) {

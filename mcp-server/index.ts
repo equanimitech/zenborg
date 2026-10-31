@@ -151,6 +151,16 @@ if (process.argv[2] === "refresh-spend") {
   process.exit(0);
 }
 
+// One-shot CLI for the browser's intention gate (the native host runs these):
+// `zenborg-mcp switch-moment <id> <minutes>` / `reflect <id> <text>`.
+{
+  const gate = runGateCommand(VAULT_ROOT, process.argv.slice(2));
+  if (gate) {
+    console.log(JSON.stringify(gate));
+    process.exit(gate.ok ? 0 : 1);
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Phase auto-derive
 // ────────────────────────────────────────────────────────────────────────
@@ -178,6 +188,7 @@ import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { MAX_SWITCH_MIN, runGateCommand } from "./intention-gate.js";
 import {
   getAttention,
   getDayTrace,
@@ -3567,15 +3578,24 @@ function describeActiveMoment(
 defineTool(server, {
   name: "set_active_moment",
   description:
-    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention).",
+    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention). Pass `minutes` for a timed switch: the pointer holds for that long, then returns to the moment that was active before (or clears).",
   schema: {
     momentIdOrName: z
       .string()
       .min(1)
       .nullable()
       .describe("Moment id or name on today's board. null to clear."),
+    minutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SWITCH_MIN)
+      .optional()
+      .describe(
+        "Timed switch length. Omit for an untimed set. At the end the pointer returns to what was active before.",
+      ),
   },
-  handler: async ({ momentIdOrName }) => {
+  handler: async ({ momentIdOrName, minutes }) => {
     if (momentIdOrName === null) {
       const previous = readActiveMoment(VAULT_ROOT);
       clearActiveMoment(VAULT_ROOT);
@@ -3612,7 +3632,12 @@ defineTool(server, {
       );
     }
 
-    const pointer = writeActiveMoment(VAULT_ROOT, moment.id, nowIso());
+    const pointer = writeActiveMoment(
+      VAULT_ROOT,
+      moment.id,
+      nowIso(),
+      minutes,
+    );
     return ok({ set: describeActiveMoment(pointer, moment) });
   },
 });

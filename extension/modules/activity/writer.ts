@@ -46,6 +46,15 @@ import {
 } from "../friction/gate/decide";
 import { clickGatesOf } from "../friction/gate/click";
 import { evaluateMomentGate } from "../friction/gate/moment";
+import {
+  gateMomentFor,
+  readReflectRequest,
+  readStartRequest,
+  reflectionDue,
+  type GateSession,
+  type StartOffer,
+} from "../friction/gate/intention";
+import { queryTodayMoments, reflectOnMoment, switchMoment } from "../relay/client";
 import { fencesFor, gatesFrom } from "../fence/parse";
 import { liveFences } from "../fence/store";
 import { blockInfo, usePass } from "../fence/pass";
@@ -78,6 +87,22 @@ function fenceGatesFor(fences: Fences, host: string) {
     onHost[f.id] = f;
   }
   return gatesFrom(onHost);
+}
+
+/** The switch an intention gate started, until its reflection is asked. */
+const gateSession = storage.defineItem<GateSession | null>("local:friction:gateSession", { fallback: null });
+
+/**
+ * A firing gate carries the start offer when a moment for this host is planted
+ * today. Asked only on a firing, so a quiet poll makes no host round trip.
+ */
+async function withStartOffer<V extends { readonly fire?: boolean }>(
+  verdict: V,
+  domain: string
+): Promise<V & { start?: StartOffer }> {
+  if (verdict.fire !== true) return verdict;
+  const offer = gateMomentFor(domain, (await queryTodayMoments()).moments);
+  return offer === null ? verdict : { ...verdict, start: offer };
 }
 
 const tabMapItem = storage.defineItem<TabMap>("session:activity:tabMap", { fallback: {} });
@@ -334,10 +359,14 @@ export function startActivityWriter(): WriteFn {
       // null otherwise. Null falls through to the area's own dwell gates —
       // which is also what a moment with nothing declared does, so the area
       // policy remains the floor rather than being replaced by one.
-      return evaluateMomentGate(domain)
-        .then(async (moment) => {
-          if (moment !== null) {
-            return moment;
+      // The end of an intention gate's switch, while on its host: this poll
+      // asks what it gave instead of gating. Asked once.
+      return gateSession
+        .getValue()
+        .then(async (session) => {
+          if (session !== null && reflectionDue(session, domain, Date.now())) {
+            await gateSession.setValue({ ...session, asked: true });
+            return { fire: false, dwellMs: 0, reflect: { name: session.name } };
           }
           // Every gate on the domain, not the first — see `evaluateGates`. A second
           // rule used to be dropped on the floor here.
@@ -346,9 +375,9 @@ export function startActivityWriter(): WriteFn {
           // policy mirror because the two carried different rules from different
           // files; step 5 retired the second file, so the union has nothing left
           // to add. The read is local, so the hot path makes no round trip.
-          return evaluateGates(fenceGatesFor(await liveFences(), domain));
-        })
-        .then((verdict) => {
+          const verdict =
+            (await evaluateMomentGate(domain)) ??
+            (await evaluateGates(fenceGatesFor(await liveFences(), domain)));
           // The delivery, recorded here rather than in the page for the same
           // reason the firing is: a content script that could decline to report
           // would earn a free pass by refreshing. `intervention_shown` is a
@@ -362,9 +391,53 @@ export function startActivityWriter(): WriteFn {
               ..."rung" in verdict && verdict.rung !== undefined ? { rung: verdict.rung } : {},
             });
           }
-          return verdict;
+          return withStartOffer(verdict, domain);
         })
         .catch(() => ({ fire: false }));
+    }
+
+    // The intention gate's start. The page names a moment and a duration; the
+    // background starts it only if it is the one this attested host is offered,
+    // and the switch goes through the writer, never a vault write from here.
+    const start = readStartRequest(message);
+    if (start !== null) {
+      if (domain === null) {
+        return Promise.resolve({ ok: false });
+      }
+      return queryTodayMoments()
+        .then(async (board) => {
+          const offer = gateMomentFor(domain, board.moments);
+          if (offer?.momentId !== start.momentId) return { ok: false };
+          const ok = await switchMoment(start.momentId, start.minutes);
+          if (ok) {
+            await gateSession.setValue({
+              domain,
+              momentId: offer.momentId,
+              name: offer.name,
+              intention: start.intention,
+              until: Date.now() + start.minutes * 60_000,
+            });
+          }
+          return { ok };
+        })
+        .catch(() => ({ ok: false }));
+    }
+
+    // The reflection at the end, or its skip. Only the session asked on this
+    // host is answered; a skip stores nothing.
+    const reflection = readReflectRequest(message);
+    if (reflection !== undefined) {
+      void gateSession
+        .getValue()
+        .then(async (session) => {
+          if (session === null || session.asked !== true || session.domain !== domain) return;
+          await gateSession.setValue(null);
+          if (reflection.text !== null) {
+            await reflectOnMoment(session.momentId, reflection.text, session.intention);
+          }
+        })
+        .catch(() => {});
+      return;
     }
 
     // A click on a gated control. Decided and recorded here for the same reason
@@ -390,7 +463,7 @@ export function startActivityWriter(): WriteFn {
               ...(verdict.rung !== undefined ? { rung: verdict.rung } : {}),
             });
           }
-          return verdict;
+          return withStartOffer(verdict, domain);
         })
         .catch(() => ({ fire: false }));
     }
