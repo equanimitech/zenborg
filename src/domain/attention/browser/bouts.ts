@@ -16,7 +16,8 @@
  *
  *   1. global timeline    — all surfaces merged, sorted by ts
  *   2. focus/idle-gated   — time while the browser lacks OS focus, or while
- *                           chrome.idle reports idle, does not accumulate
+ *                           chrome.idle reports idle, does not accumulate —
+ *                           except idle while focused on a playing (audible or video) domain
  *   3. 30m segment cap    — a single gap contributes at most SEGMENT_CAP_MS,
  *                           so a tab left open overnight cannot invent dwell
  *   4. dedup by event id  — the relay can deliver a batch twice; ids are stable
@@ -129,12 +130,20 @@ export const MIN_RUN_MS = 2 * 60 * 1000;
 export const SWITCH_FLOOR_MS = 15 * 1000;
 
 /** Kinds that mark attention leaving, and returning. */
-const ATTENTION_OFF = new Set(["focus_end", "idle_start"]);
-const ATTENTION_ON = new Set(["focus_start", "idle_end"]);
+const FOCUS_OFF = "focus_end";
+const FOCUS_ON = "focus_start";
+const IDLE_ON = "idle_start";
+const IDLE_OFF = "idle_end";
 
 /** Kinds that mark a tab starting or stopping audio. */
 const AUDIBLE_ON = new Set(["audible_start"]);
 const AUDIBLE_OFF = new Set(["audible_end"]);
+
+/** Kinds that mark a tab starting or stopping video playback (muted counts). */
+const VIDEO_ON = new Set(["video_started", "video_resumed"]);
+const VIDEO_OFF = new Set(["video_paused", "video_ended"]);
+const isPresence = (kind: string): boolean =>
+  AUDIBLE_ON.has(kind) || AUDIBLE_OFF.has(kind) || VIDEO_ON.has(kind) || VIDEO_OFF.has(kind);
 
 /** Pull a domain off an event payload, if it carries one. */
 function domainOf(event: ActivityEvent): Domain | null {
@@ -169,6 +178,7 @@ interface Draft {
   /** Domains currently audible (by domain, not tab — multiple tabs on the
    * same domain don't double-count). */
   audibleDomains: Set<Domain>;
+  videoDomains: Set<Domain>;
 }
 
 function newDraft(ts: number): Draft {
@@ -184,6 +194,7 @@ function newDraft(ts: number): Draft {
     longestRunMs: 0,
     lastSubstantial: null,
     audibleDomains: new Set(),
+    videoDomains: new Set(),
   };
 }
 
@@ -226,7 +237,8 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
   const out: Bout[] = [];
   let draft: Draft | null = null;
   let current: Domain | null = null;
-  let attending = true;
+  let focused = true;
+  let idle = false;
 
   for (const event of ordered) {
     const kind = canonicalKind(event.kind);
@@ -243,7 +255,8 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
     if (draft !== null && current !== null) {
       const elapsed = Math.min(event.ts - draft.endTs, SEGMENT_CAP_MS);
       if (elapsed > 0) {
-        if (attending) {
+        // Idle still counts when focused and the domain is playing (audible or video).
+        if (focused && (!idle || draft.audibleDomains.has(current) || draft.videoDomains.has(current))) {
           draft.dwellMs += elapsed;
           draft.byDomain.set(current, (draft.byDomain.get(current) ?? 0) + elapsed);
           if (draft.runDomain === current) {
@@ -265,11 +278,10 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
       }
     }
 
-    if (ATTENTION_OFF.has(kind)) {
-      attending = false;
-    } else if (ATTENTION_ON.has(kind)) {
-      attending = true;
-    }
+    if (kind === FOCUS_OFF) focused = false;
+    else if (kind === FOCUS_ON) focused = true;
+    else if (kind === IDLE_ON) idle = true;
+    else if (kind === IDLE_OFF) idle = false;
 
     // Track which domains are currently audible.
     if (AUDIBLE_ON.has(kind)) {
@@ -282,11 +294,17 @@ export function bouts(events: readonly ActivityEvent[]): readonly Bout[] {
       if (d !== null && draft !== null) {
         draft.audibleDomains.delete(d);
       }
+    } else if (VIDEO_ON.has(kind) || VIDEO_OFF.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null && draft !== null) {
+        if (VIDEO_ON.has(kind)) draft.videoDomains.add(d);
+        else draft.videoDomains.delete(d);
+      }
     }
 
     // Audible events carry a domain for identification but do not represent
     // a tab switch — they must not change `current` or `runDomain`.
-    if (!AUDIBLE_ON.has(kind) && !AUDIBLE_OFF.has(kind)) {
+    if (!isPresence(kind)) {
       const domain = domainOf(event);
       if (domain !== null) {
         if (draft === null) {
@@ -338,8 +356,10 @@ export function runs(
   let endTs = 0;
   let dwellMs = 0;
   let audibleDwellMs = 0;
-  let attending = true;
+  let focused = true;
+  let idle = false;
   const audibleDomains = new Set<Domain>();
+  const videoDomains = new Set<Domain>();
   let prevTs = 0;
   let newSitting = false;
 
@@ -366,21 +386,21 @@ export function runs(
     const kind = canonicalKind(event.kind);
 
     if (current !== null) {
-      const idle = event.ts - prevTs;
-      if (attending) {
-        const elapsed = Math.min(idle, SEGMENT_CAP_MS);
+      const gap = event.ts - prevTs;
+      if (focused && (!idle || audibleDomains.has(current) || videoDomains.has(current))) {
+        const elapsed = Math.min(gap, SEGMENT_CAP_MS);
         if (elapsed > 0) {
           dwellMs += elapsed;
           endTs = prevTs + elapsed;
         }
       } else if (audibleDomains.has(current)) {
-        const elapsed = Math.min(idle, SEGMENT_CAP_MS);
+        const elapsed = Math.min(gap, SEGMENT_CAP_MS);
         if (elapsed > 0) {
           audibleDwellMs += elapsed;
           endTs = prevTs + elapsed;
         }
       }
-      if (idle > gapMs) {
+      if (gap > gapMs) {
         flush();
         current = null;
         dwellMs = 0;
@@ -389,11 +409,10 @@ export function runs(
       }
     }
 
-    if (ATTENTION_OFF.has(kind)) {
-      attending = false;
-    } else if (ATTENTION_ON.has(kind)) {
-      attending = true;
-    }
+    if (kind === FOCUS_OFF) focused = false;
+    else if (kind === FOCUS_ON) focused = true;
+    else if (kind === IDLE_ON) idle = true;
+    else if (kind === IDLE_OFF) idle = false;
 
     if (AUDIBLE_ON.has(kind)) {
       const d = domainOf(event);
@@ -401,9 +420,15 @@ export function runs(
     } else if (AUDIBLE_OFF.has(kind)) {
       const d = domainOf(event);
       if (d !== null) audibleDomains.delete(d);
+    } else if (VIDEO_ON.has(kind) || VIDEO_OFF.has(kind)) {
+      const d = domainOf(event);
+      if (d !== null) {
+        if (VIDEO_ON.has(kind)) videoDomains.add(d);
+        else videoDomains.delete(d);
+      }
     }
 
-    if (!AUDIBLE_ON.has(kind) && !AUDIBLE_OFF.has(kind)) {
+    if (!isPresence(kind)) {
       const domain = domainOf(event);
       if (domain !== null && domain !== current) {
         flush();
