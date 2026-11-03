@@ -7,8 +7,10 @@ import { mergeById } from "@/modules/fence/deliveries";
 import { readEventsSince } from "@/modules/activity/log";
 import { nextScheduleBoundary } from "@/modules/fence/parse";
 import { BLOCK_HIT_KIND, blockHitPayload, nextLiftEdge } from "@/modules/fence/lifts";
-import { blockingFences, settleLifts } from "@/modules/fence/pass";
-import { domainFromUrl, startOfLocalDay } from "@/modules/activity/events";
+import { settleLifts } from "@/modules/fence/pass";
+import { shouldWall } from "@/modules/fence/wall";
+import type { Fence } from "@/modules/fence/types";
+import { startOfLocalDay } from "@/modules/activity/events";
 import { flushToHost, queryEvents } from "@/modules/relay/client";
 
 const SCHEDULE_ALARM = "zenborg-schedule-edge";
@@ -98,6 +100,14 @@ export default defineBackground(() => {
     void syncFenceRules();
   });
 
+  // Send a tab to the block page and log the hit. Shared by the DNR error path
+  // and the commit backstop.
+  const wallTab = (tabId: number, url: string, host: string, blocking: Fence[]) => {
+    write(BLOCK_HIT_KIND, blockHitPayload(host, blocking));
+    const page = browser.runtime.getURL("/block.html");
+    return browser.tabs.update(tabId, { url: `${page}?${new URLSearchParams({ host, u: url })}` });
+  };
+
   // A DNR `block` leaves the browser's own error page, where nothing of ours can
   // run. A blocked top-level load is sent to the block page instead, which shows
   // the unlock note and, on a time block, the pass. Domains only on the way: the
@@ -106,15 +116,23 @@ export default defineBackground(() => {
     // Chrome carries `error`; the shim's types (Firefox-shaped) do not declare it.
     const error = (nav as { error?: string }).error ?? "";
     if (nav.frameId !== 0 || !error.includes("ERR_BLOCKED_BY_CLIENT")) return;
-    const host = domainFromUrl(nav.url);
-    if (host === null) return;
     void liveFences().then((fences) => {
-      const blocking = blockingFences(fences, host);
-      if (blocking.length === 0) return;
-      write(BLOCK_HIT_KIND, blockHitPayload(host, blocking));
-      const page = browser.runtime.getURL("/block.html");
-      const query = new URLSearchParams({ host, u: nav.url });
-      return browser.tabs.update(nav.tabId, { url: `${page}?${query}` });
+      const wall = shouldWall(nav.url, fences);
+      return wall && wallTab(nav.tabId, nav.url, wall.host, wall.blocking);
+    });
+  });
+
+  // Backstop: a service worker can serve the navigation itself (youtube.com), so
+  // the DNR block never fires and the error path above never runs. A top-level
+  // load that COMMITS on a held host is walled the same way. Loads only: an open
+  // page stays alive (reach "navigation"), so no history-state hook. The block
+  // page and the browser's error page are not http(s), so nothing loops or logs
+  // twice after the path above.
+  browser.webNavigation.onCommitted.addListener((nav) => {
+    if (nav.frameId !== 0) return;
+    void liveFences().then((fences) => {
+      const wall = shouldWall(nav.url, fences);
+      return wall && wallTab(nav.tabId, nav.url, wall.host, wall.blocking);
     });
   });
 

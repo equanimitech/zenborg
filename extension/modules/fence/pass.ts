@@ -23,10 +23,11 @@ import {
   passesUsedThisMonth,
   startOfLocalMonth,
 } from "./lifts";
-import { fencesFor } from "./parse";
+import { blockingFences } from "./parse";
+
+export { blockingFences };
 import { syncFenceRules } from "./project";
 import { liveFences, openingsAnnounced, openingsCache, passAllowance, passLifts } from "./store";
-import type { Fence, Fences } from "./types";
 
 type Write = (kind: string, payload?: Readonly<Record<string, unknown>>) => void;
 
@@ -50,13 +51,6 @@ export interface BlockInfo {
 export type PassResult =
   | { readonly ok: true; readonly until?: number; readonly alreadyOpen?: true }
   | { readonly ok: false; readonly error: "none_left" | "not_a_time_block" };
-
-/** Browser blocks holding `host` in `fences`. */
-export function blockingFences(fences: Fences, host: string): Fence[] {
-  return fencesFor(fences, host).filter(
-    (f) => f.enforcement.kind === "block" && f.enforcement.standing && f.enforcement.enforcement === "browser"
-  );
-}
 
 async function passesUsed(now: number, policy?: string): Promise<number> {
   const since = startOfLocalMonth(now);

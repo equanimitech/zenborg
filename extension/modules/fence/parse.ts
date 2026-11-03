@@ -495,6 +495,13 @@ function isFenceActive(fence: Fence): boolean {
   return isScheduleActive(fence.schedule);
 }
 
+/** Browser blocks holding `host` in `fences`. */
+export function blockingFences(fences: Fences, host: string): Fence[] {
+  return fencesFor(fences, host).filter(
+    (f) => f.enforcement.kind === "block" && f.enforcement.standing && f.enforcement.enforcement === "browser"
+  );
+}
+
 /** Every active fence on `host`. The hot-path read: pure, local, no round trip. */
 export function fencesFor(fences: Fences, host: string): readonly Fence[] {
   const needle = normalizeDomain(host);
