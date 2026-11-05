@@ -9,10 +9,12 @@ import {
   INITIAL_PLAYBACK,
   PAUSE_SETTLE_MS,
   finiteSeconds,
+  isPlaybackProbe,
   playbackTransition,
   videoCompleted,
   type PlaybackInput,
   type PlaybackState,
+  type SensorMessage,
 } from "../events";
 import { sendSensorEvent } from "../send";
 
@@ -34,6 +36,11 @@ export function armVideoSense(): void {
   // dropped it, so its span can be closed. Entries leave on `ended`, on the
   // detach sweep, or when the page goes away — never accumulating.
   const open = new Set<HTMLVideoElement>();
+
+  // Open elements whose pause has settled into a video_paused. A pause still
+  // inside the settle window counts as playing: it may be a transient, and a
+  // transient resumes without emitting anything.
+  const settled = new WeakSet<HTMLVideoElement>();
 
   // Completion fires at most once per element — from whichever trigger
   // (the ≥90% heuristic, the native `ended`, detach, or page teardown)
@@ -114,6 +121,11 @@ export function armVideoSense(): void {
     const feedPlayback = (input: PlaybackInput): void => {
       const result = playbackTransition(playback, input);
       playback = result.state;
+      if (playback.phase === "settled_paused") {
+        settled.add(video);
+      } else {
+        settled.delete(video);
+      }
       if (result.emit !== null) {
         sendSensorEvent(result.emit, { seconds: finiteSeconds(video.currentTime) });
       }
@@ -146,6 +158,24 @@ export function armVideoSense(): void {
   }).observe(document.body, {
     childList: true,
     subtree: true,
+  });
+
+  // A close from any frame of this tab asks whether anything else still plays
+  // (`closeWrites`). The first frame to answer takes the span over; a frame with
+  // nothing playing stays silent, so the others can answer.
+  browser.runtime.onMessage.addListener((message: unknown) => {
+    const playing = isPlaybackProbe(message)
+      ? [...open].find((video) => !settled.has(video))
+      : undefined;
+    if (playing === undefined) {
+      return undefined;
+    }
+    const reply: SensorMessage = {
+      type: "kairos-sensor",
+      kind: "video_resumed",
+      payload: { seconds: finiteSeconds(playing.currentTime) },
+    };
+    return Promise.resolve(reply);
   });
 
   // Tab close and cross-document navigation produce no removal mutation, so

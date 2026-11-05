@@ -1,3 +1,7 @@
+// Shared byte-for-byte by extension/modules/domain/ and src/domain/attention/browser/
+// (the MCP server cannot import from extension/). The root suite pins the copies
+// (src/domain/attention/__tests__/browserVendored.test.ts): change both together.
+
 /**
  * Branded value objects for type safety across the zenborg platform.
  *

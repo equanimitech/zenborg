@@ -1,24 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 
-// `project.ts` also exports `syncFenceRules`, which pulls in `./store` and
-// `../friction/cooldown/store` — both call `storage.defineItem` at module
-// load, which throws outside a real extension environment (no `browser.runtime`).
-// `buildDnrRules` never touches either, so these mocks exist only to keep the
-// import graph loadable in plain vitest — see `../drogues/blocklist/sync.test.ts`
+// `project.ts` also exports `syncFenceRules`, which pulls in `./store`, which
+// calls `storage.defineItem` at module load and throws outside a real extension
+// environment (no `browser.runtime`). `buildDnrRules` never touches it, so this
+// mock exists only to keep the import graph loadable in plain vitest — see `../drogues/blocklist/sync.test.ts`
 // for the same pattern against the modules this one replaces.
-vi.mock("./store", () => ({ fenceCache: { getValue: async () => ({}) } }));
-vi.mock("../friction/cooldown/store", () => ({ cooldownDomains: async () => [] }));
+vi.mock("./store", () => ({ liveFences: async () => ({}) }));
 
 const { buildDnrRules } = await import("./project");
 
 /**
- * `buildDnrRules` is the pure heart of the projector: two domain lists in,
+ * `buildDnrRules` is the pure heart of the projector: a domain list in,
  * DNR rules out, no chrome and no storage. `syncFenceRules` is the thin
- * wrapper that resolves those two lists from state and hands them here.
+ * wrapper that resolves that list from state and hands them here.
  */
 describe("buildDnrRules", () => {
   it("projects standing blocks onto the BLOCK_RULE_ID rule", () => {
-    const rules = buildDnrRules(["chess.com", "youtube.com"], []);
+    const rules = buildDnrRules(["chess.com", "youtube.com"]);
     expect(rules).toHaveLength(1);
     expect(rules[0].id).toBe(1);
     expect([...rules[0].condition.requestDomains].sort()).toEqual([
@@ -27,20 +25,43 @@ describe("buildDnrRules", () => {
     ]);
   });
 
-  it("projects cooldown domains onto the COOLDOWN_RULE_ID rule", () => {
-    const rules = buildDnrRules([], ["news.example.com"]);
+  it("an `all` rule and a `navigation` rule block different resource types", () => {
+    const [all, nav] = buildDnrRules(["youtube.com"], ["chess.com"]);
+    expect(all.condition.requestDomains).toEqual(["youtube.com"]);
+    expect(all.condition.resourceTypes).toContain("websocket");
+    expect(nav.id).not.toBe(all.id);
+    expect(nav.condition.requestDomains).toEqual(["chess.com"]);
+    expect([...nav.condition.resourceTypes]).toEqual(["main_frame", "sub_frame"]);
+  });
+
+  it("navigation-only blocks emit just the navigation rule", () => {
+    const rules = buildDnrRules([], ["lichess.org"]);
     expect(rules).toHaveLength(1);
-    expect(rules[0].id).toBe(2);
-    expect(rules[0].condition.requestDomains).toEqual(["news.example.com"]);
+    expect(rules[0].condition.resourceTypes).not.toContain("websocket");
   });
 
-  it("emits both rules when both lists are non-empty", () => {
-    const rules = buildDnrRules(["chess.com"], ["news.example.com"]);
-    expect(rules.map((r) => r.id).sort()).toEqual([1, 2]);
-  });
-
-  it("emits nothing when neither list has domains", () => {
-    const rules = buildDnrRules([], []);
+  it("emits nothing when there are no domains", () => {
+    const rules = buildDnrRules([]);
     expect(rules).toEqual([]);
+  });
+});
+
+describe("buildDnrRules — rationed pools", () => {
+  it("gives each spent pool its own rule, sparing excluded hosts", () => {
+    const rules = buildDnrRules([], [], [
+      { pool: "youtube-weekend", domains: ["youtube.com", "youtu.be"], except: ["music.youtube.com"], reach: "navigation" },
+    ]);
+    expect(rules).toEqual([
+      {
+        id: 100,
+        priority: 1,
+        action: { type: "block" },
+        condition: {
+          requestDomains: ["youtube.com", "youtu.be"],
+          excludedRequestDomains: ["music.youtube.com"],
+          resourceTypes: ["main_frame", "sub_frame"],
+        },
+      },
+    ]);
   });
 });

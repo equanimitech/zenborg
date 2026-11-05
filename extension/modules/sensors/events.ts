@@ -36,6 +36,12 @@ export interface SensorMessage {
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
+/** A sensor event past validation: what the writer may record. */
+export interface ValidatedSensorEvent {
+  readonly kind: SensorKind;
+  readonly payload: Readonly<Record<string, string | number | boolean>>;
+}
+
 const MAX_PAYLOAD_KEYS = 8;
 const MAX_STRING_LENGTH = 64;
 
@@ -45,9 +51,7 @@ const MAX_STRING_LENGTH = 64;
  * payload values are reduced to capped scalars (strings ≤64 chars,
  * finite numbers, booleans) and at most 8 keys.
  */
-export function validateSensorMessage(
-  msg: unknown
-): { kind: SensorKind; payload: Record<string, string | number | boolean> } | null {
+export function validateSensorMessage(msg: unknown): ValidatedSensorEvent | null {
   if (typeof msg !== "object" || msg === null) {
     return null;
   }
@@ -95,6 +99,16 @@ export function isGateQuery(msg: unknown): boolean {
     msg !== null &&
     (msg as Record<string, unknown>).type === "kairos-gate-check"
   );
+}
+
+/** A click gate asking for its verdict. Returns the rule id the page names, or
+ * null for anything else. The id is only a claim: the background answers only
+ * for a click gate actually in force on the sender's attested domain. */
+export function clickGateQuery(msg: unknown): string | null {
+  if (typeof msg !== "object" || msg === null) return null;
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "kairos-gate-click") return null;
+  return typeof m.ruleId === "string" && m.ruleId !== "" && m.ruleId.length <= 128 ? m.ruleId : null;
 }
 
 /**
@@ -148,67 +162,44 @@ export function senderDomain(sender: { readonly tab?: { readonly url?: string } 
   return url === undefined ? null : domainFromUrl(url);
 }
 
-/** Per tab: the frame that holds playback, and the frames refused while it did. */
-export interface TabPlayback {
-  readonly holder?: number;
-  readonly refused: readonly number[];
+/** The probe a video close sends to every frame of its tab. */
+export const PLAYBACK_PROBE = { type: "kairos-sensor-playing" } as const;
+
+export function isPlaybackProbe(msg: unknown): boolean {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    (msg as Record<string, unknown>).type === PLAYBACK_PROBE.type
+  );
 }
 
-/** Playback holders, keyed by tab id. */
-export type PlaybackOwners = Readonly<Record<string, TabPlayback>>;
-
-const OPENS = new Set<SensorKind>(["video_started", "video_resumed"]);
+export function isVideoClose(kind: SensorKind): boolean {
+  return kind === "video_paused" || kind === "video_ended";
+}
 
 /**
- * One frame per tab speaks for playback, so a page with players in several
- * frames reads as one player, not two. The first frame to start or resume
- * holds the tab; a start from any other frame is refused, and that frame's
- * pauses and ends are dropped too, or the log would close a span it never
- * opened. When the holder pauses or ends, the next frame to start takes over.
- * With no state at all everything passes, which is how the sensor behaved
- * before it ran in subframes. Non-video kinds always pass.
+ * What a sensor event writes, given a frame's answer to `PLAYBACK_PROBE`.
  *
- * ponytail: first-come holds. A muted autoplay ad in its own iframe that
- * starts first holds the tab until it pauses, and the main player's minutes
- * in the meantime are not written. Prefer the audible frame if that shows up.
+ * Every frame's start is written and the read side's tab key dedupes it
+ * (`playingSpans` ignores a second open), but the first close on that key ends
+ * the span, whichever frame it came from. So a close with another player still
+ * going hands the span over: it closes, and the frame that answered reopens at
+ * its own position. Dropping the close instead would pair a later close with an
+ * opener from another frame, and a position only means something inside one
+ * frame: a 30-second ad closing a film's span would cap the film at 30 seconds.
+ * For the same reason the close gives up its `seconds` here.
+ *
+ * No answer means nothing else plays, including when a frame has died.
  */
-export function claimPlayback(
-  owners: PlaybackOwners,
-  tabId: number,
-  frameId: number,
-  kind: SensorKind
-): { owners: PlaybackOwners; write: boolean } {
-  if (!kind.startsWith("video_")) {
-    return { owners, write: true };
+export function closeWrites(
+  event: ValidatedSensorEvent,
+  stillPlaying: ValidatedSensorEvent | null
+): readonly ValidatedSensorEvent[] {
+  if (!isVideoClose(event.kind) || stillPlaying?.kind !== "video_resumed") {
+    return [event];
   }
-  const key = String(tabId);
-  const tab = owners[key] ?? { refused: [] };
-  const set = (next: TabPlayback): PlaybackOwners => ({ ...owners, [key]: next });
-  const refused = tab.refused.filter((f) => f !== frameId);
-
-  if (OPENS.has(kind)) {
-    if (tab.holder === undefined || tab.holder === frameId) {
-      return { owners: set({ holder: frameId, refused }), write: true };
-    }
-    return { owners: set({ ...tab, refused: [...refused, frameId] }), write: false };
-  }
-  if (tab.holder === frameId) {
-    return { owners: set({ refused: tab.refused }), write: true };
-  }
-  if (tab.holder !== undefined || tab.refused.includes(frameId)) {
-    return { owners, write: false };
-  }
-  return { owners, write: true };
-}
-
-/** Forget a tab's playback state (tab closed or navigated). */
-export function releasePlayback(owners: PlaybackOwners, tabId: number): PlaybackOwners {
-  const key = String(tabId);
-  if (owners[key] === undefined) {
-    return owners;
-  }
-  const { [key]: _released, ...rest } = owners;
-  return rest;
+  const { seconds: _otherFrames, ...payload } = event.payload;
+  return [{ kind: event.kind, payload }, stillPlaying];
 }
 
 /**
@@ -226,6 +217,26 @@ export function sensorAllowed(
   return observe.some(
     (entry) => domain === entry || domain.endsWith("." + entry)
   );
+}
+
+/**
+ * The observe tier, in two widths. `deep` is every fence and browser-map host,
+ * and arms every sense. `video` adds the hosts the vault maps to an area, which
+ * arm the video sense alone: an area mapping says whose attention a host is,
+ * not that its feed or shopping pages may be read.
+ */
+export interface ObserveTiers {
+  readonly deep: readonly string[];
+  readonly video: readonly string[];
+}
+
+/** The observe-tier gate per sense: a video event may ride the wider tier. */
+export function sensorPermitted(
+  kind: SensorKind,
+  domain: string | null,
+  tiers: ObserveTiers
+): boolean {
+  return sensorAllowed(domain, kind.startsWith("video_") ? tiers.video : tiers.deep);
 }
 
 /**

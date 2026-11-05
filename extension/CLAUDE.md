@@ -11,8 +11,8 @@ Part of zenborg. Run locally with `pnpm dev` from `extension/`.
 ```
 extension/
 ├── entrypoints/
-│   ├── background.ts                # SW — activity writer + DNR sync + cooldown lapse alarm
-│   ├── popup/                       # Status (event count, fences) + cooldown button
+│   ├── background.ts                # SW — activity writer + DNR sync + schedule-edge alarm
+│   ├── popup/                       # Status (event count, fences)
 │   ├── manage/                      # Fence dashboard + area map + log export
 │   ├── newtab/                      # New-tab override
 │   ├── block/                       # Drogue block page
@@ -28,8 +28,7 @@ extension/
 │   ├── watchlist/                   # DERIVED observe tier (fence domains ∪ area-map domains, not manual)
 │   ├── fence/                       # Fence parsing, projection, cache — the standing state
 │   ├── friction/
-│   │   ├── cooldown/                # state.ts (pure) + store.ts (chrome) + arm.ts (the one gesture)
-│   │   ├── gate/                    # dwell gate: state.ts + decide.ts (pure) + overlay.ts + arm.ts
+│   │   ├── gate/                    # dwell + click gates: state.ts, ladder.ts, click.ts (pure) + decide.ts + overlay.ts + arm.ts
 │   │   ├── policy/                  # store.ts — areas, area map, transforms from the host
 │   │   ├── transform/               # CSS hiding rules applied per-page
 │   │   └── areas/                   # scope.ts + days.ts — which areas a rule applies to, when
@@ -42,28 +41,28 @@ extension/
 **The observe tier is derived, not maintained.** Since 2026-08-26, a domain is
 auto-observed when it appears in any fence or area map assignment. The manual
 watchlist is retired. `derivedObserveDomains()` in `modules/watchlist/store.ts`
-reads `fenceCache ∪ areaMap ∪ observeDomains` fresh on every call, where
-`observeDomains` is the native host's `observe` push: every host the vault maps
-to an area (`map_area` kind=host). Mapping a site is what makes it observed.
+reads `fenceCache ∪ areaMap` fresh on every call. `observeTiers()` adds a wider
+tier for the video sense alone: `observeDomains`, the native host's `observe`
+push of every host the vault maps to an area (`map_area` kind=host). Mapping a
+site gets its players sensed, and nothing else: feed, shopping and game senses
+stay on fence and browser-map hosts.
 
 **The sensor runs in every frame** (`allFrames`, `matchAboutBlank`), so embedded
 players are sensed. Events are credited to the tab's domain (`senderDomain`),
-never the iframe host, and one frame per tab holds playback at a time
-(`claimPlayback`), so players in several frames never read as two. Subframes
-arm the video sense only.
+never the iframe host. Every frame's start is written and the read side dedupes
+by tab; a close asks the tab's frames whether anything still plays and, if so,
+hands the span over (`closeWrites`), so players in several frames never read as
+two and a short ad never ends a film. Subframes arm the video sense only; the
+gates stay in the top frame.
 
 **Sensors are type-based, never company-based.** Generic senses (video, feed,
 shopping, game) self-select by DOM shape on any observed domain. Site adapters in
 `adapters.ts` exist only where generic detection fails, and they are data.
 
-**Friction primitives: fences, gates, cooldowns, transforms.** zenborg (via MCP)
+**Friction primitives: fences, gates, transforms.** zenborg (via MCP)
 declares what is fenced; the extension decides when it fires. The fence state is
 pushed over native messaging and cached in `chrome.storage.local`, so actuation
 never waits on a round trip and a dead host never lifts a fence.
-
-`friction/cooldown/state.ts` holds the behavioural rule: **setting is
-write-forward-only.** Re-setting may push the stamp out, never pull it in, and
-there is deliberately no way to lift early — the unlock path is `wait`.
 
 ## The hostile-page boundary
 
