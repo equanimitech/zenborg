@@ -69,6 +69,7 @@ import type {
 } from "../domain/intervention/Primitive.ts";
 import type { RuleSpec } from "../domain/intervention/RuleSpec.ts";
 import { rungFor } from "../domain/intervention/rules/sessionFence.ts";
+import { isInScheduleWindow } from "../domain/intervention/scheduleWindow.ts";
 
 const VAULT =
   process.env.ZENBORG_HOME ||
@@ -159,7 +160,9 @@ function loadFences(): RuleSpec[] {
     const records = Array.isArray(raw) ? raw : Object.values(raw ?? {});
     return records.filter(
       (r: any) =>
-        r?.scope?.surface === "session" && Array.isArray(r?.primitives),
+        r?.scope?.surface === "session" &&
+        Array.isArray(r?.primitives) &&
+        r?.defaultEnabled !== false, // paused by set_fence_enabled
     ) as RuleSpec[];
   } catch {
     return []; // No fences, unreadable, or garbled — all mean "nothing declared".
@@ -479,26 +482,8 @@ function onPrompt(input: any, fences: RuleSpec[]): void {
 
 // ── Schedule window evaluation ──────────────────────────────────────────
 
-const WEEKDAY_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
-function currentWeekday(): string {
-  return WEEKDAY_NAMES[new Date().getDay()];
-}
-
 function isInWindow(window: ScheduleSpec["window"]): boolean {
-  const now = new Date();
-  const hour = now.getHours();
-
-  if (window.weekdays && window.weekdays.length > 0) {
-    if (!window.weekdays.includes(currentWeekday() as any)) return false;
-  }
-
-  const { fromHour, toHour } = window;
-  if (toHour <= fromHour) {
-    // Wraps midnight: e.g. 22→06 means [22,24) ∪ [0,6)
-    return hour >= fromHour || hour < toHour;
-  }
-  return hour >= fromHour && hour < toHour;
+  return isInScheduleWindow(window, new Date());
 }
 
 /** Unwrap a schedule primitive: if the current hour is inside the window,

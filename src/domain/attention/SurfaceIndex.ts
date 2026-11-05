@@ -160,7 +160,9 @@ export function resolveArea(
 }
 
 /** Compile a SurfaceIndex from areas that declare their own surfaces. */
-export function indexSurfaces(areas: Record<string, Area>): SurfaceIndex {
+export function indexSurfaces(
+  areas: Readonly<Record<string, Pick<Area, "id" | "surfaces">>>,
+): SurfaceIndex {
   const paths: PathRule[] = [];
   const hosts: HostRule[] = [];
   const apps: AppRule[] = [];

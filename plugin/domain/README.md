@@ -1,10 +1,15 @@
 # domain/ — vendored, not shared
 
-These eight files are a verbatim copy of zenborg's intervention slice, taken
+These files are a verbatim copy of zenborg's intervention slice, taken
 from `zenborg@e5747ca192c8f2f022a207de12feef4caf098512` (`src/domain/attention/` and `src/domain/intervention/`).
 The layout mirrors the source exactly so every relative import inside them
 resolves unchanged, which is why `attention/` sits beside `intervention/`
 here rather than inside it.
+
+`intervention/scheduleWindow.ts` was added later (2026-10-24): the one reading of a
+schedule window, also vendored into `extension/modules/fence/`. Its byte-identity
+is pinned by `src/domain/intervention/__tests__/scheduleWindow.test.ts`, which the
+root pre-commit hook runs.
 
 ## Why a copy and not a package
 

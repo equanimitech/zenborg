@@ -24,13 +24,37 @@ import {
   declareWateringHours,
   fenceReport,
   seedHostBlocks,
+  setFencesEnabled,
 } from "../src/application/use-cases/fences.ts";
 import {
   crossingTally,
   expandHome,
   fenceStore,
   readFencesFile,
+  readOpenings,
+  readPassAllowance,
+  removeOpening,
+  writeOpening,
+  writePassAllowance,
 } from "./fences.js";
+import {
+  buildOpening,
+  buildPassAllowance,
+  DEFAULT_PASS_ALLOWANCE,
+} from "../src/domain/intervention/Opening.ts";
+import {
+  type Allocation,
+  COOL_DOWN_DAYS,
+  DEFAULT_CAPACITY_DAYS,
+} from "../src/domain/entities/Allocation.ts";
+import { setAllocations } from "../src/domain/entities/Cycle.ts";
+import { appetiteCheck } from "../src/domain/spend/AppetiteCheck.ts";
+import {
+  getCycleSpend,
+  refreshSpend,
+  today,
+  writeSpendCache,
+} from "./spend.js";
 import { buildRelatedHabits } from "./graph.js";
 import {
   computeHealth,
@@ -39,6 +63,7 @@ import {
   parseVaultDay,
   resolveRhythm,
 } from "./health.js";
+import { checkIntentions, keyPeople, resolveIntentions } from "./intentions.js";
 import { resolveAddMoment } from "./moments.js";
 import { type RegistryPerson, selectPeopleToReach } from "./people.js";
 import { searchHabits, searchPeople, searchPlaces } from "./search.js";
@@ -64,6 +89,7 @@ import {
   requireActiveHabit,
   schedulePhaseError,
   scheduleRhythmError,
+  resolvePersonKeys,
   slugify,
   timingFromSchedule,
   validateMomentTiming,
@@ -91,9 +117,9 @@ import {
   type Relationship,
   RelationshipDirectionSchema,
   type Rhythm,
+  RhythmSchema,
   type Routine,
   type RoutineEntry,
-  RhythmSchema,
   readActiveMoment,
   readCollection,
   resolveVault,
@@ -113,6 +139,23 @@ const vault = resolveVault();
 logVaultBanner(vault);
 const VAULT_ROOT = vault.root;
 
+// One-shot CLI, no MCP: `zenborg-mcp refresh-spend [--vault <dir>]`.
+// The plugin's SessionStart hook spawns it (the cached plugin has no repo).
+if (process.argv[2] === "refresh-spend") {
+  console.log(refreshSpend(VAULT_ROOT));
+  process.exit(0);
+}
+
+// One-shot CLI for the browser's intention gate (the native host runs these):
+// `zenborg-mcp switch-moment <id> <minutes>` / `reflect <id> <text>`.
+{
+  const gate = runGateCommand(VAULT_ROOT, process.argv.slice(2));
+  if (gate) {
+    console.log(JSON.stringify(gate));
+    process.exit(gate.ok ? 0 : 1);
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Phase auto-derive
 // ────────────────────────────────────────────────────────────────────────
@@ -128,7 +171,42 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
+import {
+  staleReason,
+  wakingDayKey,
+} from "../src/domain/attention/ActiveMoment.ts";
+import { localDay } from "../src/domain/attention/siteMinutes.ts";
+import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
+import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
+import type { Primitive } from "../src/domain/intervention/Primitive.ts";
+import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
+import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
+import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
+import { logDir, readActivityLog } from "./activity-log.js";
+import { MAX_SWITCH_MIN, runGateCommand } from "./intention-gate.js";
+import {
+  footprintParamsError,
+  getFootprints,
+  getSurfaces,
+  mapArea,
+  migrateSurfaces,
+  resolveWindow,
+} from "./attention.js";
+import {
+  type BrowserFenceLine,
+  browserFenceReport,
+  conciseBrowserFences,
+} from "./browser-fences.js";
 import { paginate } from "./paging.js";
+import {
+  boundaryKey,
+  conciseRoutine,
+  planMaterialization,
+  resolveBoundaries,
+  VALID_BOUNDARIES,
+  validateRoutine,
+} from "./routines.js";
+import { conciseRuleEfficacy, getRuleEfficacy } from "./rule-efficacy.js";
 import {
   conciseArea,
   conciseCycle,
@@ -139,27 +217,13 @@ import {
   conciseRelationship,
   stripNulls,
 } from "./serialize.js";
+import { getBlockHits } from "./block-hits.js";
+import {
+  conciseSiteMinutes,
+  getSiteMinutes,
+  midnight,
+} from "./site-minutes.js";
 import { defineTool, err, ok, type ToolResult } from "./tooling.js";
-import {
-  boundaryKey,
-  conciseRoutine,
-  planMaterialization,
-  resolveBoundaries,
-  VALID_BOUNDARIES,
-  validateRoutine,
-} from "./routines.js";
-import {
-  getSurfaces,
-  getAttention,
-  getDayTrace,
-  mapArea,
-  migrateSurfaces,
-  resolveWindow,
-} from "./attention.js";
-import { logDir, readActivityLog } from "./activity-log.js";
-import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
-import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
-import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -287,15 +351,13 @@ Your life is the garden. You are the gardener. Zenborg is the toolshed.
 
 defineTool(server, {
   name: "list_areas",
-  description:
-    "List all areas, sorted by order.",
+  description: "List all areas, sorted by order.",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((a) => conciseArea(a as Area)),
   handler: async () => {
     const areas = readCollection(VAULT_ROOT, "areas");
-    const list = Object.values(areas)
-      .sort((a, b) => a.order - b.order);
+    const list = Object.values(areas).sort((a, b) => a.order - b.order);
     return ok(list);
   },
 });
@@ -366,11 +428,16 @@ defineTool(server, {
     order: z.number().int().nonnegative().optional(),
     attitude: AttitudeSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
-    surfaces: z.object({
-      paths: z.array(z.string()).optional(),
-      hosts: z.array(z.string()).optional(),
-      apps: z.array(z.string()).optional(),
-    }).optional().describe("Where this area lives: filesystem paths, browser hosts, app names."),
+    surfaces: z
+      .object({
+        paths: z.array(z.string()).optional(),
+        hosts: z.array(z.string()).optional(),
+        apps: z.array(z.string()).optional(),
+      })
+      .optional()
+      .describe(
+        "Where this area lives: filesystem paths, browser hosts, app names.",
+      ),
   },
   concise: (p) => conciseArea((p as any).updated),
   handler: async (params) => {
@@ -566,8 +633,20 @@ defineTool(server, {
     rhythm: RhythmSchema.optional(),
     schedule: ScheduleInputSchema.optional(),
     placeIds: z.array(z.string()).optional(),
-    parentHabitId: z.string().optional().describe("ID of the parent habit — makes this a variant (e.g. 'guided meditation' under 'Vipassana')."),
-    durationMin: z.number().int().positive().optional().describe("Default duration in minutes for moments spawned from this habit."),
+    parentHabitId: z
+      .string()
+      .optional()
+      .describe(
+        "ID of the parent habit — makes this a variant (e.g. 'guided meditation' under 'Vipassana').",
+      ),
+    durationMin: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "Default duration in minutes for moments spawned from this habit.",
+      ),
   },
   concise: (p) => conciseHabit((p as any).created),
   handler: async (params) => {
@@ -582,9 +661,11 @@ defineTool(server, {
 
     if (params.parentHabitId) {
       const parent = habits[params.parentHabitId];
-      if (!parent) return err(`Parent habit not found: ${params.parentHabitId}`);
+      if (!parent)
+        return err(`Parent habit not found: ${params.parentHabitId}`);
       if (parent.isArchived) return err("Parent habit is archived.");
-      if ((parent as any).parentHabitId) return err("Variants cannot nest — parent is already a variant.");
+      if ((parent as any).parentHabitId)
+        return err("Variants cannot nest — parent is already a variant.");
     }
 
     let schedule: Schedule | undefined;
@@ -631,7 +712,9 @@ defineTool(server, {
           }
         : {}),
       ...(params.parentHabitId ? { parentHabitId: params.parentHabitId } : {}),
-      ...(params.durationMin && params.durationMin > 0 ? { durationMin: params.durationMin } : {}),
+      ...(params.durationMin && params.durationMin > 0
+        ? { durationMin: params.durationMin }
+        : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -660,8 +743,18 @@ defineTool(server, {
     rhythm: RhythmSchema.nullable().optional(),
     schedule: ScheduleInputSchema.nullable().optional(),
     placeIds: z.array(z.string()).nullable().optional(),
-    parentHabitId: z.string().nullable().optional().describe("Set parent habit ID to make this a variant; null to detach."),
-    durationMin: z.number().int().positive().nullable().optional().describe("Default duration in minutes; null to clear."),
+    parentHabitId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe("Set parent habit ID to make this a variant; null to detach."),
+    durationMin: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .optional()
+      .describe("Default duration in minutes; null to clear."),
     archived: z
       .boolean()
       .optional()
@@ -689,10 +782,13 @@ defineTool(server, {
 
     if ("parentHabitId" in updates && updates.parentHabitId !== null) {
       const parent = habits[updates.parentHabitId!];
-      if (!parent) return err(`Parent habit not found: ${updates.parentHabitId}`);
+      if (!parent)
+        return err(`Parent habit not found: ${updates.parentHabitId}`);
       if (parent.isArchived) return err("Parent habit is archived.");
-      if ((parent as any).parentHabitId) return err("Variants cannot nest — parent is already a variant.");
-      if (updates.parentHabitId === id) return err("A habit cannot be its own parent.");
+      if ((parent as any).parentHabitId)
+        return err("Variants cannot nest — parent is already a variant.");
+      if (updates.parentHabitId === id)
+        return err("A habit cannot be its own parent.");
     }
 
     const nextName =
@@ -979,13 +1075,15 @@ defineTool(server, {
     const places = readPlaces();
     const rels = Object.values(readCollection(VAULT_ROOT, "relationships"));
     const basePlaceMap = buildBasePlaceKeyMap(rels, people, places);
-    const registryPeople: RegistryPerson[] = Object.values(people).filter((p) => !p.isArchived).map((p) => ({
-      key: p.key,
-      cadence: p.cadence,
-      tags: p.tags,
-      favorite: false,
-      basePlace: basePlaceMap.get(p.id) ?? p.basePlace,
-    }));
+    const registryPeople: RegistryPerson[] = Object.values(people)
+      .filter((p) => !p.isArchived)
+      .map((p) => ({
+        key: p.key,
+        cadence: p.cadence,
+        tags: p.tags,
+        favorite: false,
+        basePlace: basePlaceMap.get(p.id) ?? p.basePlace,
+      }));
     const moments = Object.values(readCollection(VAULT_ROOT, "moments"));
     return ok(
       selectPeopleToReach(registryPeople, moments, new Date(), {
@@ -1006,10 +1104,14 @@ const CadenceSchema = z.enum(["weekly", "monthly", "quarterly", "yearly"]);
 
 defineTool(server, {
   name: "list_people",
-  description: "List all people in the registry. Filter by tag. Archived people are hidden by default; pass includeArchived=true to show them.",
+  description:
+    "List all people in the registry. Filter by tag. Archived people are hidden by default; pass includeArchived=true to show them.",
   schema: {
     tag: z.string().optional(),
-    includeArchived: z.boolean().optional().describe("Include archived people (default false)"),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe("Include archived people (default false)"),
   },
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((x) => concisePerson(x as Person)),
@@ -1125,7 +1227,10 @@ defineTool(server, {
     basePlace: z.string().nullable().optional(),
     emoji: z.string().nullable().optional(),
     isSelf: z.boolean().optional(),
-    archived: z.boolean().optional().describe("true to archive, false to restore"),
+    archived: z
+      .boolean()
+      .optional()
+      .describe("true to archive, false to restore"),
   },
   concise: (p) => concisePerson((p as any).updated),
   handler: async ({ idOrKey, ...updates }) => {
@@ -1162,8 +1267,13 @@ defineTool(server, {
       const existingRel = Object.values(rels).find(
         (r) =>
           r.label === BASED_IN_LABEL &&
-          ((r.fromType === "person" && r.fromId === id && r.toType === "place") ||
-           (r.toType === "person" && r.toId === id && r.fromType === "place" && r.direction === "mutual")),
+          ((r.fromType === "person" &&
+            r.fromId === id &&
+            r.toType === "place") ||
+            (r.toType === "person" &&
+              r.toId === id &&
+              r.fromType === "place" &&
+              r.direction === "mutual")),
       );
       if (existingRel) delete rels[existingRel.id];
       if (updates.basePlace) {
@@ -1233,9 +1343,13 @@ defineTool(server, {
 
 defineTool(server, {
   name: "list_places",
-  description: "List all places in the registry. Archived places are hidden by default; pass includeArchived=true to show them.",
+  description:
+    "List all places in the registry. Archived places are hidden by default; pass includeArchived=true to show them.",
   schema: {
-    includeArchived: z.boolean().optional().describe("Include archived places (default false)"),
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe("Include archived places (default false)"),
   },
   annotations: { readOnlyHint: true },
   concise: (p) => (p as unknown[]).map((x) => concisePlace(x as Place)),
@@ -1314,7 +1428,8 @@ defineTool(server, {
 
 defineTool(server, {
   name: "update_place",
-  description: "Update a place by id or key. Only provided fields are changed. Set archived: true to archive, archived: false to restore.",
+  description:
+    "Update a place by id or key. Only provided fields are changed. Set archived: true to archive, archived: false to restore.",
   schema: {
     idOrKey: z.string(),
     name: z.string().optional(),
@@ -1328,7 +1443,10 @@ defineTool(server, {
       .optional(),
     emoji: z.string().nullable().optional(),
     url: z.string().nullable().optional(),
-    archived: z.boolean().optional().describe("true to archive, false to restore"),
+    archived: z
+      .boolean()
+      .optional()
+      .describe("true to archive, false to restore"),
   },
   concise: (p) => concisePlace((p as any).updated),
   handler: async ({ idOrKey, ...updates }) => {
@@ -1497,8 +1615,7 @@ defineTool(server, {
     "List all routines. Each routine is an ordered sequence of habits that carries the day across a phase boundary.",
   schema: {},
   annotations: { readOnlyHint: true },
-  concise: (p) =>
-    (p as unknown[]).map((x) => conciseRoutine(x as Routine)),
+  concise: (p) => (p as unknown[]).map((x) => conciseRoutine(x as Routine)),
   handler: async () => {
     const list = Object.values(readCollection(VAULT_ROOT, "routines"));
     list.sort(
@@ -1512,8 +1629,7 @@ defineTool(server, {
 
 defineTool(server, {
   name: "get_routine",
-  description:
-    'Get a routine by id or boundary key (e.g. "NIGHT->MORNING").',
+  description: 'Get a routine by id or boundary key (e.g. "NIGHT->MORNING").',
   schema: { idOrBoundary: z.string() },
   annotations: { readOnlyHint: true },
   concise: (p) => conciseRoutine(p as Routine),
@@ -1521,9 +1637,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const routine =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!routine) return err(`Routine not found: ${idOrBoundary}`);
     return ok(routine);
   },
@@ -1544,11 +1658,7 @@ defineTool(server, {
   handler: async ({ name, from, to, entries }) => {
     const routines = readCollection(VAULT_ROOT, "routines");
     const habits = readCollection(VAULT_ROOT, "habits");
-    const problems = validateRoutine(
-      { from, to, entries },
-      habits,
-      routines,
-    );
+    const problems = validateRoutine({ from, to, entries }, habits, routines);
     if (problems.length > 0) return err(problems.join("; "));
     const id = crypto.randomUUID();
     const now = nowIso();
@@ -1585,9 +1695,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const found =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!found) return err(`Routine not found: ${idOrBoundary}`);
     const habits = readCollection(VAULT_ROOT, "habits");
     const patched = { ...found };
@@ -1595,12 +1703,14 @@ defineTool(server, {
     if (updates.from !== undefined) patched.from = updates.from;
     if (updates.to !== undefined) patched.to = updates.to;
     if (updates.entries !== undefined) {
-      patched.entries = [...updates.entries].sort(
-        (a, b) => a.order - b.order,
-      );
+      patched.entries = [...updates.entries].sort((a, b) => a.order - b.order);
     }
     const problems = validateRoutine(
-      { from: patched.from, to: patched.to, entries: patched.entries as RoutineEntry[] },
+      {
+        from: patched.from,
+        to: patched.to,
+        entries: patched.entries as RoutineEntry[],
+      },
       habits,
       routines,
       found.id,
@@ -1622,9 +1732,7 @@ defineTool(server, {
     const routines = readCollection(VAULT_ROOT, "routines");
     const found =
       routines[idOrBoundary] ??
-      Object.values(routines).find(
-        (r) => boundaryKey(r) === idOrBoundary,
-      );
+      Object.values(routines).find((r) => boundaryKey(r) === idOrBoundary);
     if (!found) return err(`Routine not found: ${idOrBoundary}`);
     delete routines[found.id];
     writeCollection(VAULT_ROOT, "routines", routines);
@@ -1644,19 +1752,15 @@ defineTool(server, {
       .optional()
       .describe("Boundary key, e.g. 'NIGHT->MORNING'."),
     routineId: z.string().optional().describe("Routine id."),
-    day: z
-      .string()
-      .optional()
-      .describe("YYYY-MM-DD. Defaults to today."),
+    day: z.string().optional().describe("YYYY-MM-DD. Defaults to today."),
   },
   handler: async ({ boundary, routineId, day }) => {
     const routines = readCollection(VAULT_ROOT, "routines");
     const habits = readCollection(VAULT_ROOT, "habits");
     const moments = readCollection(VAULT_ROOT, "moments");
-    const targetDay =
-      day ?? new Date().toISOString().slice(0, 10);
+    const targetDay = day ?? new Date().toISOString().slice(0, 10);
 
-    let targets: typeof routines[string][];
+    let targets: (typeof routines)[string][];
     if (routineId) {
       const r = routines[routineId];
       if (!r) return err(`Routine not found: ${routineId}`);
@@ -1676,12 +1780,7 @@ defineTool(server, {
     const errors: string[] = [];
 
     for (const routine of targets) {
-      const planned = planMaterialization(
-        routine,
-        moments,
-        habits,
-        targetDay,
-      );
+      const planned = planMaterialization(routine, moments, habits, targetDay);
       for (const p of planned) {
         const result = runAddMoment({
           habitId: p.habitId,
@@ -1689,9 +1788,7 @@ defineTool(server, {
           phase: p.phase,
         });
         if ("err" in result) {
-          errors.push(
-            `${habits[p.habitId]?.name ?? p.habitId}: ${result.err}`,
-          );
+          errors.push(`${habits[p.habitId]?.name ?? p.habitId}: ${result.err}`);
         } else {
           moments[result.created.id] = result.created;
           created.push(result.created.name);
@@ -1743,9 +1840,7 @@ defineTool(server, {
   },
   annotations: { readOnlyHint: true },
   handler: async ({ wakeAnchor, onsetAnchor }) => {
-    const configs = Object.values(
-      readCollection(VAULT_ROOT, "phaseConfigs"),
-    );
+    const configs = Object.values(readCollection(VAULT_ROOT, "phaseConfigs"));
     const anchors =
       wakeAnchor != null && onsetAnchor != null
         ? { wakeAnchor, onsetAnchor }
@@ -2103,7 +2198,11 @@ function buildBasePlaceKeyMap(
     if (r.fromType === "person" && r.toType === "place") {
       personId = r.fromId;
       placeId = r.toId;
-    } else if (r.toType === "person" && r.fromType === "place" && r.direction === "mutual") {
+    } else if (
+      r.toType === "person" &&
+      r.fromType === "place" &&
+      r.direction === "mutual"
+    ) {
       personId = r.toId;
       placeId = r.fromId;
     }
@@ -2180,6 +2279,50 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const IntentionsSchema = z
+  .record(z.string())
+  .describe("areaId -> 1 to 12 words for this season.");
+const PeopleRosterSchema = z
+  .record(z.string())
+  .describe(
+    'person key (a record id is accepted and stored as its key) -> up to 12 words for this season; "" = on the roster only.',
+  );
+
+type SeasonIntentions = {
+  areaIntentions?: Record<string, string>;
+  people?: Record<string, string>;
+};
+
+/** Validate both season-intention maps against the vault; null/absent skip. */
+function checkSeasonIntentions(p: {
+  areaIntentions?: Record<string, string> | null;
+  people?: Record<string, string> | null;
+}): { error: string } | SeasonIntentions {
+  const out: SeasonIntentions = {};
+  if (p.areaIntentions) {
+    const r = checkIntentions(
+      "area",
+      p.areaIntentions,
+      new Set(Object.keys(readCollection(VAULT_ROOT, "areas"))),
+      false,
+    );
+    if (!r.ok) return { error: r.error };
+    out.areaIntentions = r.value;
+  }
+  if (p.people) {
+    const registry = readPeople();
+    const r = checkIntentions(
+      "person",
+      keyPeople(p.people, registry),
+      new Set(Object.values(registry).map((x) => x.key)),
+      true,
+    );
+    if (!r.ok) return { error: r.error };
+    out.people = r.value;
+  }
+  return out;
+}
+
 defineTool(server, {
   name: "plan_cycle",
   description:
@@ -2203,6 +2346,8 @@ defineTool(server, {
       .optional(),
     intention: z.string().optional(),
     placeIds: z.array(z.string()).optional(),
+    areaIntentions: IntentionsSchema.optional(),
+    people: PeopleRosterSchema.optional(),
   },
   concise: (p) => conciseCycle((p as any).created),
   handler: async ({
@@ -2212,10 +2357,14 @@ defineTool(server, {
     endDate,
     intention,
     placeIds,
+    areaIntentions,
+    people,
   }) => {
     if (template && endDate !== undefined) {
       return err("pass template or endDate, not both");
     }
+    const checked = checkSeasonIntentions({ areaIntentions, people });
+    if ("error" in checked) return err(checked.error);
     const cycles = readCollection(VAULT_ROOT, "cycles");
     const now = nowIso();
     const resolvedStart = startDate ?? new Date().toISOString().slice(0, 10);
@@ -2233,6 +2382,7 @@ defineTool(server, {
       ...(placeIds && placeIds.length > 0
         ? { placeIds: placeIds.map(slugify).filter((k) => k.length > 0) }
         : {}),
+      ...checked,
       createdAt: now,
       updatedAt: now,
     };
@@ -2299,6 +2449,8 @@ defineTool(server, {
     intention: z.string().optional(),
     reflection: z.string().optional(),
     placeIds: z.array(z.string()).nullable().optional(),
+    areaIntentions: IntentionsSchema.nullable().optional(),
+    people: PeopleRosterSchema.nullable().optional(),
   },
   concise: (p) => conciseCycle((p as any).updated),
   handler: async (params) => {
@@ -2306,6 +2458,8 @@ defineTool(server, {
     const cycles = readCollection(VAULT_ROOT, "cycles");
     const cycle = cycles[id];
     if (!cycle) return err(`Cycle not found: ${id}`);
+    const checked = checkSeasonIntentions(updates);
+    if ("error" in checked) return err(checked.error);
     const next: Cycle = {
       ...cycle,
       ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
@@ -2338,9 +2492,192 @@ defineTool(server, {
         next.placeIds = keys;
       }
     }
+    // Passing a map replaces it; null or {} clears it.
+    for (const k of ["areaIntentions", "people"] as const) {
+      if (!(k in updates)) continue;
+      const map = checked[k];
+      if (map && Object.keys(map).length > 0) {
+        next[k] = map;
+      } else {
+        delete next[k];
+      }
+    }
     cycles[id] = next;
     writeCollection(VAULT_ROOT, "cycles", cycles);
     return ok({ updated: next });
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// BETTING TABLE: allocations on a cycle, and what the cycle spent on them
+// ────────────────────────────────────────────────────────────────────────
+
+function cycleOrActive(ref: string | undefined): Cycle | string {
+  const cycles = readCollection(VAULT_ROOT, "cycles");
+  if (ref) {
+    return (
+      findCycleByIdOrName(cycles, ref) ?? `Cycle not found or ambiguous: ${ref}`
+    );
+  }
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  const active = Object.values(cycles)
+    .filter((c) => isCycleActive(c, t.getTime()))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  return active ?? "No active cycle; pass `cycle`.";
+}
+
+const AllocationSchema = z.object({
+  id: z.string().min(1).optional().describe("Omit to mint one."),
+  kind: z
+    .enum(["bet", "lane"])
+    .describe(
+      "bet: a defined outcome, ends at cool-down. lane: standing work, renews each cycle, needs an `aim`.",
+    ),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      'A lane named "Bugs & ops" is capped at a quarter of capacity and receives Bug/Backfill/Run: issues.',
+    ),
+  area: z.string().min(1),
+  link: z
+    .string()
+    .min(1)
+    .describe(
+      "How the meter attributes: a Linear project URL, an absolute (or ~/) repo path, or a pitch path.",
+    ),
+  appetiteDays: z.number().positive(),
+  aim: z
+    .string()
+    .optional()
+    .describe("The one named aim for this cycle. Required on a lane."),
+});
+
+defineTool(server, {
+  name: "set_cycle_allocations",
+  description:
+    "Set a cycle's betting table: replaces ALL its allocations (bets and lanes) and optionally its capacity (default 12 days). " +
+    "Refused, with every reason, when appetites plus the half-day cool-down exceed capacity, the Bugs & ops lane exceeds a quarter of capacity, or a lane has no aim. " +
+    "Defaults to the active cycle.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    capacityDays: z.number().positive().optional(),
+    allocations: z.array(AllocationSchema),
+  },
+  handler: async (params) => {
+    const found = cycleOrActive(params.cycle);
+    if (typeof found === "string") return err(found);
+    const allocations: Allocation[] = params.allocations.map((a) => ({
+      ...a,
+      id: a.id ?? crypto.randomUUID(),
+      name: a.name.trim(),
+    }));
+    const next = setAllocations(found, allocations, params.capacityDays);
+    if ("error" in next) return err(next.error);
+    const cycles = readCollection(VAULT_ROOT, "cycles");
+    cycles[found.id] = next;
+    writeCollection(VAULT_ROOT, "cycles", cycles);
+    return ok({
+      cycle: found.name,
+      capacityDays: next.capacityDays,
+      allocations: next.allocations,
+    });
+  },
+});
+
+defineTool(server, {
+  name: "list_cycle_allocations",
+  description:
+    "A cycle's betting table: capacity, allocations, days planned and days left to bet (after the half-day cool-down). Defaults to the active cycle.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+  },
+  annotations: { readOnlyHint: true },
+  handler: async ({ cycle }) => {
+    const found = cycleOrActive(cycle);
+    if (typeof found === "string") return err(found);
+    const capacityDays = found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
+    const allocations = found.allocations ?? [];
+    const planned = allocations.reduce((s, a) => s + a.appetiteDays, 0);
+    return ok({
+      cycle: found.name,
+      startDate: found.startDate,
+      endDate: found.endDate,
+      capacityDays,
+      plannedDays: planned,
+      daysLeftToBet: capacityDays - COOL_DOWN_DAYS - planned,
+      allocations,
+    });
+  },
+});
+
+defineTool(server, {
+  name: "get_cycle_spend",
+  description:
+    "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
+    "`check` (the weekly appetite check: per-allocation table with area, Bugs & ops vs 1/4 of capacity, days left to bet, and `themiaExtract`, the Themia-only subset safe to publish), the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
+    "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> an allocation whose aim names the issue id (wins over labels) -> Bug, Backfill and Run: issues -> Bugs & ops -> project -> allocation link; " +
+    "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
+    "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows and the session map.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive start day; overrides the cycle window."),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive end day; default today."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: (p) => {
+    const {
+      days: _days,
+      sessions: _sessions,
+      method: _method,
+      ...rest
+    } = p as Record<string, unknown>;
+    return rest;
+  },
+  handler: async ({ cycle, from, to }) => {
+    const found = cycleOrActive(cycle);
+    const override = from !== undefined || to !== undefined;
+    if (typeof found === "string" && !(override && !cycle)) return err(found);
+    const c = typeof found === "string" ? null : found;
+    const window = {
+      from: from ?? c?.startDate ?? today(),
+      to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
+    };
+    if (window.from > window.to)
+      return err(`from (${window.from}) is after to (${window.to})`);
+    const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
+    if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
+    if (!c) return ok(result);
+    return ok({
+      ...result,
+      check: appetiteCheck(
+        c.allocations ?? [],
+        {
+          allocations: result.allocations,
+          unattributedPct: result.unattributed.pct,
+        },
+        c.capacityDays ?? DEFAULT_CAPACITY_DAYS,
+        readCollection(VAULT_ROOT, "areas"),
+      ),
+    });
   },
 });
 
@@ -2493,6 +2830,19 @@ defineTool(server, {
         daysElapsed,
         daysRemaining,
         placeIds: cycle.placeIds ?? [],
+        areaIntentions: resolveIntentions(cycle.areaIntentions, areas).map(
+          ({ id, name, text }) => ({ areaId: id, areaName: name, text }),
+        ),
+        people: resolveIntentions(
+          cycle.people,
+          Object.fromEntries(
+            Object.values(readPeople()).map((x) => [x.key, x]),
+          ),
+        ).map(({ id, name, text }) => ({
+          personKey: id,
+          personName: name,
+          text,
+        })),
       },
       habits: habitSnapshots,
       wilting,
@@ -2664,7 +3014,12 @@ function buildMoment(params: {
     emoji: params.emoji ?? null,
     tags: normalizeTags(params.tags ?? undefined),
     ...(params.personIds && params.personIds.length > 0
-      ? { personIds: params.personIds }
+      ? {
+          personIds: resolvePersonKeys(
+            params.personIds,
+            readCollection(VAULT_ROOT, "people"),
+          ),
+        }
       : {}),
     ...(params.placeIds && params.placeIds.length > 0
       ? { placeIds: params.placeIds.map(slugify).filter((k) => k.length > 0) }
@@ -2703,15 +3058,21 @@ function runAddMoment(
   const cyclePlans = readCollection(VAULT_ROOT, "cyclePlans");
   const moments = readCollection(VAULT_ROOT, "moments");
   const phaseConfigs = readCollection(VAULT_ROOT, "phaseConfigs");
-  const result = resolveAddMoment(input, {
-    areas,
-    habits,
-    cycles,
-    cyclePlans,
-    moments,
-    phaseConfigs,
-    now: new Date(),
-  });
+  const people = readCollection(VAULT_ROOT, "people");
+  const result = resolveAddMoment(
+    input.personIds
+      ? { ...input, personIds: resolvePersonKeys(input.personIds, people) }
+      : input,
+    {
+      areas,
+      habits,
+      cycles,
+      cyclePlans,
+      moments,
+      phaseConfigs,
+      now: new Date(),
+    },
+  );
   if (!result.ok) return { err: result.error };
   moments[result.moment.id] = result.moment;
   writeCollection(VAULT_ROOT, "moments", moments);
@@ -2771,7 +3132,12 @@ defineTool(server, {
       ),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2807,7 +3173,12 @@ defineTool(server, {
     phase: PhaseSchema.nullable().optional(),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2851,7 +3222,13 @@ defineTool(server, {
     emoji: z.string().nullable().optional(),
     phase: PhaseSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).nullable().optional(),
+    personIds: z
+      .array(z.string())
+      .nullable()
+      .optional()
+      .describe(
+        "Person keys (ids or names are resolved to keys); null or [] clears.",
+      ),
     placeIds: z.array(z.string()).nullable().optional(),
     placeUrl: z.string().nullable().optional(),
     customMetric: CustomMetricSchema.optional(),
@@ -2924,7 +3301,10 @@ defineTool(server, {
     if ("personIds" in updates) {
       // Absent is the single empty representation — the same one `buildMoment`
       // writes — so an empty list clears the key rather than persisting `[]`.
-      const list = updates.personIds ?? [];
+      const list = resolvePersonKeys(
+        updates.personIds ?? [],
+        readCollection(VAULT_ROOT, "people"),
+      );
       if (list.length === 0) {
         delete next.personIds;
       } else {
@@ -3143,7 +3523,12 @@ defineTool(server, {
     order: z.number().int().nonnegative().optional(),
     emoji: z.string().nullable().optional(),
     tags: z.array(z.string()).optional(),
-    personIds: z.array(z.string()).optional(),
+    personIds: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Person keys (ids or names are resolved to keys), e.g. ["ada"].',
+      ),
     placeIds: z.array(z.string()).optional(),
     placeUrl: z.string().optional(),
     startTime: StartTimeSchema.optional(),
@@ -3166,38 +3551,12 @@ defineTool(server, {
 // keel reads it and surfaces it in every Claude Code session. The file contract
 // lives in vault.ts.
 
-/**
- * The waking-day key, rolling at 04:00 rather than midnight.
- *
- * Mirrors `focusDayKey` / `DAY_START_HOUR` in keel's `apps/agent/core.mjs` and
- * must stay in lockstep with it: keel honours the pointer only while the moment
- * it names sits on *its* waking-day, so if the two disagreed, a moment set at
- * 02:00 would be written here and silently ignored there.
- */
-const DAY_START_HOUR = 4;
-
-function wakingDayKey(now: Date = new Date()): string {
-  const rolled = new Date(now.getTime() - DAY_START_HOUR * 3600_000);
-  const y = rolled.getFullYear();
-  const m = String(rolled.getMonth() + 1).padStart(2, "0");
-  const d = String(rolled.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 /** Shape the pointer into something a reader can act on without a second call. */
-function describeActiveMoment(pointer: { momentId: string; at: string }) {
-  const moment = readCollection(VAULT_ROOT, "moments")[pointer.momentId];
-  if (!moment) {
-    return {
-      ...pointer,
-      moment: null,
-      active: false,
-      stale: true,
-      reason: "moment no longer exists",
-    };
-  }
+function describeActiveMoment(
+  pointer: { momentId: string; at: string },
+  moment: Moment,
+) {
   const area = readCollection(VAULT_ROOT, "areas")[moment.areaId];
-  const onToday = moment.day === wakingDayKey();
   return {
     ...pointer,
     moment: {
@@ -3207,29 +3566,31 @@ function describeActiveMoment(pointer: { momentId: string; at: string }) {
       phase: moment.phase,
     },
     area: area ? { id: area.id, name: area.name } : null,
-    // keel surfaces the intention only while this is true.
-    active: onToday,
-    ...(onToday
-      ? {}
-      : {
-          stale: true,
-          reason: `moment is allocated to ${moment.day}, not today`,
-        }),
+    active: true,
   };
 }
 
 defineTool(server, {
   name: "set_active_moment",
   description:
-    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention).",
+    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention). Pass `minutes` for a timed switch: the pointer holds for that long, then returns to the moment that was active before (or clears).",
   schema: {
     momentIdOrName: z
       .string()
       .min(1)
       .nullable()
       .describe("Moment id or name on today's board. null to clear."),
+    minutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SWITCH_MIN)
+      .optional()
+      .describe(
+        "Timed switch length. Omit for an untimed set. At the end the pointer returns to what was active before.",
+      ),
   },
-  handler: async ({ momentIdOrName }) => {
+  handler: async ({ momentIdOrName, minutes }) => {
     if (momentIdOrName === null) {
       const previous = readActiveMoment(VAULT_ROOT);
       clearActiveMoment(VAULT_ROOT);
@@ -3266,21 +3627,38 @@ defineTool(server, {
       );
     }
 
-    const pointer = writeActiveMoment(VAULT_ROOT, moment.id, nowIso());
-    return ok({ set: describeActiveMoment(pointer) });
+    const pointer = writeActiveMoment(
+      VAULT_ROOT,
+      moment.id,
+      nowIso(),
+      minutes,
+    );
+    return ok({ set: describeActiveMoment(pointer, moment) });
   },
 });
 
 defineTool(server, {
   name: "get_active_moment",
   description:
-    "Read the current intention pointer, resolved to its moment and area. Returns null when nothing is active.",
+    "Read the current intention pointer, resolved to its moment and area. Returns null when nothing is active. A pointer to a moment that is not on today's board is stale and reads as released: active is null and `released` says which moment and why (the file is left for the next set_active_moment to overwrite).",
   schema: {},
   annotations: { readOnlyHint: true },
   handler: async () => {
     const pointer = readActiveMoment(VAULT_ROOT);
     if (!pointer) return ok({ active: null });
-    return ok({ active: describeActiveMoment(pointer) });
+    const moment = readCollection(VAULT_ROOT, "moments")[pointer.momentId];
+    const reason = staleReason(moment, wakingDayKey());
+    if (reason || !moment) {
+      return ok({
+        active: null,
+        released: {
+          momentId: pointer.momentId,
+          name: moment?.name ?? null,
+          reason,
+        },
+      });
+    }
+    return ok({ active: describeActiveMoment(pointer, moment) });
   },
 });
 
@@ -3464,7 +3842,7 @@ defineTool(server, {
           name: r.person.name,
           emoji: r.person.emoji,
           tags: r.person.tags,
-            matchedOn: r.matchedOn,
+          matchedOn: r.matchedOn,
           matchedValue: r.matchedValue,
           matchMethod: r.method,
         })),
@@ -3601,13 +3979,10 @@ function wateringHoursAdvisory(
   try {
     const fences = readFencesFile(VAULT_ROOT);
     const now = new Date();
-    const hour = now.getHours();
-    const weekday = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][
-      now.getDay()
-    ];
 
     for (const rule of Object.values(fences)) {
       if (rule.scope.surface !== "garden") continue;
+      if (rule.defaultEnabled === false) continue;
       if (!rule.scope.areaIds.includes(areaId)) continue;
 
       for (const prim of rule.primitives) {
@@ -3618,20 +3993,7 @@ function wateringHoursAdvisory(
           weekdays?: string[];
           cutFrom?: string;
         };
-
-        if (
-          w.weekdays &&
-          w.weekdays.length > 0 &&
-          !w.weekdays.includes(weekday)
-        ) {
-          continue;
-        }
-
-        const inWindow =
-          w.toHour <= w.fromHour
-            ? hour >= w.fromHour || hour < w.toHour
-            : hour >= w.fromHour && hour < w.toHour;
-        if (!inWindow) continue;
+        if (!isInScheduleWindow(w, now)) continue;
 
         return `${rule.name}: this area is restricted during ${w.cutFrom || "this window"}`;
       }
@@ -3658,8 +4020,10 @@ const fenceDeps: FenceDeps = {
   tally: crossingTally(VAULT_ROOT),
   garden: {
     async areas() {
-      return Object.values(readCollection(VAULT_ROOT, "areas"))
-        .map((a) => ({ id: a.id, name: a.name }));
+      return Object.values(readCollection(VAULT_ROOT, "areas")).map((a) => ({
+        id: a.id,
+        name: a.name,
+      }));
     },
     async activeCycleId() {
       const today = new Date();
@@ -3671,6 +4035,13 @@ const fenceDeps: FenceDeps = {
         .filter((c) => isCycleActive(c, todayMs))
         .sort((a, b) => b.startDate.localeCompare(a.startDate));
       return active[0]?.id ?? null;
+    },
+    async cycles() {
+      return Object.values(readCollection(VAULT_ROOT, "cycles")).map((c) => ({
+        id: c.id,
+        name: c.name,
+        endDate: c.endDate,
+      }));
     },
     async phaseConfigs() {
       const raw = readCollection(VAULT_ROOT, "phaseConfigs");
@@ -3718,9 +4089,30 @@ defineTool(server, {
       description,
     });
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
+
+/** Every fence writer answers the same way: what was written, how many stand,
+ * and the note (e.g. which season `serves` fell back to) when there is one. */
+function declaredPayload(result: {
+  declared: unknown;
+  standing: number;
+  note?: string;
+}) {
+  return {
+    declared: result.declared,
+    standing: result.standing,
+    ...(result.note ? { note: result.note } : {}),
+  };
+}
+
+const ReachSchema = z
+  .enum(["all", "navigation"])
+  .optional()
+  .describe(
+    'Browser blocks only. "all" (default) stops every request to the host. "navigation" stops page loads only: a page already open keeps working (a live game is not cut when the window opens), but loading or reloading the site is refused.',
+  );
 
 // ── Browser-scoped fences ─────────────────────────────────────────────
 //
@@ -3735,7 +4127,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_host_block",
   description:
-    "Declare a standing block on a host, as a rule that says what it is for. Browser-enforced by default — the extension actuates it from the pushed fence record; pass `resolverProfile` for a resolver-level block instead, which is the only reach that covers a phone. `unlockNote` is required and is the exit: a block that names no way out is refused, never set.",
+    "Declare a standing block on a host, as a rule that says what it is for. Browser-enforced by default — the extension actuates it from the pushed fence record. `unlockNote` is required and is the exit: a block that names no way out is refused, never set.",
   schema: {
     host: z
       .string()
@@ -3755,49 +4147,132 @@ defineTool(server, {
       ),
     name: z.string().optional(),
     description: z.string().optional(),
-    resolverProfile: z
-      .string()
-      .optional()
-      .describe(
-        "Name the resolver profile carrying the block to enforce it there instead of in the browser",
-      ),
+    reach: ReachSchema,
   },
   handler: async (input) => {
     const result = await declareHostBlock(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
+
+const GateTriggerSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("dwell"),
+    everyMinutes: z
+      .number()
+      .positive()
+      .describe(
+        "Attended minutes between firings (idle/background time does not accrue)",
+      ),
+  }),
+  z
+    .object({ type: z.literal("entry") })
+    .describe("Once per arrival on the host"),
+  z
+    .object({
+      type: z.literal("click"),
+      selectors: z.object({
+        primary: z.string().min(1),
+        fallbacks: z.array(z.string().min(1)).optional(),
+      }),
+    })
+    .describe(
+      "Stands in front of a click on the selector (or a descendant), e.g. the button that starts the next game",
+    ),
+]);
+
+const GateFrictionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("intention"), prompt: z.string().min(1) }),
+  z.object({ type: z.literal("delay"), seconds: z.number().int().positive() }),
+  z.object({ type: z.literal("breath"), cycles: z.number().int().positive() }),
+]);
 
 defineTool(server, {
   name: "set_browser_gate",
   description:
-    "Declare a recurring stopping cue on a host: every N attended minutes of dwell, the page asks a question with an exit. Friction on the duration rather than on the visit — which is the answer to a standing block on a host you have a real reason to use, since that block gets lifted and a block lifted in the moment is not a boundary. Ships below delivery probability 1, because whether a cue like this returns attention is exactly what is unknown.",
+    "Declare a stopping cue on a host, with an exit on every rung. Simple form: `everyMinutes` + `prompt` = a question every N attended minutes. Full form: `rungs`, each a trigger (dwell / entry / click on a selector) and a friction (intention question / delay seconds / breath cycles); several rungs make a ladder, where each 'proceed' today climbs a rung (resets at local midnight). `hosts` writes one rule per host with derived ids `<id or name-slug>:<host>`; re-declaring the same id replaces it. Ships at delivery probability 0.7 unless told otherwise, because whether a cue returns attention is the open question. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     host: z
       .string()
       .min(1)
-      .describe('A registrable host — "linkedin.com", not a URL'),
+      .optional()
+      .describe(
+        'A registrable host — "linkedin.com", not a URL. Or use `hosts`.',
+      ),
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .optional()
+      .describe("Several hosts in one call: one rule per host"),
     returnsTo: z
       .array(z.string().min(1))
       .min(1)
       .describe("Areas attention should land in after the gate — names or ids"),
     everyMinutes: z
       .number()
+      .optional()
       .describe(
-        "Accumulated ATTENDED dwell between firings — a backgrounded tab or an idle person does not accrue it",
+        "Simple form: accumulated ATTENDED dwell between firings — a backgrounded tab or an idle person does not accrue it",
       ),
     prompt: z
       .string()
       .min(1)
-      .describe("What the gate asks. The question is the friction."),
+      .optional()
+      .describe(
+        "Simple form: what the gate asks. The question is the friction.",
+      ),
+    rungs: z
+      .array(
+        z.object({
+          trigger: GateTriggerSchema,
+          friction: GateFrictionSchema,
+          proceedLabel: z
+            .string()
+            .min(1)
+            .optional()
+            .describe('Default "Still what I came for"'),
+          abortLabel: z
+            .string()
+            .min(1)
+            .optional()
+            .describe('Default "Close the tab"'),
+        }),
+      )
+      .min(1)
+      .optional()
+      .describe(
+        "Full form, instead of everyMinutes + prompt. More than one = a ladder.",
+      ),
+    id: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Rule id (one host) or id base (several hosts). Default: a fresh uuid / the name's slug.",
+      ),
+    deliveryProbability: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe(
+        "Chance the cue is delivered at each decision point. Default 0.7.",
+      ),
+    windowMs: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        "Outcome window after a decision point. Default 600000 (10 min).",
+      ),
     name: z.string().optional(),
     description: z.string().optional(),
   },
   handler: async (input) => {
     const result = await declareBrowserGate(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
 
@@ -3852,7 +4327,7 @@ defineTool(server, {
   handler: async (input) => {
     const result = await declareBrowserTransform(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({ declared: result.declared, standing: result.standing });
+    return ok(declaredPayload(result));
   },
 });
 
@@ -3874,28 +4349,26 @@ defineTool(server, {
       .describe(
         "The hosts to wall. Required: there is no default list, so a seed names its own hosts.",
       ),
-    resolverProfile: z
-      .string()
-      .optional()
-      .describe("Enforce at the resolver instead of in the browser"),
   },
   handler: async (input) => {
     const result = await seedHostBlocks(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    return ok({
-      declared: result.declared.map((r) => ({
-        id: r.id,
-        host: (r.scope as { domain: string }).domain,
-      })),
-      standing: result.standing,
-    });
+    return ok(
+      declaredPayload({
+        ...result,
+        declared: result.declared.map((r) => ({
+          id: r.id,
+          host: (r.scope as { domain: string }).domain,
+        })),
+      }),
+    );
   },
 });
 
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Three modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through). One declaration generates per-surface rules with derived ids; re-declaring replaces.",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the per-domain pass allowance. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -3904,25 +4377,43 @@ defineTool(server, {
         "Policy handle — shown back at every crossing, used in derived ids",
       ),
     mode: z
-      .enum(["regular", "dry", "by_hand"])
+      .enum(["regular", "dry", "by_hand", "rationed"])
       .describe(
-        "regular = gentle friction, dry = standing block, by_hand = tool-level gate",
+        "regular = gentle friction, dry = standing block, by_hand = tool-level gate, rationed = open until budgetMinutes of attended time today, then walled",
       ),
-    window: z.object({
-      phases: z
-        .array(z.enum(["MORNING", "AFTERNOON", "EVENING", "NIGHT"]))
-        .max(1)
-        .optional()
-        .describe(
-          "One phase name — resolved to hours at declaration, frozen with cutFrom provenance",
-        ),
-      weekdays: z
-        .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
-        .optional()
-        .describe("Days of the week this policy is in force"),
-      fromHour: z.number().min(0).max(23).optional(),
-      toHour: z.number().min(0).max(23).optional(),
-    }),
+    window: z
+      .object({
+        phases: z
+          .array(z.enum(["MORNING", "AFTERNOON", "EVENING", "NIGHT"]))
+          .max(1)
+          .optional()
+          .describe(
+            "One phase name — resolved to hours at declaration, frozen with cutFrom provenance",
+          ),
+        weekdays: z
+          .array(z.enum(["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]))
+          .optional()
+          .describe("Days of the week this policy is in force"),
+        fromHour: z
+          .number()
+          .min(0)
+          .max(23)
+          .optional()
+          .describe(
+            "Start of the RESTRICTED hours (local, inclusive). The policy applies from here to toHour.",
+          ),
+        toHour: z
+          .number()
+          .min(0)
+          .max(23)
+          .optional()
+          .describe(
+            "End of the RESTRICTED hours (local, exclusive). Wraps midnight when toHour <= fromHour. Examples: 22→7 = blocked at night (22:00–07:00); 16→13 = blocked all day except 13:00–16:00.",
+          ),
+      })
+      .describe(
+        "The RESTRICTED hours: the policy applies INSIDE this window and lifts outside it. Give one phase, or fromHour/toHour.",
+      ),
     waters: z
       .array(z.string().min(1))
       .min(1)
@@ -3940,13 +4431,28 @@ defineTool(server, {
         .array(z.string().min(1))
         .optional()
         .describe(
-          "Hosts that get friction (browser surface, deferred to slice 2)",
+          "Hosts that get friction (browser surface, one rule per host)",
         ),
       tools: z
         .array(z.string().min(1))
         .optional()
         .describe("Tool names to gate — Edit, Write (by_hand mode)"),
+      excludeHosts: z
+        .array(z.string().min(1))
+        .optional()
+        .describe(
+          "rationed mode: subdomains of restricted hosts that neither count nor are walled (e.g. music.youtube.com)",
+        ),
     }),
+    budgetMinutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(1440)
+      .optional()
+      .describe(
+        "rationed mode: attended minutes allowed per local day across the policy's hosts",
+      ),
     prompt: z
       .string()
       .optional()
@@ -3954,7 +4460,21 @@ defineTool(server, {
     unlockNote: z
       .string()
       .optional()
-      .describe("How the block is lifted (REQUIRED for dry mode)"),
+      .describe(
+        "How the block is lifted (REQUIRED for dry and rationed modes)",
+      ),
+    passes: z
+      .object({
+        perMonth: z.number().int().min(0),
+        hours: z.number().gt(0).max(24),
+      })
+      .optional()
+      .describe(
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the per-domain allowance. Omitted on a re-declaration, the stored one is kept.",
+      ),
+    reach: ReachSchema.describe(
+      'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
+    ),
   },
   handler: async (input) => {
     const result = await declareWateringHours(fenceDeps, {
@@ -3965,12 +4485,52 @@ defineTool(server, {
       },
     });
     if ("problems" in result) return err(result.problems.join("; "));
+    return ok(
+      declaredPayload({
+        ...result,
+        declared: result.declared.map((r) => ({
+          id: r.id,
+          surface: r.scope.surface,
+        })),
+      }),
+    );
+  },
+});
+
+defineTool(server, {
+  name: "set_fence_enabled",
+  description:
+    "Pause or resume a fence without deleting it: by `id`, or every rule of a watering `policy`. Flips `defaultEnabled` (every surface skips a paused rule) and appends a dated line with your reason to the description. Use this instead of clear_fence when the boundary should come back.",
+  schema: {
+    id: z.string().min(1).optional().describe("The fence's rule id"),
+    policy: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("A watering policy name: pauses/resumes all its rules"),
+    enabled: z.boolean().describe("false = pause, true = resume"),
+    reason: z
+      .string()
+      .min(1)
+      .describe("Why — written into the record's description, dated"),
+  },
+  handler: async ({ id, policy, enabled, reason }) => {
+    if (Boolean(id) === Boolean(policy)) {
+      return err("pass exactly one of `id` or `policy`");
+    }
+    const result = await setFencesEnabled(
+      fenceDeps,
+      id ? { id } : { policy: policy as string },
+      enabled,
+      reason,
+      localDay(Date.now()),
+    );
+    if ("problems" in result) return err(result.problems.join("; "));
     return ok({
-      declared: result.declared.map((r) => ({
-        id: r.id,
-        surface: r.scope.surface,
-      })),
-      standing: result.standing,
+      [enabled ? "resumed" : "paused"]: result.changed.map((c) => c.id),
+      ...(result.unchanged.length > 0
+        ? { alreadyThatWay: result.unchanged }
+        : {}),
     });
   },
 });
@@ -3978,9 +4538,12 @@ defineTool(server, {
 defineTool(server, {
   name: "clear_fence",
   description:
-    "Take a fence down, by id, by watering-policy name, or all of them at once. Pass exactly one of `id`, `all`, or `policy`. The crossing tally is plugin-owned and left alone; a cleared fence's id is never reused, so its count can never gate anything again.",
+    "Take a fence down, by id, by watering-policy name, or all of them at once. Pass exactly one of `id`, `all`, or `policy`. An `opening:` id closes that planned opening early. `all` takes down rules only; openings and the pass allowance stay. The crossing tally is plugin-owned and left alone; a cleared fence's id is never reused, so its count can never gate anything again.",
   schema: {
-    id: z.string().optional().describe("The fence's rule id"),
+    id: z
+      .string()
+      .optional()
+      .describe("The fence's rule id, or an opening's id (opening:…)"),
     all: z.boolean().optional().describe("Take every standing fence down"),
     policy: z
       .string()
@@ -3992,6 +4555,11 @@ defineTool(server, {
     if ([id, all, policy].filter(Boolean).length !== 1) {
       return err("pass exactly one of `id`, `all`, or `policy`");
     }
+    // An opening is not a rule: it closes here, and nothing else changes.
+    const opening = id ? removeOpening(VAULT_ROOT, id) : null;
+    if (opening) {
+      return ok({ cleared: [{ id: opening.id, opening: opening.hosts }] });
+    }
     const target = all
       ? { all: true as const }
       : policy
@@ -4002,6 +4570,44 @@ defineTool(server, {
     return ok({
       cleared: result.cleared.map((f) => ({ id: f.id, label: f.name })),
     });
+  },
+});
+
+defineTool(server, {
+  name: "set_opening",
+  description:
+    'Plan an opening: open blocked hosts for a time-boxed window that closes by itself, e.g. friends over for a film. Lifts scheduled blocks (watering hours) and browser gates on those hosts from `from` until `until`; standing blocks with no schedule and hides stay. Does not draw on the monthly pass allowance. Times: "20:00" (today, local; an `until` at or before `from` rolls to the next day) or an ISO date-time. Close one early with clear_fence { id }.',
+  schema: {
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe('Registrable hosts, e.g. ["youtube.com"]'),
+    from: z.string().min(1).describe('"20:00" or an ISO date-time'),
+    until: z.string().min(1).describe('"01:00" or an ISO date-time'),
+    reason: z.string().min(1).describe("What it is for, one line"),
+  },
+  handler: async ({ hosts, from, until, reason }) => {
+    const now = new Date();
+    const result = buildOpening({ hosts, from, until, reason }, now);
+    if ("problems" in result) return err(result.problems.join("; "));
+    writeOpening(VAULT_ROOT, result.record, now);
+    return ok({ opening: result.record });
+  },
+});
+
+defineTool(server, {
+  name: "set_pass_allowance",
+  description:
+    "Set the block page's pass allowance: passes per month PER DOMAIN (each domain counts its own; www. and m. share the bare domain's count; reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
+  schema: {
+    perMonth: z.number().int().min(0).describe("Passes per month"),
+    hours: z.number().positive().max(24).describe("Hours each pass lasts"),
+  },
+  handler: async ({ perMonth, hours }) => {
+    const result = buildPassAllowance(perMonth, hours);
+    if ("problems" in result) return err(result.problems.join("; "));
+    writePassAllowance(VAULT_ROOT, result.record);
+    return ok({ passAllowance: { perMonth, hours } });
   },
 });
 
@@ -4025,58 +4631,149 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced: each standing fence with its crossing tally (from the plugin's fences-state.json, zero when never crossed), the rung the NEXT crossing would land on, and the enforcement reach per surface.",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month (per domain) and hours each (`default: true` when no record is set).",
   schema: {},
   annotations: { readOnlyHint: true },
+  concise: conciseFenceReport,
   handler: async () => {
     const report = await fenceReport(fenceDeps);
+    const allFences = readFencesFile(VAULT_ROOT);
+
     const fences = report.fences.map((f) => {
       const reach: Record<string, string> = {};
-      if (f.fence.scope.surface === "browser") reach.browser = "extension";
+      if (f.fence.scope.surface === "browser") {
+        reach.browser = "extension";
+      }
       return { ...f, reach };
     });
 
-    return ok({ fences });
+    const now = Date.now();
+    const events = readActivityLog(
+      logDir(VAULT_ROOT),
+      midnight(localDay(now)),
+      now + 1,
+      ["browser"],
+    );
+    return ok({
+      fences,
+      browser: browserFenceReport(allFences, events),
+      ...liftsReport(new Date(now)),
+    });
   },
 });
 
+/** Planned openings (active or upcoming) and the pass allowance, for get_fence. */
+function liftsReport(now: Date) {
+  const allowance = readPassAllowance(VAULT_ROOT);
+  return {
+    openings: readOpenings(VAULT_ROOT, now).map((o) => ({
+      id: o.id,
+      hosts: o.hosts,
+      from: o.from,
+      until: o.until,
+      reason: o.reason,
+      state: Date.parse(o.from) <= now.getTime() ? "active" : "upcoming",
+    })),
+    passAllowance: allowance
+      ? { perMonth: allowance.perMonth, hours: allowance.hours }
+      : { ...DEFAULT_PASS_ALLOWANCE, default: true },
+  };
+}
+
+/** Concise get_fence: the plugin tally for non-browser fences in one line
+ * each, and the browser rules grouped (see `conciseBrowserFences`). */
+function conciseFenceReport(payload: unknown): unknown {
+  const p = payload as {
+    fences: {
+      fence: RuleSpec;
+      crossings: number;
+      lastCrossedAt: number | null;
+      nextRung: Primitive | undefined;
+    }[];
+    browser: BrowserFenceLine[];
+    openings: unknown[];
+    passAllowance: unknown;
+  };
+  const tally = p.fences
+    .filter((f) => f.fence.scope.surface !== "browser")
+    .map(({ fence, crossings, lastCrossedAt, nextRung }) => {
+      const rung = nextRung?.kind === "schedule" ? nextRung.wraps : nextRung;
+      return {
+        id: fence.id,
+        name: fence.name,
+        surface: fence.scope.surface,
+        ...(fence.defaultEnabled === false ? { state: "paused" } : {}),
+        crossings,
+        ...(lastCrossedAt
+          ? { lastCrossedAt: new Date(lastCrossedAt).toISOString() }
+          : {}),
+        ...(rung
+          ? {
+              nextRung:
+                rung.kind === "gate"
+                  ? `gate: ${rung.frictionType.type}`
+                  : rung.kind,
+            }
+          : {}),
+      };
+    });
+  return {
+    fences: tally,
+    browser: conciseBrowserFences(p.browser),
+    ...(p.openings.length > 0 ? { openings: p.openings } : {}),
+    passAllowance: p.passAllowance,
+  };
+}
+
 // ────────────────────────────────────────────────────────────────────────
-// ATTENTION — the plan ↔ trace bridge
+// FOOTPRINTS — the plan ↔ trace bridge
 // ────────────────────────────────────────────────────────────────────────
 
 const DaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 defineTool(server, {
-  name: "get_attention",
+  name: "get_footprints",
   description:
-    "Where did attention go? Dwell time by area per surface (desktop/agent/browser), " +
-    "unmapped locators (top 10), and agent sessions. Minutes, never ms. " +
-    "Coverage on every response — an empty surface means unrecorded, not idle.",
+    "The week read back: what was planted next to where attention went, and how much of it the garden could see. " +
+    "One call returns the board (per day and phase), planted moments per area (this week and last, two counts), " +
+    "footprints per surface (body, screen, work, journal, comms) by area in minutes with the largest unmapped locators, " +
+    "and the habits wilting at the week's close. " +
+    "`trace` reads each day that has begun, phase by phase: per planted moment, minutes traced in its cell (same area) and elsewhere (other areas), with evidence traced or untraced, " +
+    "and `unplanted`, attention by phase and area in phases that planted nothing for that area. " +
+    "Trace minutes are spans of activity, footprint minutes are dwell, so the two need not add up. " +
+    'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
+    "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
+    "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {
     day: DaySchema.optional().describe(
-      "One waking day (04:00 roll). Omit for today.",
+      "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week. To read one day alone, pass `from` instead.",
     ),
     from: DaySchema.optional().describe(
-      "Inclusive start day. Use with `to` for a range.",
+      "Inclusive start day of an explicit range (at most 31 days), instead of a week; alone, it reads that one day. Last week becomes the same-length range before it.",
     ),
     to: DaySchema.optional().describe(
-      "Inclusive end day.",
+      "Inclusive end day of the range; needs `from`. Defaults to `from`.",
     ),
-    surfaces: z
-      .array(z.enum(["desktop", "agent", "browser"]))
-      .optional()
-      .describe("Surfaces to query. Default: all three."),
-    pathPrefix: z
-      .string()
-      .optional()
-      .describe(
-        "Agent surface only: restrict to cwds under this path (~ expands).",
-      ),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    return ok(getAttention(VAULT_ROOT, areas, params));
+    const invalid = footprintParamsError(params);
+    if (invalid) return err(invalid);
+    return ok(
+      getFootprints(
+        VAULT_ROOT,
+        {
+          areas: readCollection(VAULT_ROOT, "areas"),
+          habits: readCollection(VAULT_ROOT, "habits"),
+          moments: readCollection(VAULT_ROOT, "moments"),
+          phaseConfigs: readCollection(VAULT_ROOT, "phaseConfigs"),
+          cycles: readCollection(VAULT_ROOT, "cycles"),
+          cyclePlans: readCollection(VAULT_ROOT, "cyclePlans"),
+        },
+        params,
+        loadHabitMap(),
+      ),
+    );
   },
 });
 
@@ -4117,12 +4814,91 @@ defineTool(server, {
   },
 });
 
+defineTool(server, {
+  name: "get_site_minutes",
+  description:
+    "Attended browser minutes per host per machine-local day, by the extension's bout method " +
+    "(focus/idle-gated, 30-min segment cap); a host includes its subdomains. " +
+    "Returns mean and median per host for the period; with `compare`, a second period " +
+    "side by side (a before/after table). Days with no browser log are listed as missing " +
+    "and left out of the means. Concise omits the daily rows; full includes them.",
+  schema: {
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .describe('Hosts, e.g. ["youtube.com", "chess.com"].'),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+    compare: z
+      .object({ from: DaySchema, to: DaySchema })
+      .optional()
+      .describe("A second period to set beside the first."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseSiteMinutes,
+  handler: async (params) => {
+    for (const p of [params, params.compare]) {
+      if (p && p.from > p.to)
+        return err(`from (${p.from}) is after to (${p.to})`);
+    }
+    return ok(getSiteMinutes(logDir(VAULT_ROOT), params));
+  },
+});
+
+defineTool(server, {
+  name: "get_block_hits",
+  description:
+    "How often a hard-blocked site was attempted: `block_hit` counts per host per machine-local day " +
+    "over the last `days` days (today included); a host includes its subdomains. " +
+    "Attempts only, not a score. The log holds domains, never URLs.",
+  schema: {
+    days: z
+      .number()
+      .int()
+      .min(1)
+      .max(90)
+      .default(7)
+      .describe("Window length in local days, ending today."),
+    host: z.string().min(1).optional().describe('One host, e.g. "x.com".'),
+  },
+  annotations: { readOnlyHint: true },
+  handler: async (params) => ok(getBlockHits(logDir(VAULT_ROOT), params)),
+});
+
+defineTool(server, {
+  name: "get_rule_efficacy",
+  description:
+    "Per browser rule, what followed its decision points: attended minutes on the rule's host " +
+    "in the window after each point, delivered arm vs withheld arm (randomised by the rule's draw). " +
+    "Reports n per arm, the difference, distinct days and overlapping windows; superseded points " +
+    "and points whose window is still open stay out of the comparison. Per rule only, no p-values. " +
+    "Concise omits the rung and trigger splits; full includes them.",
+  schema: {
+    ruleId: z.string().min(1).optional().describe("One rule. Omit for all."),
+    from: DaySchema.describe("Inclusive start day (local)."),
+    to: DaySchema.describe("Inclusive end day (local)."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: conciseRuleEfficacy,
+  handler: async (params) => {
+    if (params.from > params.to) {
+      return err(`from (${params.from}) is after to (${params.to})`);
+    }
+    return ok(getRuleEfficacy(logDir(VAULT_ROOT), params));
+  },
+});
+
 // ────────────────────────────────────────────────────────────────────────
 // BODY + METRIC TREND
 // ────────────────────────────────────────────────────────────────────────
 
 function loadHabitMap() {
-  const mapPath = path.join(VAULT_ROOT, "integrations", "garmin", "habit-map.json");
+  const mapPath = path.join(
+    VAULT_ROOT,
+    "integrations",
+    "garmin",
+    "habit-map.json",
+  );
   if (!fs.existsSync(mapPath)) return parseHabitMap(null);
   try {
     return parseHabitMap(JSON.parse(fs.readFileSync(mapPath, "utf8")));
@@ -4138,14 +4914,18 @@ defineTool(server, {
     "Nights report the morning woken (calendarDate describes the night before that day's work). " +
     "Workouts resolve to habits via the garmin habit map when mapped.",
   schema: {
-    day: DaySchema.optional().describe("One waking day (04:00 roll). Omit for today."),
+    day: DaySchema.optional().describe(
+      "One waking day (04:00 roll). Omit for today.",
+    ),
     from: DaySchema.optional().describe("Inclusive start day."),
     to: DaySchema.optional().describe("Inclusive end day."),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
     const window = resolveWindow(params);
-    const events = readActivityLog(logDir(VAULT_ROOT), window.from, window.to, ["garmin"]);
+    const events = readActivityLog(logDir(VAULT_ROOT), window.from, window.to, [
+      "garmin",
+    ]);
     const habitMap = loadHabitMap();
     const habits = readCollection(VAULT_ROOT, "habits");
     const habitName = (id: string) => habits[id]?.name ?? id;
@@ -4165,15 +4945,22 @@ defineTool(server, {
         start: `${p(d.getHours())}:${p(d.getMinutes())}`,
         activityType: w.activityType,
         elapsedMin: Math.round(w.elapsedMs / 60_000),
-        ...(w.movingS !== undefined ? { movingMin: Math.round(w.movingS / 60) } : {}),
+        ...(w.movingS !== undefined
+          ? { movingMin: Math.round(w.movingS / 60) }
+          : {}),
         ...(w.calories !== undefined ? { calories: w.calories } : {}),
         ...(w.avgHrBpm !== undefined ? { avgHrBpm: w.avgHrBpm } : {}),
-        ...(w.habitId ? { habitId: w.habitId, habitName: habitName(w.habitId) } : {}),
+        ...(w.habitId
+          ? { habitId: w.habitId, habitName: habitName(w.habitId) }
+          : {}),
       };
     });
     const garminEvents = events.filter((e) => e.surface === "garmin");
     const first = garminEvents.length > 0 ? garminEvents[0].ts : undefined;
-    const last = garminEvents.length > 0 ? garminEvents[garminEvents.length - 1].ts : undefined;
+    const last =
+      garminEvents.length > 0
+        ? garminEvents[garminEvents.length - 1].ts
+        : undefined;
     const localDate = (ts: number) => {
       const d = new Date(ts);
       const p = (n: number) => String(n).padStart(2, "0");
@@ -4210,38 +4997,14 @@ defineTool(server, {
 
     let series = metricSeries(params.habitId, moments, logs, params.metricName);
     if (params.since) {
-      series = series.map((s) => ({
-        ...s,
-        points: s.points.filter((p) => p.date >= params.since!),
-      })).filter((s) => s.points.length > 0);
+      series = series
+        .map((s) => ({
+          ...s,
+          points: s.points.filter((p) => p.date >= params.since!),
+        }))
+        .filter((s) => s.points.length > 0);
     }
     return ok({ habitId: params.habitId, habitName: habit.name, series });
-  },
-});
-
-// ────────────────────────────────────────────────────────────────────────
-// DAY TRACE — plan vs actual
-// ────────────────────────────────────────────────────────────────────────
-
-defineTool(server, {
-  name: "get_day_trace",
-  description:
-    "How aligned was the day with the plan? For each planted moment: " +
-    "attention traced in its cell (same area), attention elsewhere (different area), " +
-    "and whether any trace was found. Also reports unplanted attention — " +
-    "spans in cells that planted nothing for that area. " +
-    "No alignment %, no score.",
-  schema: {
-    day: DaySchema.optional().describe("Waking day (04:00 roll). Omit for today."),
-    idleGapMin: z.number().int().positive().optional()
-      .describe("Idle gap in minutes for span derivation. Default 15."),
-  },
-  annotations: { readOnlyHint: true },
-  handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    const moments = readCollection(VAULT_ROOT, "moments");
-    const phaseConfigs = readCollection(VAULT_ROOT, "phaseConfigs");
-    return ok(getDayTrace(VAULT_ROOT, areas, moments, phaseConfigs, params));
   },
 });
 
@@ -4258,11 +5021,21 @@ defineTool(server, {
     'Use when the gardener says "I have time" or a gap is detected. ' +
     "Returns 2–3 habits sorted by thirst (highest first), filtered by duration and place.",
   schema: {
-    durationMinutes: z.number().positive().optional()
+    durationMinutes: z
+      .number()
+      .positive()
+      .optional()
       .describe("Max available time in minutes. Omit for open-ended."),
-    place: z.string().optional()
+    place: z
+      .string()
+      .optional()
       .describe("Where the gardener is (city/place key). Omit if unknown."),
-    maxResults: z.number().int().min(1).max(5).optional()
+    maxResults: z
+      .number()
+      .int()
+      .min(1)
+      .max(5)
+      .optional()
       .describe("How many proposals to return. Default 3."),
   },
   annotations: { readOnlyHint: true },
@@ -4274,9 +5047,17 @@ defineTool(server, {
     const now = new Date();
     const withinMs = durationMinutes ? durationMinutes * 60_000 : undefined;
     const proposals = proposeGap(
-      habits, moments, cycles, cyclePlans, now, withinMs, place, maxResults ?? 3,
+      habits,
+      moments,
+      cycles,
+      cyclePlans,
+      now,
+      withinMs,
+      place,
+      maxResults ?? 3,
     );
-    if (proposals.length === 0) return ok({ proposals: [], message: "No gap habits fit the window." });
+    if (proposals.length === 0)
+      return ok({ proposals: [], message: "No gap habits fit the window." });
     return ok({ proposals });
   },
 });
@@ -4291,7 +5072,9 @@ defineTool(server, {
   const m = migrateSurfaces(VAULT_ROOT, areas);
   if (m.migrated > 0) {
     writeCollection(VAULT_ROOT, "areas", areas);
-    process.stderr.write(`[zenborg-mcp] migrated ${m.migrated} area-map rules to area surfaces\n`);
+    process.stderr.write(
+      `[zenborg-mcp] migrated ${m.migrated} area-map rules to area surfaces\n`,
+    );
   }
 }
 

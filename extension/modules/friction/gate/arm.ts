@@ -13,8 +13,25 @@
  * cost.
  */
 
+import { clickGateHit, createReplay, type ClickGate } from "./click";
 import { safeRedirect, type GateFriction } from "./decide";
-import { showGate } from "./overlay";
+import type { StartOffer } from "./intention";
+import { showGate, showReflection, type StartChoice } from "./overlay";
+
+/** The overlay's start option: a choice is sent to the background, which asks the writer. */
+function startOption(offer: StartOffer | undefined) {
+  if (offer === undefined) return undefined;
+  return {
+    ...offer,
+    onStart: (choice: StartChoice): void => {
+      void browser.runtime
+        .sendMessage({ type: "kairos-gate-start", momentId: offer.momentId, ...choice })
+        .catch(() => {
+          // Background asleep: the page proceeds as a plain click-through.
+        });
+    },
+  };
+}
 
 const POLL_MS = 30_000;
 
@@ -26,6 +43,10 @@ interface GateVerdictMessage {
   readonly friction?: GateFriction;
   readonly proceed?: { label?: string; action?: { type?: string; to?: string } };
   readonly abort?: { label?: string };
+  /** A moment planted today for this host, offered for a timed start. */
+  readonly start?: StartOffer;
+  /** A gate-started switch has ended here: ask what it gave. */
+  readonly reflect?: { name?: string };
   /** @deprecated pre-2026-08-08 background. */
   readonly prompt?: string;
 }
@@ -45,6 +66,13 @@ export function armDwellGate(): void {
     } catch {
       return; // Background asleep or reloading — try again next tick.
     }
+    if (typeof verdict.reflect?.name === "string") {
+      showing = true;
+      const text = await showReflection(verdict.reflect.name);
+      showing = false;
+      void browser.runtime.sendMessage({ type: "kairos-gate-reflect", text }).catch(() => {});
+      return;
+    }
     if (verdict.fire !== true) {
       return;
     }
@@ -60,6 +88,7 @@ export function armDwellGate(): void {
       dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
       proceedLabel: verdict.proceed?.label ?? "Keep watching",
       abortLabel: verdict.abort?.label ?? "Close the tab",
+      start: startOption(verdict.start),
     });
     showing = false;
     // Report how it ended. The background writes the completion — the page is
@@ -109,6 +138,9 @@ export function armDwellGate(): void {
   };
 
   setInterval(() => void check(), POLL_MS);
+  // Arrival is the moment an entry gate exists for; waiting a poll would let the page
+  // be read first. Dwell gates are idempotent against an early check.
+  void check();
   // Also check on return to the tab: a long background stretch accrues no
   // dwell, but coming back is exactly when a stopping cue lands well.
   document.addEventListener("visibilitychange", () => {
@@ -116,4 +148,75 @@ export function armDwellGate(): void {
       void check();
     }
   });
+}
+
+/**
+ * Arm the click gates in a page: the gate before a new round starts.
+ *
+ * One capture-phase listener on `window`, so it runs before any handler the
+ * page attached, and it lives as long as the document, which is what makes it
+ * survive an SPA's route changes: nothing re-renders `window`. The selectors
+ * come from the arm handshake; the background still decides every firing (rung,
+ * friction, labels, the delivery draw), exactly as the dwell poll does.
+ *
+ * On proceed the click is replayed once on the control that was clicked, with a
+ * one-shot bypass, so the round starts as the person asked. On abort nothing
+ * happens: the click is simply not delivered and the page stays where it was.
+ */
+export function armClickGate(gates: readonly ClickGate[]): void {
+  if (gates.length === 0) return;
+  const { bypassing, replay } = createReplay();
+  let pending = false;
+
+  const ask = async (ruleId: string, element: Element): Promise<void> => {
+    let verdict: GateVerdictMessage;
+    try {
+      verdict = ((await browser.runtime.sendMessage({ type: "kairos-gate-click", ruleId })) ??
+        {}) as GateVerdictMessage;
+    } catch {
+      // Background asleep or reloading. Fail open: a gate that silently eats the
+      // click is a broken button, not a stopping cue.
+      verdict = { fire: false };
+    }
+    let proceeded = true;
+    if (verdict.fire === true && verdict.friction !== undefined) {
+      proceeded = await showGate({
+        friction: verdict.friction,
+        dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
+        proceedLabel: verdict.proceed?.label ?? "Continue",
+        abortLabel: verdict.abort?.label ?? "Not now",
+        start: startOption(verdict.start),
+      });
+      // Settled exactly as a dwell gate is, so the crossing counts and the ladder climbs.
+      if (verdict.ruleId !== undefined) {
+        void browser.runtime
+          .sendMessage({ type: "kairos-intervention-settled", ruleId: verdict.ruleId, proceeded })
+          .catch(() => {});
+      }
+    }
+    if (proceeded && element.isConnected) {
+      replay(() =>
+        element.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true, composed: true, view: window })
+        )
+      );
+    }
+  };
+
+  window.addEventListener(
+    "click",
+    (event) => {
+      if (bypassing()) return;
+      const hit = clickGateHit<Element>(event.composedPath(), gates);
+      if (hit === null) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (pending) return; // A second click while the question is on its way.
+      pending = true;
+      void ask(hit.ruleId, hit.element).finally(() => {
+        pending = false;
+      });
+    },
+    true
+  );
 }

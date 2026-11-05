@@ -53,6 +53,7 @@ function deps(opts?: {
     tally: { read: async () => ({}) },
     garden: {
       areas: async () => opts?.areas ?? AREAS,
+      cycles: async () => [],
       activeCycleId: async () =>
         opts?.cycleId === undefined ? "cycle-1" : opts.cycleId,
       phaseConfigs: async () => [],
@@ -139,15 +140,16 @@ describe("declareBrowserGate", () => {
     });
     if ("problems" in result) throw new Error(result.problems.join("; "));
 
-    expect(result.declared.scope).toEqual({
+    const [declared] = result.declared;
+    expect(declared.scope).toEqual({
       surface: "browser",
       domain: "linkedin.com",
       matches: ["*://linkedin.com/*", "*://*.linkedin.com/*"],
     });
-    const gate = result.declared.primitives[0];
+    const gate = declared.primitives[0];
     expect(gate.kind).toBe("gate");
     expect(carriesExit(gate)).toBe(true);
-    expect(stored()[result.declared.id]).toEqual(result.declared);
+    expect(stored()[declared.id]).toEqual(declared);
   });
 
   it("resolves areas by name, the words the principal actually uses", async () => {
@@ -159,7 +161,7 @@ describe("declareBrowserGate", () => {
       prompt: "why",
     });
     if ("problems" in result) throw new Error(result.problems.join("; "));
-    expect(result.declared.outcome.measure).toEqual({
+    expect(result.declared[0].outcome.measure).toEqual({
       kind: "next_span_in",
       areaIds: ["area-craft"],
     });
@@ -315,6 +317,7 @@ describe("seedHostBlocks", () => {
       hosts: HOSTS,
       unlockNote: "n",
     });
-    expect(stored()[existing.declared.id]).toEqual(existing.declared);
+    const [gate] = existing.declared;
+    expect(stored()[gate.id]).toEqual(gate);
   });
 });
