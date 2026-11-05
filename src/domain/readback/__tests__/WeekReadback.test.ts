@@ -376,7 +376,7 @@ describe("weekReadback", () => {
       WEEK.to,
     ).footprints.find((f) => f.surface === "screen");
     if (screen?.status !== "drawn") throw new Error("screen not drawn");
-    expect(screen.thisWeek.byArea[0]).toEqual({
+    expect(screen.thisWeek.byArea.find((a) => a.areaId === "ent")).toEqual({
       areaId: "ent",
       areaName: "Entertainment",
       minutes: 180, // 60 as before + the 120-min film

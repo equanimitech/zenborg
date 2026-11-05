@@ -27,6 +27,9 @@ const INPUT_BIN_MS: u64 = 3_000;
 /// Power assertions and the screen lock are sampled every 10 polls (15 s):
 /// one `pmset` spawn per sample, cheap enough, and a film is hours long.
 const HOLD_POLLS_PER_SAMPLE: usize = 10;
+/// A tick this far after the last one means the Mac slept (the poll thread
+/// stalls with it): holds close at the last tick, so none spans the sleep.
+const SLEEP_GAP_MS: u64 = 30_000;
 
 #[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -231,6 +234,7 @@ fn spawn_loop(state: Arc<ObserverState>) {
         let mut ticks: usize = 0;
         let mut holds: BTreeMap<assertions::Hold, u64> = BTreeMap::new();
         let mut locked = false;
+        let mut last_tick = now_ms();
 
         loop {
             thread::sleep(POLL_INTERVAL);
@@ -250,6 +254,12 @@ fn spawn_loop(state: Arc<ObserverState>) {
             }
 
             let now = now_ms();
+            if now.saturating_sub(last_tick) > SLEEP_GAP_MS {
+                let released =
+                    assertions::hold_transitions(&mut holds, Default::default(), last_tick);
+                emit_holds(&state, released, last_tick);
+            }
+            last_tick = now;
             ticks = ticks.wrapping_add(1);
 
             if ticks % INPUT_POLLS_PER_ROLLUP == 0 {

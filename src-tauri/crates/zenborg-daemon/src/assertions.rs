@@ -5,8 +5,10 @@
 //! `NoIdleSleepAssertion "Playing audio"`, and `PreventUserIdleDisplaySleep`
 //! stays 0: the counter misses exactly the case that matters.
 //!
-//! A hold is `(app, assertion name)`. Reasons are never classified: a hold is
-//! a hold. The read side bounds the error (lock, 3-h cap).
+//! A hold is `(app, assertion type)`. The type comes from the fixed `HOLD_TYPES`
+//! allow-list; the assertion's own name is app-supplied free text (it can carry
+//! a document or call title) and is never kept. Reasons are never classified: a
+//! hold is a hold. The read side bounds the error (lock, 3-h cap).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,10 +31,7 @@ const IGNORED: &[&str] = &[
     "useractivityd",
 ];
 
-/// Assertion names are capped: bounded lines, no room for a title.
-pub const NAME_CAP: usize = 64;
-
-/// `(app name, assertion name)`.
+/// `(app name, assertion type)`.
 pub type Hold = (String, String);
 
 /// The holds in a `pmset -g assertions` dump.
@@ -40,14 +39,14 @@ pub fn parse_holds(output: &str) -> BTreeSet<Hold> {
     output
         .lines()
         .filter_map(parse_line)
-        .filter(|(app, kind, _)| HOLD_TYPES.contains(kind) && !IGNORED.contains(app))
-        .map(|(app, _, name)| (app.to_string(), name.chars().take(NAME_CAP).collect()))
+        .filter(|(app, kind)| HOLD_TYPES.contains(kind) && !IGNORED.contains(app))
+        .map(|(app, kind)| (app.to_string(), kind.to_string()))
         .collect()
 }
 
 /// `pid 60530(Brave Browser): [0x…] 00:01:19 NoIdleSleepAssertion named: "Playing audio"`
-/// → `("Brave Browser", "NoIdleSleepAssertion", "Playing audio")`.
-fn parse_line(line: &str) -> Option<(&str, &str, &str)> {
+/// → `("Brave Browser", "NoIdleSleepAssertion")`. The `named:` text is dropped.
+fn parse_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.trim_start().strip_prefix("pid ")?;
     let (_, rest) = rest.split_once('(')?;
     let (app, rest) = rest.split_once("): [")?;
@@ -55,12 +54,7 @@ fn parse_line(line: &str) -> Option<(&str, &str, &str)> {
     let mut fields = rest.splitn(3, ' ');
     let _age = fields.next()?;
     let kind = fields.next()?;
-    let name = fields
-        .next()?
-        .strip_prefix("named: \"")?
-        .rsplit_once('"')?
-        .0;
-    (!app.is_empty()).then_some((app, kind, name))
+    (!app.is_empty()).then_some((app, kind))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,8 +133,8 @@ Kernel Assertions: 0x100=MAGICWAKE
         assert_eq!(
             parse_holds(DUMP),
             BTreeSet::from([
-                hold("Brave Browser", "Playing audio"),
-                hold("Brave Browser", "Video Wake Lock"),
+                hold("Brave Browser", "NoIdleSleepAssertion"),
+                hold("Brave Browser", "NoDisplaySleepAssertion"),
             ])
         );
     }
@@ -150,25 +144,24 @@ Kernel Assertions: 0x100=MAGICWAKE
         let line = r#"   pid 60530(Brave Browser): [0x001a83ca0001a5a1] 00:01:19 NoIdleSleepAssertion named: "Playing audio"  "#;
         assert_eq!(
             parse_holds(line),
-            BTreeSet::from([hold("Brave Browser", "Playing audio")])
+            BTreeSet::from([hold("Brave Browser", "NoIdleSleepAssertion")])
         );
     }
 
     #[test]
-    fn a_long_assertion_name_is_capped() {
-        let line = format!(
-            r#"   pid 1(Player): [0x1] 00:00:01 PreventUserIdleDisplaySleep named: "{}"  "#,
-            "x".repeat(200)
+    fn an_app_supplied_name_never_reaches_a_hold() {
+        let line = r#"   pid 1(Player): [0x1] 00:00:01 PreventUserIdleDisplaySleep named: "Call with Alice - Q3 salary"  "#;
+        assert_eq!(
+            parse_holds(line),
+            BTreeSet::from([hold("Player", "PreventUserIdleDisplaySleep")])
         );
-        let holds = parse_holds(&line);
-        assert_eq!(holds.iter().next().unwrap().1.chars().count(), NAME_CAP);
     }
 
     #[test]
     fn transitions_open_and_close_holds_with_their_duration() {
         let mut open = BTreeMap::new();
-        let audio = hold("Brave Browser", "Playing audio");
-        let lock = hold("Brave Browser", "Video Wake Lock");
+        let audio = hold("Brave Browser", "NoIdleSleepAssertion");
+        let lock = hold("Brave Browser", "NoDisplaySleepAssertion");
 
         let t = hold_transitions(
             &mut open,
@@ -178,8 +171,8 @@ Kernel Assertions: 0x100=MAGICWAKE
         assert_eq!(
             t,
             vec![
-                HoldTransition::Start(audio.clone()),
-                HoldTransition::Start(lock.clone())
+                HoldTransition::Start(lock.clone()),
+                HoldTransition::Start(audio.clone())
             ]
         );
 
