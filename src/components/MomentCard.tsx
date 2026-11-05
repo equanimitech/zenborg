@@ -40,6 +40,9 @@ interface MomentCardProps {
  * 5. Hover → Shows subtle 1px ring
  * 6. Selected → Shows prominent 2px ring in area color
  * 7. Active → Shows a ◎ marker (the same glyph keel puts in its HUD)
+ * 8. "start" / "release" control (today's board only) → the same toggle as
+ *    Alt+click, visible and reachable by keyboard and touch. A sibling of the
+ *    card button (never nested), so it opens no editor and starts no drag.
  *
  * Features:
  * - Multi-select for bulk operations
@@ -68,6 +71,11 @@ export function MomentCard({
 
   // Health-based emoji treatment (opacity) — "unstated" when no habit link
   const { health } = useHabitHealth(moment.habitId ?? "");
+
+  // Same rule as isActive: only moments on today's board can be started.
+  const canStart = !staleReason(moment, wakingDayKey());
+  // The control sits beside the card, outside dnd-kit's draggable handlers.
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
   const handleClick = (e: React.MouseEvent) => {
     // Shift + click → Range selection (if contextMomentIds provided)
@@ -110,6 +118,7 @@ export function MomentCard({
     : `${moment.name} in ${area.name} area${activeSuffix}, click to edit`;
 
   return (
+    <div className="relative w-full">
     <button
       type="button"
       className={cn(
@@ -126,7 +135,7 @@ export function MomentCard({
         backgroundColor: area.color,
         minHeight: momentCard.minHeight,
         paddingLeft: momentCard.paddingX,
-        paddingRight: momentCard.paddingX,
+        paddingRight: canStart ? "5.5rem" : momentCard.paddingX,
         paddingTop: momentCard.paddingY,
         paddingBottom: momentCard.paddingY,
         // Inset shadow for hover/selection -- lives inside the card, never clipped
@@ -188,5 +197,29 @@ export function MomentCard({
         )}
       </div>
     </button>
+    {canStart && (
+      <button
+        type="button"
+        data-testid="moment-start"
+        aria-label={`${isActive ? "Release" : "Start"} ${moment.name}`}
+        onPointerDown={stop}
+        onTouchStart={stop}
+        onKeyDown={stop}
+        onClick={(e) => {
+          e.stopPropagation();
+          void toggleActive(moment.id);
+        }}
+        className={cn(
+          "absolute right-2 top-1/2 -translate-y-1/2 z-10",
+          "rounded-sm border border-current px-2 py-1 min-h-8",
+          "text-xs font-mono cursor-pointer",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+          textColors.primary,
+        )}
+      >
+        {isActive ? "release" : "start"}
+      </button>
+    )}
+    </div>
   );
 }

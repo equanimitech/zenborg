@@ -3,6 +3,7 @@
 // Function declarations: the validator follows `$` past an import only into those.
 import type { EngineInterface } from 'claude-code'
 
+import { resolvePointer } from '../domain/attention/ActiveMoment.ts'
 import type { Vault } from './garden.ts'
 
 // Fail soft: a missing or malformed file reads as empty.
@@ -14,8 +15,21 @@ async function readJson<T>($: EngineInterface, path: string, empty: T): Promise<
   }
 }
 
+async function vaultRoot($: EngineInterface): Promise<string> {
+  return (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
+}
+
+// The pointer file's raw text, for a cheap change check; '' when missing.
+export async function pointerText($: EngineInterface): Promise<string> {
+  try {
+    return await $.fs.read(`${await vaultRoot($)}/activeMoment.json`)
+  } catch {
+    return ''
+  }
+}
+
 export async function loadVault($: EngineInterface): Promise<Vault> {
-  const root = (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
+  const root = await vaultRoot($)
   const [active, moments, habits, areas, phases, cycles] = await Promise.all([
     readJson($, `${root}/activeMoment.json`, {}),
     readJson($, `${root}/moments.json`, {}),
@@ -24,7 +38,9 @@ export async function loadVault($: EngineInterface): Promise<Vault> {
     readJson($, `${root}/phaseConfigs.json`, {}),
     readJson($, `${root}/cycles.json`, {}),
   ])
-  return { active, moments, habits, areas, phases, cycles }
+  // The pointer in force: a timed switch past its `until` reads as where it returns.
+  const inForce = resolvePointer(active as Vault['active'] & { momentId: string; at: string }, await $.clock.now()) ?? {}
+  return { active: inForce, moments, habits, areas, phases, cycles }
 }
 
 // The zenborg MCP tool by suffix: the server may be registered under another name.

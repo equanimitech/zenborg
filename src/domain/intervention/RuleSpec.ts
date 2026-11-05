@@ -64,6 +64,11 @@ export interface RuleSpec {
    * rule; `set_fence_enabled` is the writer that flips it, never deleting.
    */
   readonly defaultEnabled?: boolean;
+  /**
+   * A watering policy's own monthly pass allowance, stamped on its browser
+   * rules. Absent: passes draw from the shared `pass-allowance`.
+   */
+  readonly passAllowance?: { readonly perMonth: number; readonly hours: number };
 }
 
 /**

@@ -15,7 +15,10 @@
     // cross-directory sources would scatter dist/ and keep src's
     // extensionless specifiers node can't resolve.
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    // The domain imports its neighbours as `@/…` (the app's alias); resolve
+    // it the same way here so the server typechecks the code it runs.
+    "paths": { "@/*": ["../src/*"] }
   },
   "include": ["*.ts"]
 }

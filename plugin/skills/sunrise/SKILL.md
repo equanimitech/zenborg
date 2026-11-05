@@ -26,6 +26,10 @@ Do NOT trigger for:
 
 ## Workflow
 
+### Start the sunrise moment
+
+Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunrise" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
+
 ### 0. Materialize morning routine
 
 Before reading the board, call `mcp__zenborg__materialize_routine { boundary: "NIGHT->MORNING" }` to plant any wakeup routine entries that haven't been planted yet today. Report what was created vs. already planted.
@@ -35,7 +39,7 @@ Before reading the board, call `mcp__zenborg__materialize_routine { boundary: "N
 Fetch today's state in parallel:
 - `mcp__zenborg__list_moments` with `{ "day": "YYYY-MM-DD", "allocation": "allocated" }` for today
 - the same call for yesterday, to see what was recorded
-- `mcp__zenborg__get_day_trace` with yesterday's date, for footprints: where attention actually went, per phase and area, including unplanted spans
+- `mcp__zenborg__get_footprints` with `{ "from": "<yesterday>" }` (`from` alone reads that one day), for footprints: `trace[0]` says where attention actually went, per phase and area, including unplanted spans
 - `mcp__zenborg__get_running_cycle` for the active cycle, intention, and per-habit health
 - `mcp__zenborg__list_wilting_habits` for habits that need attention
 - `mcp__zenborg__get_active_moment` to see if an intention is already set
@@ -65,7 +69,7 @@ Show each moment with its emoji and habit name. Empty phases are visible silence
 
 ### 3. Close yesterday's gaps
 
-Read yesterday's unplanted footprints from `get_day_trace` and suggest the moments they imply: map each sizeable span (area, phase, minutes) to the habit it most likely waters, e.g. 78 min of Themia agent work in the Afternoon → "Themia build, Afternoon". When the area is clear but the habit is not, ask which habit. Footprints only see screens, so also ask what happened off-screen (a run, a call, a walk). Hand the accepted suggestions to tend to plant on yesterday. If the days before yesterday are empty too, say how far back the silence goes and offer weather to backfill them.
+Read yesterday's unplanted footprints from `get_footprints` (`trace[0].unplanted`) and suggest the moments they imply: map each sizeable span (area, phase, minutes) to the habit it most likely waters, e.g. 78 min of Themia agent work in the Afternoon → "Themia build, Afternoon". When the area is clear but the habit is not, ask which habit. Footprints only see screens, so also ask what happened off-screen (a run, a call, a walk). Hand the accepted suggestions to tend to plant on yesterday. If the days before yesterday are empty too, say how far back the silence goes and offer weather to backfill them.
 
 ### 4. Suggest what to plant
 
@@ -94,7 +98,7 @@ If the user responds with moments to plant, hand off to the tend workflow (decom
 
 ## Rules
 
-- Suggest moments; never plant one without the user's yes.
+- Suggest moments; never plant one without the user's yes. The sunrise moment is the one exception: running the skill is the yes.
 - Do NOT compute completion rates or streaks.
 - Silence is data. An empty phase is a signal, not a failure.
 - Keep the overview scannable. One line per phase, emoji-prefixed moments.

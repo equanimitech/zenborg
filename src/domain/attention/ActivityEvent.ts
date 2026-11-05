@@ -77,3 +77,43 @@ export function actorOf(event: ActivityEvent): Actor {
 export function isHumanActor(event: ActivityEvent): boolean {
   return actorOf(event) === "human";
 }
+
+/**
+ * One raw log line, as it sits in `log/<day>.<surface>.jsonl`, made into an
+ * event. The app and the MCP server both parse through this, so they cannot
+ * disagree about what a line means.
+ *
+ * - Lines missing `surface` (older files) take it from the filename.
+ * - `app_switched` drops `durationMs`. The field describes the span being
+ *   closed (the previous app's dwell), not the one being opened. Dwell comes
+ *   from consecutive timestamps anyway; keeping it would let `reachOf` in
+ *   `SpanDerivation` extend the new app's span by the previous app's dwell.
+ */
+export function normaliseEvent(
+  raw: ActivityEvent,
+  surface: ActivitySurface,
+): ActivityEvent {
+  const event = raw.surface ? raw : { ...raw, surface };
+  if (event.kind === "app_switched" && event.durationMs !== undefined) {
+    const { durationMs: _, ...rest } = event;
+    return rest;
+  }
+  return event;
+}
+
+/** Parse a JSONL file's text. A torn line is one lost observation, never a throw. */
+export function parseActivityLines(
+  text: string,
+  surface: ActivitySurface,
+): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      events.push(normaliseEvent(JSON.parse(line) as ActivityEvent, surface));
+    } catch {
+      // torn line
+    }
+  }
+  return events;
+}

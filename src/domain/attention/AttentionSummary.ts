@@ -51,12 +51,33 @@ const BROWSER_BOUNDARY_KINDS = new Set([
   "idle_start",
 ]);
 
+/** A dwell row before its intervals are summed: what readers that merge surfaces need. */
+export interface DwellSpans {
+  readonly surface: ActivitySurface;
+  readonly locator: string;
+  readonly areaId?: AreaId;
+  readonly spans: readonly Interval[];
+  readonly visits: number;
+}
+
 export function dwellRows(
   events: readonly ActivityEvent[],
   surface: ActivitySurface,
   resolve: AreaResolver,
   config: DwellConfig,
 ): readonly DwellRow[] {
+  return dwellSpans(events, surface, resolve, config)
+    .map(({ spans, ...row }) => ({ ...row, ms: unionMs(spans) }))
+    .sort((a, b) => b.ms - a.ms);
+}
+
+/** Per-locator dwell intervals; `dwellRows` is this with the intervals summed. */
+export function dwellSpans(
+  events: readonly ActivityEvent[],
+  surface: ActivitySurface,
+  resolve: AreaResolver,
+  config: DwellConfig,
+): readonly DwellSpans[] {
   const getLocator = locatorOf[surface];
   // Dedup by id: the relay can deliver a batch twice (same rule as bouts.ts).
   const seen = new Set<string>();
@@ -72,7 +93,11 @@ export function dwellRows(
   const entryFor = (loc: string, event: ActivityEvent) => {
     const existing = acc.get(loc);
     if (existing) return existing;
-    const created = { spans: [] as Interval[], visits: 0, areaId: resolve(event) };
+    const created = {
+      spans: [] as Interval[],
+      visits: 0,
+      areaId: resolve(event),
+    };
     acc.set(loc, created);
     return created;
   };
@@ -83,9 +108,8 @@ export function dwellRows(
     if (loc === undefined) continue;
 
     const boundary = findBoundary(surfaceEvents, i, surface);
-    const dwell = boundary !== undefined
-      ? Math.min(boundary - event.ts, config.capMs)
-      : 0;
+    const dwell =
+      boundary !== undefined ? Math.min(boundary - event.ts, config.capMs) : 0;
 
     const entry = entryFor(loc, event);
     entry.spans.push([event.ts, event.ts + dwell]);
@@ -96,26 +120,27 @@ export function dwellRows(
   // focus. Union with the focus spans, so a focused tab that is also playing
   // counts once.
   if (surface === "browser") {
-    for (const { domain, event, span } of playingSpans(surfaceEvents, config.capMs)) {
+    for (const { domain, event, span } of playingSpans(
+      surfaceEvents,
+      config.capMs,
+    )) {
       entryFor(domain, event).spans.push(span);
     }
   }
 
-  return [...acc.entries()]
-    .map(([locator, { spans, visits, areaId }]) => ({
-      surface,
-      locator,
-      ...(areaId !== undefined ? { areaId } : {}),
-      ms: unionMs(spans),
-      visits,
-    }))
-    .sort((a, b) => b.ms - a.ms);
+  return [...acc.entries()].map(([locator, { spans, visits, areaId }]) => ({
+    surface,
+    locator,
+    ...(areaId !== undefined ? { areaId } : {}),
+    spans,
+    visits,
+  }));
 }
 
-type Interval = readonly [start: Instant, end: Instant];
+export type Interval = readonly [start: Instant, end: Instant];
 
 /** Total length of a set of possibly-overlapping intervals. */
-function unionMs(spans: readonly Interval[]): Duration {
+export function unionMs(spans: readonly Interval[]): Duration {
   const sorted = [...spans].sort((a, b) => a[0] - b[0]);
   let total = 0;
   let reach = Number.NEGATIVE_INFINITY;
@@ -165,14 +190,20 @@ function playingSpans(
       span: [start, Math.min(end, start + capMs)],
     });
 
-  const close = (key: string, opener: ActivityEvent, closer?: ActivityEvent, at = closer?.ts ?? 0) => {
+  const close = (
+    key: string,
+    opener: ActivityEvent,
+    closer?: ActivityEvent,
+    at = closer?.ts ?? 0,
+  ) => {
     open.delete(key);
     lastClose.set(key, at);
     const from = num(opener.payload.seconds);
     const to = num(closer?.payload.seconds);
-    const played = from !== undefined && to !== undefined && to > 0 && to >= from
-      ? (to - from) * 1000
-      : Number.POSITIVE_INFINITY;
+    const played =
+      from !== undefined && to !== undefined && to > 0 && to >= from
+        ? (to - from) * 1000
+        : Number.POSITIVE_INFINITY;
     push(opener, opener.ts, Math.min(at, opener.ts + played));
   };
 
@@ -203,7 +234,9 @@ function playingSpans(
   // ponytail: an unclosed span is a guess; idle is the best "gone" proxy we have.
   const last = events.at(-1)?.ts ?? 0;
   for (const [key, opener] of open) {
-    const idle = events.find((e) => e.kind === "idle_start" && e.ts > opener.ts);
+    const idle = events.find(
+      (e) => e.kind === "idle_start" && e.ts > opener.ts,
+    );
     close(key, opener, undefined, idle?.ts ?? last);
   }
   return out;

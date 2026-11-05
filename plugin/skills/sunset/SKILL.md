@@ -27,6 +27,10 @@ Do NOT trigger for:
 
 ## Workflow
 
+### Start the sunset moment
+
+Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunset" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
+
 ### 0. Fleet close-up
 
 Before reading the day, close the sessions still running.
@@ -37,12 +41,16 @@ ListAgents
 ```
 
 Show peers as a table (name, state, age). Skip self. Then send **every** peer one
-message, all in one turn (parallel SendMessage calls):
+message, all in one turn (parallel SendMessage calls). Sunset is the only journal
+writer in this step, so word it as:
 
-> Rafa is closing the day: please run /close-up once your current turn is done.
+> Rafa is closing the day: once your current turn is done, run /close-up in
+> reply-only mode. Do not write the journal; reply to me with your entry text.
 
-Fire-and-forget: don't wait for replies. Report which sends failed. A failed send
-usually means that session already exited; say so plainly, it is not an error.
+Wait for the replies, up to 3 minutes; then go on with whatever arrived and name
+the peers that stayed silent. Report which sends failed. A failed send usually
+means that session already exited; say so plainly, it is not an error. Keep the
+reply texts for §3 and §10.
 
 ### 1. Materialize bedtime routine
 
@@ -73,14 +81,14 @@ Night:     (empty)
 
 #### Tomorrow starts with
 
-Read today's journal through the oracle chain (`routes.journal` read). Collect the
-« Left » and « Next » bullets from today's close-up entries, de-duplicate, and render
-a short list:
+Build it from the peers' replies (§0) plus any close-up entries already in today's
+journal (read through the oracle chain, `routes.journal` read). From each, take the
+« what's left » content and the Carry-over line, de-duplicate, and render a short list:
 
 ```
 Tomorrow starts with
-- <bullet>
-- <bullet>
+- <item>
+- <item>
 ```
 
 It is a list, not a triage: never rank, bucket or file issues (§8). It goes into the
@@ -104,8 +112,8 @@ No follow-up.
 
 ### 6. Clear the active moment
 
-If `get_active_moment` shows a stale intention, offer to clear it:
-- "Your intention is still set to [moment]. Clear it for the night?"
+The sunset moment is the intention now, so offer to clear it as the ritual ends:
+- "Your intention is still set to sunset. Clear it for the night?"
 
 On confirmation, call `mcp__zenborg__clear_active_moment`.
 
@@ -141,15 +149,19 @@ starts with » list, and the reflection answer if any. Keep it brief — close-u
 entries already hold the session detail.
 
 **`hey` replaces, it does not append.** `hey journal write` overwrites the whole day's
-entry, so:
+entry, and it has no file or stdin flag, so:
 
-1. `hey journal read --markdown --quiet` returns JSON; `content` is the entry's HTML.
-2. Append the Sunset section as HTML to that `content`.
-3. Write the whole thing back: `hey journal write --content-html "<existing + new>"`.
+1. `hey journal read --markdown --quiet` returns JSON; `content` is the entry's HTML
+   (`<div class="trix-content">…</div>`).
+2. Insert the Sunset section as HTML just before that wrapper's closing `</div>`,
+   plus the peers' entries from §0 (one `## HH:MM` block each). Save the result to a
+   temp file in the scratchpad.
+3. Write it back once, passing the file through a quoted expansion so quotes and
+   newlines survive: `hey journal write --content-html "$(cat "$FILE")"`.
 4. Read it back and check the earlier entries are still there.
 
-`--html` can't be combined with `--quiet`. Writing empty content deletes the entry:
-abort if the read failed, or came back empty when an entry was expected.
+Writing empty content deletes the entry: abort if the read failed, or came back empty
+when an entry was expected. `--html` can't be combined with `--quiet`.
 
 For the penceive oracle, keep its append-only write as is.
 

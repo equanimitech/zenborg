@@ -56,7 +56,10 @@ One JSON file per collection, each a **JSON object keyed by entity UUID** (not a
 the list of record.
 
 Plus one **singleton** file that is not a collection: `activeMoment.json`, a
-`{ momentId, at }` pointer naming the moment that IS the current intention. It is
+`{ momentId, at }` pointer naming the moment that IS the current intention. A timed
+switch adds `until` + `returnTo: { momentId, at }`; every reader resolves expiry
+lazily with `resolvePointer` (`src/domain/attention/ActiveMoment.ts`, mirrored in the
+native host's `resolve_active`) — no timer process. It is
 deliberately outside `DomainModelRegistry`, export/import and the synced stores — it has
 its own shape and its own module (`src/infrastructure/vault/active-moment.ts`). Adding
 another singleton is a design decision; the parity test in
@@ -95,8 +98,12 @@ They must stay in lockstep; they have drifted before.
 spring: how to reach it (commands), what it records (`records({from,to})` with a privacy
 tier), and where it belongs (area, habit). Drawing springs write into the activity log as
 their own surface; the MCP server reads footprints locally and never calls a spring live.
-One reader, `get_footprints`, replaces `get_attention` and `get_day_trace`. `/new-spring`
-replaces `/oracle-wizard`.
+`/new-spring` replaces `/oracle-wizard`.
+
+**Built:** the one reader. `get_footprints` (2026-10-09) replaced `get_attention` and
+`get_day_trace`. It is a thin adapter over `weekReadback` in `src/domain/readback/`, which
+groups the log's sensor surfaces into reading surfaces (body, screen, work, journal, comms)
+and puts coverage on every total.
 
 **Today** the concept is split across two files, documented below as they stand:
 `oracles.json` (how to reach a system) and `integrations.json` (source → area/habit

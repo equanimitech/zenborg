@@ -151,6 +151,16 @@ if (process.argv[2] === "refresh-spend") {
   process.exit(0);
 }
 
+// One-shot CLI for the browser's intention gate (the native host runs these):
+// `zenborg-mcp switch-moment <id> <minutes>` / `reflect <id> <text>`.
+{
+  const gate = runGateCommand(VAULT_ROOT, process.argv.slice(2));
+  if (gate) {
+    console.log(JSON.stringify(gate));
+    process.exit(gate.ok ? 0 : 1);
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Phase auto-derive
 // ────────────────────────────────────────────────────────────────────────
@@ -178,9 +188,10 @@ import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { MAX_SWITCH_MIN, runGateCommand } from "./intention-gate.js";
 import {
-  getAttention,
-  getDayTrace,
+  footprintParamsError,
+  getFootprints,
   getSurfaces,
   mapArea,
   migrateSurfaces,
@@ -3567,15 +3578,24 @@ function describeActiveMoment(
 defineTool(server, {
   name: "set_active_moment",
   description:
-    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention).",
+    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention). Pass `minutes` for a timed switch: the pointer holds for that long, then returns to the moment that was active before (or clears).",
   schema: {
     momentIdOrName: z
       .string()
       .min(1)
       .nullable()
       .describe("Moment id or name on today's board. null to clear."),
+    minutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SWITCH_MIN)
+      .optional()
+      .describe(
+        "Timed switch length. Omit for an untimed set. At the end the pointer returns to what was active before.",
+      ),
   },
-  handler: async ({ momentIdOrName }) => {
+  handler: async ({ momentIdOrName, minutes }) => {
     if (momentIdOrName === null) {
       const previous = readActiveMoment(VAULT_ROOT);
       clearActiveMoment(VAULT_ROOT);
@@ -3612,7 +3632,12 @@ defineTool(server, {
       );
     }
 
-    const pointer = writeActiveMoment(VAULT_ROOT, moment.id, nowIso());
+    const pointer = writeActiveMoment(
+      VAULT_ROOT,
+      moment.id,
+      nowIso(),
+      minutes,
+    );
     return ok({ set: describeActiveMoment(pointer, moment) });
   },
 });
@@ -4360,7 +4385,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the per-domain pass allowance. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -4454,6 +4479,15 @@ defineTool(server, {
       .optional()
       .describe(
         "How the block is lifted (REQUIRED for dry and rationed modes)",
+      ),
+    passes: z
+      .object({
+        perMonth: z.number().int().min(0),
+        hours: z.number().gt(0).max(24),
+      })
+      .optional()
+      .describe(
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the per-domain allowance. Omitted on a re-declaration, the stored one is kept.",
       ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
@@ -4584,7 +4618,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_pass_allowance",
   description:
-    "Set the block page's pass allowance: passes per month (reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
+    "Set the block page's pass allowance: passes per month PER DOMAIN (each domain counts its own; www. and m. share the bare domain's count; reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
   schema: {
     perMonth: z.number().int().min(0).describe("Passes per month"),
     hours: z.number().positive().max(24).describe("Hours each pass lasts"),
@@ -4617,7 +4651,7 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month and hours each (`default: true` when no record is set).",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month (per domain) and hours each (`default: true` when no record is set).",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: conciseFenceReport,
@@ -4728,40 +4762,54 @@ function conciseFenceReport(payload: unknown): unknown {
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// ATTENTION — the plan ↔ trace bridge
+// FOOTPRINTS — the plan ↔ trace bridge
 // ────────────────────────────────────────────────────────────────────────
 
 const DaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 defineTool(server, {
-  name: "get_attention",
+  name: "get_footprints",
   description:
-    "Where did attention go? Dwell time by area per surface (desktop/agent/browser), " +
-    "unmapped locators (top 10), and agent sessions. Minutes, never ms. " +
-    "Coverage on every response — an empty surface means unrecorded, not idle.",
+    "The week read back: what was planted next to where attention went, and how much of it the garden could see. " +
+    "One call returns the board (per day and phase), planted moments per area (this week and last, two counts), " +
+    "footprints per surface (body, screen, work, journal, comms) by area in minutes with the largest unmapped locators, " +
+    "and the habits wilting at the week's close. " +
+    "`trace` reads each day that has begun, phase by phase: per planted moment, minutes traced in its cell (same area) and elsewhere (other areas), with evidence traced or untraced, " +
+    "and `unplanted`, attention by phase and area in phases that planted nothing for that area. " +
+    "Trace minutes are spans of activity, footprint minutes are dwell, so the two need not add up. " +
+    'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
+    "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
+    "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {
     day: DaySchema.optional().describe(
-      "One waking day (04:00 roll). Omit for today.",
+      "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week. To read one day alone, pass `from` instead.",
     ),
     from: DaySchema.optional().describe(
-      "Inclusive start day. Use with `to` for a range.",
+      "Inclusive start day of an explicit range (at most 31 days), instead of a week; alone, it reads that one day. Last week becomes the same-length range before it.",
     ),
-    to: DaySchema.optional().describe("Inclusive end day."),
-    surfaces: z
-      .array(z.enum(["desktop", "agent", "browser"]))
-      .optional()
-      .describe("Surfaces to query. Default: all three."),
-    pathPrefix: z
-      .string()
-      .optional()
-      .describe(
-        "Agent surface only: restrict to cwds under this path (~ expands).",
-      ),
+    to: DaySchema.optional().describe(
+      "Inclusive end day of the range; needs `from`. Defaults to `from`.",
+    ),
   },
   annotations: { readOnlyHint: true },
   handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    return ok(getAttention(VAULT_ROOT, areas, params));
+    const invalid = footprintParamsError(params);
+    if (invalid) return err(invalid);
+    return ok(
+      getFootprints(
+        VAULT_ROOT,
+        {
+          areas: readCollection(VAULT_ROOT, "areas"),
+          habits: readCollection(VAULT_ROOT, "habits"),
+          moments: readCollection(VAULT_ROOT, "moments"),
+          phaseConfigs: readCollection(VAULT_ROOT, "phaseConfigs"),
+          cycles: readCollection(VAULT_ROOT, "cycles"),
+          cyclePlans: readCollection(VAULT_ROOT, "cyclePlans"),
+        },
+        params,
+        loadHabitMap(),
+      ),
+    );
   },
 });
 
@@ -4993,38 +5041,6 @@ defineTool(server, {
         .filter((s) => s.points.length > 0);
     }
     return ok({ habitId: params.habitId, habitName: habit.name, series });
-  },
-});
-
-// ────────────────────────────────────────────────────────────────────────
-// DAY TRACE — plan vs actual
-// ────────────────────────────────────────────────────────────────────────
-
-defineTool(server, {
-  name: "get_day_trace",
-  description:
-    "How aligned was the day with the plan? For each planted moment: " +
-    "attention traced in its cell (same area), attention elsewhere (different area), " +
-    "and whether any trace was found. Also reports unplanted attention — " +
-    "spans in cells that planted nothing for that area. " +
-    "No alignment %, no score.",
-  schema: {
-    day: DaySchema.optional().describe(
-      "Waking day (04:00 roll). Omit for today.",
-    ),
-    idleGapMin: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe("Idle gap in minutes for span derivation. Default 15."),
-  },
-  annotations: { readOnlyHint: true },
-  handler: async (params) => {
-    const areas = readCollection(VAULT_ROOT, "areas");
-    const moments = readCollection(VAULT_ROOT, "moments");
-    const phaseConfigs = readCollection(VAULT_ROOT, "phaseConfigs");
-    return ok(getDayTrace(VAULT_ROOT, areas, moments, phaseConfigs, params));
   },
 });
 

@@ -8,7 +8,7 @@
  */
 
 import { fenceCache, rationSpent } from "@/modules/fence/store";
-import { chipLines } from "@/modules/fence/chip";
+import { CLOSING, chipLines } from "@/modules/fence/chip";
 
 const STYLE = `
 :host { all: initial; }
@@ -20,6 +20,7 @@ const STYLE = `
   font: 12px/1.4 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
 }
+.q { font-family: Inter, system-ui, -apple-system, sans-serif; }
 @media (prefers-color-scheme: dark) {
   .chip { --ground: oklch(0.147 0.005 60); --ink: oklch(0.709 0.008 60); --rule: oklch(0.374 0.010 60); }
 }
@@ -41,10 +42,18 @@ export default defineContentScript({
 
     const place = () => (document.fullscreenElement ?? document.body)?.appendChild(el);
 
+    const line = (l: string): Node => {
+      if (l !== CLOSING) return document.createTextNode(l);
+      const q = document.createElement("span");
+      q.className = "q";
+      q.textContent = l;
+      return q;
+    };
+
     const render = (lines: string[]) => {
       if (lines.length === 0) return el.remove();
       chip.replaceChildren(
-        ...lines.flatMap((l, i) => [...(i ? [document.createElement("br")] : []), document.createTextNode(l)]),
+        ...lines.flatMap((l, i) => [...(i ? [document.createElement("br")] : []), line(l)]),
       );
       if (!el.isConnected) place();
     };

@@ -612,7 +612,7 @@ export function isAllocated(moment: Moment): boolean {
  * Mirrored in mcp-server/health.ts, a separate package that deliberately
  * does not import from src/domain.
  */
-export function countsAsAllocation(moment: Moment): boolean {
+export function countsAsAllocation(moment: Pick<Moment, "status">): boolean {
   return moment.status !== "tentative";
 }
 
@@ -689,7 +689,10 @@ export function compareMoments(a: Moment, b: Moment): number {
   return a.order - b.order;
 }
 
-export function momentInvolvesHabit(moment: Moment, habitId: string): boolean {
+export function momentInvolvesHabit(
+  moment: Pick<Moment, "habitId" | "personIds">,
+  habitId: string,
+): boolean {
   return (
     moment.habitId === habitId || (moment.personIds?.includes(habitId) ?? false)
   );

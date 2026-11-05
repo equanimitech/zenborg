@@ -9,7 +9,7 @@ const state = {
   fences: {} as Fences,
   openings: [] as Opening[],
   passes: [] as Lift[],
-  hostEvents: [] as { id: string; kind: string; ts: number }[],
+  hostEvents: [] as { id: string; kind: string; ts: number; payload?: Record<string, unknown> }[],
   synced: 0,
 };
 const item = <K extends "openings" | "passes">(k: K) => ({
@@ -38,6 +38,12 @@ const { usePass, blockInfo } = await import("./pass");
 
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
 const NOW = at(2026, 10, 24, 17);
+const spent = (id: string, domain: string, ts = at(2026, 10, 2, 20), policy?: string) => ({
+  id,
+  kind: "pass_used",
+  ts,
+  payload: { domain, ...(policy ? { policy } : {}) },
+});
 
 function timeBlock(host: string) {
   return {
@@ -101,9 +107,10 @@ describe("usePass", () => {
   });
 
   it("refuses the 5th pass in a month, and the 1st of the next month has 4 again", async () => {
-    state.hostEvents = [1, 2, 3, 4].map((d) => ({ id: `p${d}`, kind: "pass_used", ts: at(2026, 10, d, 20) }));
+    state.hostEvents = [1, 2, 3, 4].map((d) => spent(`p${d}`, "youtube.com", at(2026, 10, d, 20)));
     const write = vi.fn();
     expect((await blockInfo("youtube.com")).pass?.left).toBe(0);
+    expect((await blockInfo("chess.com")).pass?.left).toBe(4);
     expect(await usePass("youtube.com", "one more", write)).toEqual({ ok: false, error: "none_left" });
     expect(write).not.toHaveBeenCalled();
 
@@ -111,7 +118,28 @@ describe("usePass", () => {
     expect((await blockInfo("youtube.com")).pass).toMatchObject({ left: 4, month: "November" });
   });
 
+  it("counts passes per domain: youtube.com leaves chess.com alone, and m. / www. share a count", async () => {
+    state.hostEvents = [spent("a", "youtube.com"), spent("b", "m.youtube.com"), spent("c", "www.youtube.com"), spent("d", "youtu.be")];
+    expect((await blockInfo("youtube.com")).pass?.left).toBe(1);
+    expect((await blockInfo("m.youtube.com")).pass?.left).toBe(1);
+    expect((await blockInfo("chess.com")).pass?.left).toBe(4);
+  });
+
   it("offers no pass when nothing time-blocks the host", async () => {
     expect(await usePass("example.com", "why", vi.fn())).toEqual({ ok: true, alreadyOpen: true });
+  });
+
+  it("counts a policy's own pool apart from the shared one", async () => {
+    const own = { ...timeBlock("porn.com"), id: "watering:no-porn:browser:porn.com", passAllowance: { perMonth: 4, hours: 0.5 } };
+    state.fences = parseFences({ y: timeBlock("youtube.com"), p: own }, NOW)!.fences;
+    const ev = (id: string, domain: string, policy?: string) => spent(id, domain, undefined, policy);
+    state.hostEvents = [ev("a", "porn.com", "no-porn"), ev("b", "porn.com", "no-porn"), ev("c", "youtube.com")];
+
+    expect((await blockInfo("porn.com")).pass).toMatchObject({ left: 2, perMonth: 4, hours: 0.5, policy: "no-porn" });
+    expect((await blockInfo("youtube.com")).pass).toMatchObject({ left: 3, perMonth: 4, hours: 3 });
+
+    const write = vi.fn();
+    await usePass("porn.com", "x", write);
+    expect(write).toHaveBeenCalledWith("pass_used", expect.objectContaining({ policy: "no-porn", until: NOW + 1_800_000 }));
   });
 });
