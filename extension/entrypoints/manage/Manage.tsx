@@ -1,8 +1,8 @@
 /**
  * The manage page — a fence dashboard.
  *
- * Four sections: the fences table (what is standing, its type, its exit),
- * cooldown status, area-map assignment, and activity-log export. Everything
+ * Three sections: the fences table (what is standing, its type, its exit),
+ * area-map assignment, and activity-log export. Everything
  * here is read-mostly: the only writes this page performs are `setArea`
  * (native-messaging, may fail silently — see `handleAssign`) and the local
  * export download. All authoring — declaring or retiring a fence — happens
@@ -18,12 +18,14 @@ import { useEffect, useState } from "react";
 import { fenceCache, fenceRefusals } from "@/modules/fence/store";
 import { exitLine } from "@/modules/fence/parse";
 import type { Fence, Fences, Refusal } from "@/modules/fence/types";
-import { cooldowns } from "@/modules/friction/cooldown/store";
-import { activeAt, type ActiveCooldown } from "@/modules/friction/cooldown/state";
 import { areas as areasStore, areaMap as areaMapStore, pageTransforms, type AreaInfo, type PageTransform } from "@/modules/friction/policy/store";
-import { setArea } from "@/modules/relay/client";
+import { queryEvents, setArea } from "@/modules/relay/client";
 import { readAllEvents } from "@/modules/activity/log";
-import { toJsonl, exportFileName } from "@/modules/activity/events";
+import { toJsonl, exportFileName, startOfLocalDay } from "@/modules/activity/events";
+import { readEventsSince } from "@/modules/activity/log";
+import { mergeById, tallyDeliveries, type DeliveryRow } from "@/modules/fence/deliveries";
+import { dayKey, gateCrossings } from "@/modules/friction/gate/decide";
+import { crossingsOf, rungIndex } from "@/modules/friction/gate/ladder";
 
 function fenceTypeLabel(fence: Fence): string {
   if (fence.enforcement.kind === "block") {
@@ -43,24 +45,41 @@ function fenceTypeBadge(fence: Fence): string {
   }
 }
 
-function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
 export function Manage() {
   const [fences, setFences] = useState<Fences>({});
   const [transforms, setTransforms] = useState<readonly PageTransform[]>([]);
   const [refused, setRefused] = useState<readonly Refusal[]>([]);
-  const [cds, setCds] = useState<readonly ActiveCooldown[]>([]);
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [map, setMap] = useState<Record<string, string>>({});
   const [newDomain, setNewDomain] = useState("");
+  const [partial, setPartial] = useState(false);
+  const [deliveries, setDeliveries] = useState<readonly (DeliveryRow & { rung: number })[]>([]);
 
   useEffect(() => {
+    // Today's deliveries: local log + today's crossings. Read once on open.
+    void (async () => {
+      const now = Date.now();
+      const since = startOfLocalDay(now);
+      const [hostEvents, outbox, crossings, fenceMap] = await Promise.all([
+        queryEvents(since),
+        readEventsSince(since),
+        gateCrossings.getValue(),
+        fenceCache.getValue(),
+      ]);
+      // queryEvents answers [] when the host is unreachable; a reachable host always
+      // holds today's writer_started, so empty means the counts are outbox-only.
+      setPartial(hostEvents.length === 0);
+      const events = mergeById(hostEvents, outbox);
+      setDeliveries(
+        tallyDeliveries(events).map((row) => ({
+          ...row,
+          rung: rungIndex(fenceMap[row.ruleId]?.rungs?.length ?? 1, crossingsOf(crossings, dayKey(now), row.ruleId)),
+        }))
+      );
+    })();
     fenceCache.getValue().then(setFences);
     pageTransforms.getValue().then(setTransforms);
     fenceRefusals.getValue().then(setRefused);
-    cooldowns.getValue().then((s) => setCds(activeAt(s, Date.now())));
     areasStore.getValue().then(setAllAreas);
     areaMapStore.getValue().then(setMap);
 
@@ -70,13 +89,9 @@ export function Manage() {
     const unwatchTransforms = pageTransforms.watch((v) => {
       if (v) { setTransforms(v); }
     });
-    const unwatchCooldowns = cooldowns.watch((s) => {
-      if (s) { setCds(activeAt(s, Date.now())); }
-    });
     return () => {
       unwatchFences();
       unwatchTransforms();
-      unwatchCooldowns();
     };
   }, []);
 
@@ -183,19 +198,41 @@ export function Manage() {
         )}
       </section>
 
-      {/* Cooldown */}
-      {cds.length > 0 && (
-        <section className="manage-section">
-          <h2 className="manage-section-title">Cooldown</h2>
-          <ul className="manage-cooldown-list">
-            {cds.map((cd) => (
-              <li key={cd.ruleId}>
-                {cd.domains.length} domain(s) until {formatUntil(cd.until)}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {/* Today's deliveries — neutral counts from the local log */}
+      <section className="manage-section">
+        <h2 className="manage-section-title">Today's deliveries</h2>
+        {partial && <p className="manage-hint">Host unreachable: counts are partial (unflushed events only).</p>}
+        {deliveries.length === 0 ? (
+          <p className="manage-empty">No decision points today.</p>
+        ) : (
+          <table className="manage-fence-table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Points</th>
+                <th>Shown</th>
+                <th>Withheld</th>
+                <th>Continued</th>
+                <th>Left</th>
+                <th>Rung</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deliveries.map((d) => (
+                <tr key={d.ruleId}>
+                  <td>{fences[d.ruleId]?.label ?? d.ruleId}</td>
+                  <td>{d.points}</td>
+                  <td>{d.shown}</td>
+                  <td>{d.withheld}</td>
+                  <td>{d.continued}</td>
+                  <td>{d.left}</td>
+                  <td>{d.rung + 1}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
 
       {/* Area map */}
       <section className="manage-section">

@@ -56,6 +56,60 @@ export function interventionEvent(input: InterventionEventInput): ActivityEvent 
   });
 }
 
+/**
+ * One decision point: a moment the rule COULD have asked, drawn against its
+ * `deliveryProbability`. Written for the withheld arm too, so the micro-randomised
+ * comparison has both sides. Domains only; never a URL.
+ */
+export interface DecisionPoint {
+  readonly ruleId: string;
+  readonly trigger: "dwell" | "entry" | "click";
+  /** True = the overlay was shown. */
+  readonly delivered: boolean;
+  /** The rule's deliveryProbability (1 if absent). */
+  readonly p: number;
+  /** The uniform draw in [0,1); delivered iff draw < p, unless superseded. */
+  readonly draw: number;
+  readonly rung: number;
+  readonly windowMs: number;
+  readonly servesAreaId?: string;
+  /** Present on every withheld point. */
+  readonly reason?: "draw" | "superseded";
+}
+
+export const DEFAULT_WINDOW_MS = 600_000;
+
+/** Reserved kind for the decision log; written by `decisionPointEvent`. */
+export const DECISION_POINT_KIND = "decision_point";
+
+export function decisionPointEvent(input: {
+  readonly point: DecisionPoint;
+  readonly domain: string;
+  readonly id: string;
+  readonly ts: number;
+  readonly sessionId: string;
+}): ActivityEvent {
+  const { point: p } = input;
+  return buildBrowserEvent({
+    id: input.id,
+    kind: DECISION_POINT_KIND,
+    ts: input.ts,
+    sessionId: input.sessionId,
+    payload: {
+      ruleId: p.ruleId,
+      domain: input.domain,
+      trigger: p.trigger,
+      delivered: p.delivered,
+      p: p.p,
+      draw: p.draw,
+      rung: p.rung,
+      windowMs: p.windowMs,
+      ...(p.servesAreaId === undefined ? {} : { servesAreaId: p.servesAreaId }),
+      ...(p.reason === undefined ? {} : { reason: p.reason }),
+    },
+  });
+}
+
 /** What the page sends back once the person has chosen. */
 export interface SettlementMessage {
   readonly type: "kairos-intervention-settled";

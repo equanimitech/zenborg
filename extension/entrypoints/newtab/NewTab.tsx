@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { fenceCache } from "@/modules/fence/store";
-import { cooldownNextLapse } from "@/modules/friction/cooldown/store";
 import { areaMap as areaMapStore, areas as areasStore, type AreaInfo } from "@/modules/friction/policy/store";
 import { queryEvents, queryActiveMoment, queryTodayMoments, type ActiveMoment, type TodayBoard, type TodayMoment } from "@/modules/relay/client";
-import { setArea } from "@/modules/relay/client";
+import { setArea, switchMoment } from "@/modules/relay/client";
+import { canStart, switchMinutes } from "@/modules/relay/start";
 import { runs, type Run } from "@/modules/domain";
 import { startOfLocalDay } from "@/modules/activity/events";
 
@@ -42,10 +42,6 @@ function formatDwell(ms: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function formatUntil(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function computeStats(
@@ -162,7 +158,6 @@ function formatTime(time: string): string {
 
 export function NewTab() {
   const [fenceCount, setFenceCount] = useState(0);
-  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [stats, setStats] = useState<readonly DomainStats[]>([]);
   const [allAreas, setAllAreas] = useState<readonly AreaInfo[]>([]);
   const [areaMap, setAreaMap] = useState<Record<string, string>>({});
@@ -170,10 +165,10 @@ export function NewTab() {
   const [activeMoment, setActiveMoment] = useState<ActiveMoment | null>(null);
   const [board, setBoard] = useState<TodayBoard>({ moments: [], currentPhase: "" });
   const [assigningDomain, setAssigningDomain] = useState<string | null>(null);
+  const [startFailed, setStartFailed] = useState(false);
 
   useEffect(() => {
     fenceCache.getValue().then((fences) => setFenceCount(Object.keys(fences).length));
-    cooldownNextLapse().then(setCooldownUntil);
     queryActiveMoment().then(setActiveMoment);
     queryTodayMoments().then(setBoard);
     areasStore.getValue().then(setAllAreas);
@@ -204,6 +199,15 @@ export function NewTab() {
     setStats(stats.map((s) => s.domain === domain ? { ...s, areaId: areaId || undefined } : s));
     setAssigningDomain(null);
     await setArea(domain, areaId);
+  };
+
+  const handleStart = async (m: TodayMoment): Promise<void> => {
+    setStartFailed(false);
+    const ok = await switchMoment(m.id, switchMinutes(m.durationMin));
+    if (!ok) { setStartFailed(true); return; }
+    const [active, next] = await Promise.all([queryActiveMoment(), queryTodayMoments()]);
+    setActiveMoment(active);
+    setBoard(next);
   };
 
   const maxDwell = stats.length > 0 ? stats[0].dwellMs + stats[0].audibleDwellMs : 1;
@@ -241,19 +245,25 @@ export function NewTab() {
                 </p>
                 <ul className="newtab-moment-list">
                   {moments.map((m) => (
-                    <li
-                      key={m.id}
-                      className={`newtab-moment ${m.active ? "newtab-moment-active" : ""} ${m.status === "DONE" ? "newtab-moment-done" : ""}`}
-                    >
-                      <span className="newtab-moment-indicator">{m.active ? "●" : m.status === "DONE" ? "✓" : "○"}</span>
-                      {m.areaEmoji && <span className="newtab-moment-emoji">{m.areaEmoji}</span>}
-                      <span className="newtab-moment-name">{m.name}</span>
-                      {m.startTime && <span className="newtab-moment-time">{formatTime(m.startTime)}</span>}
+                    <li key={m.id}>
+                      <button
+                        type="button"
+                        className={`newtab-moment ${m.active ? "newtab-moment-active" : ""} ${m.status === "DONE" ? "newtab-moment-done" : ""}`}
+                        disabled={!canStart(m)}
+                        aria-label={`Start ${m.name}`}
+                        onClick={() => void handleStart(m)}
+                      >
+                        <span className="newtab-moment-indicator">{m.active ? "●" : m.status === "DONE" ? "✓" : "○"}</span>
+                        {m.areaEmoji && <span className="newtab-moment-emoji">{m.areaEmoji}</span>}
+                        <span className="newtab-moment-name">{m.name}</span>
+                        {m.startTime && <span className="newtab-moment-time">{formatTime(m.startTime)}</span>}
+                      </button>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
+            {startFailed && <p className="newtab-moment-error">couldn't start that one — is zenborg running?</p>}
           </section>
         )}
 
@@ -327,11 +337,9 @@ export function NewTab() {
           </section>
         )}
 
-        {(fenceCount > 0 || cooldownUntil !== null) && (
+        {fenceCount > 0 && (
           <p className="newtab-fence-summary">
-            {fenceCount > 0 && `${fenceCount} fence${fenceCount === 1 ? "" : "s"}`}
-            {fenceCount > 0 && cooldownUntil !== null && " · "}
-            {cooldownUntil !== null && `cooldown until ${formatUntil(cooldownUntil)}`}
+            {`${fenceCount} fence${fenceCount === 1 ? "" : "s"}`}
           </p>
         )}
 

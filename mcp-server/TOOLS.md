@@ -47,7 +47,7 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 
 ### Write-side (require user authorization)
 
-`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `clear_fence` · `declare_drift`
+`create_area` · `update_area` · `delete_area` · `create_habit` · `update_habit` · `add_moment` · `update_moment` · `delete_moment` · `unallocate_moment` · `mention` · `plan_cycle` · `update_cycle` · `delete_cycle` · `create_person` · `update_person` · `delete_person` · `create_place` · `update_place` · `delete_place` · `create_relationship` · `delete_relationship` · `set_active_moment` · `update_phase_config` · `set_fence` · `set_host_block` · `set_browser_gate` · `set_browser_transform` · `seed_host_blocks` · `set_opening` · `set_pass_allowance` · `clear_fence` · `declare_drift`
 
 ---
 
@@ -97,11 +97,14 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 |---|---|---|
 | `list_cycles` | `filter?` | `"active"/"current"/"upcoming"/"all"`. |
 | `get_cycle` | `idOrName` | |
-| `get_running_cycle` | — | Orientation snapshot: active cycle + per-habit health + wilting list. |
+| `get_running_cycle` | — | Orientation snapshot: active cycle + per-habit health + wilting list. `running.areaIntentions` / `running.people` carry the season's words with area and person names resolved. |
 | `get_cycle_planning_proposals` | `cycleId` | Attitude + rhythm + health proposals. |
 | `get_cycle_review` | `cycleId` | Descriptive review — no aggregate scores. |
-| `plan_cycle` | `name, template?, startDate?, endDate?, ...` | `template: "week"/"month"/"quarter"` computes endDate (7/28/90 days). Pass template OR endDate. |
-| `update_cycle` | `id, ...fields` | Set `endDate` to close a cycle. `reflection` stamps `reflectionSource: "machine"`. |
+| `plan_cycle` | `name, template?, startDate?, endDate?, ...` | `template: "week"/"month"/"quarter"` computes endDate (7/28/90 days). Pass template OR endDate. Also `areaIntentions?`, `people?` (see `update_cycle`). |
+| `update_cycle` | `id, ...fields` | Set `endDate` to close a cycle. `reflection` stamps `reflectionSource: "machine"`. `areaIntentions: {areaId: text}` (1 to 12 words) and `people: {personKey: text}` (a record id is accepted and stored as its key) (0 to 12 words; `""` = on this season's roster) replace the stored map; `null` or `{}` clears. Unknown ids/keys and out-of-range text are rejected, naming the id. |
+| `set_cycle_allocations` | `cycle?, capacityDays?, allocations[]` | The betting table. Replaces all allocations `{id?, kind: bet\|lane, name, area, link, appetiteDays, aim?}`. Refuses: appetites + ½ d cool-down > capacity (default 12), "Bugs & ops" lane > ¼ capacity, lane without `aim`. |
+| `list_cycle_allocations` | `cycle?` | Capacity, allocations, planned days, days left to bet. |
+| `get_cycle_spend` | `cycle?, from?, to?` | Merged hours per allocation (union across sessions, 5 min gap cap, 6 h = 1 day), unattributed, agent hours, turns. Linear join read from `<vault>/cache/linear-join.json`. Caches to `<vault>/cache/cycle-spend.json` for the SessionStart line. |
 | `delete_cycle` | `id` | Cascades: deletes all moments + plans. `destructiveHint`. |
 
 ### People
@@ -153,17 +156,23 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `list_phase_configs` | — | 4 rows, sorted by order. |
 | `update_phase_config` | `id, ...fields` | Configs are seeded; update only. |
 
-### Fences (8 tools)
+### Fences (11 tools)
+
+Every writer works between seasons: with none running, `serves` points at the last cycle by end date and the response carries a `note`. Only an empty `cycles` refuses.
 
 | Tool | Key params | Notes |
 |---|---|---|
 | `set_fence` | `label, paths, areas` | Session fence: "only this stream". |
-| `set_host_block` | `host, returnsTo, unlockNote` | Standing block on a host. |
-| `set_browser_gate` | `host, returnsTo, everyMinutes, prompt` | Recurring dwell-time cue. |
+| `set_host_block` | `host, returnsTo, unlockNote, reach?` | Standing block on a host. `reach: "navigation"` keeps open pages alive. |
+| `set_browser_gate` | `host`/`hosts, returnsTo`, `everyMinutes + prompt` or `rungs[]`, `id?, deliveryProbability?, windowMs?` | Stopping cue: dwell / entry / click triggers; intention / delay / breath friction; several rungs = a ladder. |
 | `set_browser_transform` | `host, selectors, returnsTo` | DOM transform (hide/restyle). |
 | `seed_host_blocks` | `returnsTo, unlockNote, hosts` | Batch blocklist. Idempotent. |
-| `clear_fence` | `id` or `all` | Take fences down. `destructiveHint`. |
-| `get_fence` | — | Standing fences with crossing tallies. |
+| `set_watering_hours` | `name, mode, window, waters, restricts, reach?` | Temporal policy. `window` = the RESTRICTED hours, wraps midnight when `toHour <= fromHour`. |
+| `set_fence_enabled` | `id` or `policy, enabled, reason` | Pause/resume without deleting; logs a dated line in the description. |
+| `set_opening` | `hosts, from, until, reason` | Planned opening: lifts scheduled blocks and gates on those hosts for the window, then closes by itself. `"20:00"` or ISO. Doesn't draw on passes. |
+| `set_pass_allowance` | `perMonth, hours` | Block-page passes: N a month (reset on the 1st, local), H hours each. Default 4 × 3h. |
+| `clear_fence` | `id` or `all` or `policy` | Take fences down; an `opening:` id closes that opening early. `all` leaves openings and the allowance. `destructiveHint`. |
+| `get_fence` | — | Plugin crossing tallies, plus every browser rule: kind, state, rungs, schedule, reach, today's decision points and answers. Openings (active or upcoming) and the pass allowance. |
 | `declare_drift` | `distance, reason` | Name a departure from the session fence; the fence hook reads it. Ack only. |
 
 ### Footprints (read-only, from the activity log)

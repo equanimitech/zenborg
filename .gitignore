@@ -3,6 +3,9 @@
 # dependencies
 node_modules
 /plugin/__pycache__
+# written by Claude Code when it loads the plugin as a mod
+/plugin/tsconfig.json
+/plugin/.claude-plugin/types/
 
 # Rust build artifacts (crates have their own targets when built standalone)
 src-tauri/crates/*/target/
@@ -67,6 +70,7 @@ mcp-server/bun.lock
 .local/
 *.local.json
 .claude/*.local.md
+.claude/attently/
 *.local.csv
 highlights.local.json
 

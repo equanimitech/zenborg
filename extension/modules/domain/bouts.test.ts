@@ -239,3 +239,59 @@ describe("bouts — edges", () => {
     expect(bouts([ev(0, "writer_started"), ev(1 * MIN, "focus_start")])).toEqual([]);
   });
 });
+
+describe("bouts — idle while playing", () => {
+  const yt = createDomain("youtube.com");
+
+  it("counts an idle span when focused and the domain is audible", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "audible_start", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(10 * MIN, "idle_end"),
+    ]);
+    expect(toMinutes(bout.byDomain.get(yt)!)).toBe(10);
+    expect(toMinutes(bout.audibleDwellMs)).toBe(0);
+  });
+
+  it("does not count an idle span when the domain is silent", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(10 * MIN, "idle_end"),
+    ]);
+    expect(toMinutes(bout.dwellMs)).toBe(0);
+  });
+
+  it("sends audible time to audibleDwellMs when focus is lost", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "audible_start", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(0, "focus_end"),
+      ev(10 * MIN, "focus_start"),
+    ]);
+    expect(toMinutes(bout.dwellMs)).toBe(0);
+    expect(toMinutes(bout.audibleDwellMs)).toBe(10);
+  });
+
+  it("counts an idle span while a muted video plays", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "video_started", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(10 * MIN, "idle_end"),
+    ]);
+    expect(toMinutes(bout.byDomain.get(yt)!)).toBe(10);
+  });
+
+  it("does not let a video event for another domain move current", () => {
+    const [bout] = bouts([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "video_started", "vimeo.com"),
+      ev(10 * MIN, "tab_closed", "youtube.com"),
+    ]);
+    expect(toMinutes(bout.byDomain.get(yt)!)).toBe(10);
+    expect(bout.byDomain.has(createDomain("vimeo.com"))).toBe(false);
+  });
+});

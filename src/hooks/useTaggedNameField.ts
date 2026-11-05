@@ -13,6 +13,7 @@ import { normalizeMention } from "@/domain/services/MentionService";
 import {
   extractTagsFromText,
   normalizeTag,
+  TAG_REGEX,
 } from "@/domain/services/TagService";
 
 export interface TaggedNameField {
@@ -143,7 +144,9 @@ export function useTaggedNameField(
 
     if (lastChar !== " " && lastChar !== ",") return null;
 
-    const tagMatch = beforeCursor.match(/#([a-z0-9-]+)\s*$/);
+    const tagMatch = beforeCursor.match(
+      new RegExp(`${TAG_REGEX.source}\\s*$`, "u"),
+    );
     return tagMatch ? tagMatch[1] : null;
   };
 
@@ -283,7 +286,7 @@ export function useTaggedNameField(
 
         // Clean display value
         const cleanedValue = currentValue
-          .replace(/#[a-z0-9-]+/g, "")
+          .replace(TAG_REGEX, "")
           .replace(/@[a-z0-9-]*/g, "")
           .replace(/\s+/g, " ")
           .trim();

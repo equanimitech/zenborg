@@ -26,11 +26,14 @@
  */
 
 import { normalizeDomain } from "../domains";
+import { isInScheduleWindow } from "./scheduleWindow";
+import { ALLOWANCE_KIND, OPENING_KIND, readAllowance, readOpening, type Opening, type PassAllowance } from "./lifts";
 import type { DwellGate, GateFriction } from "../friction/gate/decide";
 import type {
   Fence,
   FenceEnforcement,
   Fences,
+  GateRungSpec,
   ParsedFences,
   ProceedAffordance,
   ScheduleWindow,
@@ -122,6 +125,15 @@ function readFriction(raw: unknown): GateFriction | null {
   }
 }
 
+/**
+ * `navigation`, or nothing. Any other value reads as the default (`all`), so an
+ * unknown reach fails toward the stricter block rather than toward a hole.
+ * Browser only: a resolver or device block has no resource types to narrow.
+ */
+function reachOf(at: unknown, raw: unknown): { reach?: "navigation" } {
+  return raw === "navigation" && at !== "resolver" && at !== "device" ? { reach: "navigation" } : {};
+}
+
 function readEnforcement(raw: unknown): FenceEnforcement | null {
   if (!isRecord(raw)) {
     return null;
@@ -130,7 +142,7 @@ function readEnforcement(raw: unknown): FenceEnforcement | null {
     const at = raw.enforcement;
     const enforcement: "browser" | "resolver" | "device" =
       at === "resolver" || at === "device" ? at : "browser";
-    return { kind: "block", enforcement, standing: raw.standing === true };
+    return { kind: "block", enforcement, standing: raw.standing === true, ...reachOf(at, raw.reach) };
   }
   if (raw.kind === "gate") {
     const friction = readFriction(raw.friction);
@@ -169,6 +181,15 @@ function domainsFromScope(scope: unknown): readonly string[] {
   return [];
 }
 
+/** A selector chain, primary first, as a flat list. A missing primary empties it. */
+function readSelectors(raw: unknown): readonly string[] {
+  if (!isRecord(raw)) return [];
+  const primary = text(raw.primary);
+  if (primary === "") return [];
+  const fallbacks = Array.isArray(raw.fallbacks) ? raw.fallbacks.map(text).filter((s) => s !== "") : [];
+  return [...new Set([primary, ...fallbacks])];
+}
+
 function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement | null {
   if (p.kind === "cooldown") {
     const at = isRecord(p.enforcement) ? p.enforcement.at : undefined;
@@ -176,7 +197,8 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
       at === "resolver" || at === "device" ? at : "browser";
     const standing = p.duration != null && isRecord(p.duration) && p.duration.type === "standing"
       || p.duration != null && isRecord(p.duration) && (p.duration as Record<string, unknown>).standing === true;
-    return { kind: "block", enforcement, standing };
+    const reach = reachOf(at, isRecord(p.enforcement) ? p.enforcement.reach : undefined);
+    return { kind: "block", enforcement, standing, ...reach };
   }
   if (p.kind === "gate") {
     const trigger = isRecord(p.trigger) ? p.trigger : null;
@@ -186,10 +208,20 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
     const frictionType = isRecord(p.frictionType) ? p.frictionType : null;
     const friction = frictionType ? readFriction(frictionType) : null;
     if (friction === null) return null;
+    let click: readonly string[] | undefined;
+    if (trigger?.type === "click") {
+      click = readSelectors(trigger.selectors);
+      // No selector, nothing to stand in front of. Refused rather than read as a
+      // dwell gate, which would fire mid-game: the exact failure this trigger fixes.
+      if (click.length === 0) return null;
+    }
     return {
       kind: "gate",
       everyMinutes: Number.isFinite(everyMinutes) && everyMinutes > 0 ? Math.round(everyMinutes) : 1,
       friction,
+      ...(click ? { click } : {}),
+      // Entry asks once per arrival (`isArrival`); `everyMinutes` is then inert filler.
+      ...(trigger?.type === "entry" ? { entry: true as const } : {}),
     };
   }
   return null;
@@ -225,7 +257,18 @@ function proceedFromPrimitive(p: Record<string, unknown>): ProceedAffordance | n
   return null;
 }
 
-function readSchedule(p: Record<string, unknown>): { inner: Record<string, unknown>; schedule: ScheduleWindow } | null {
+function readBudget(raw: unknown): Fence["budget"] | undefined {
+  if (!isRecord(raw)) return undefined;
+  const minutes = Number(raw.minutes);
+  const pool = text(raw.pool);
+  if (!Number.isFinite(minutes) || minutes <= 0 || pool === "") return undefined;
+  const exclude = Array.isArray(raw.exclude) ? [...readDomains(raw.exclude)] : [];
+  return { minutes, pool, exclude };
+}
+
+function readSchedule(
+  p: Record<string, unknown>,
+): { inner: Record<string, unknown>; schedule: ScheduleWindow; budget?: Fence["budget"] } | null {
   if (p.kind !== "schedule") return null;
   const window = isRecord(p.window) ? p.window : null;
   const wraps = isRecord(p.wraps) ? p.wraps : null;
@@ -236,13 +279,25 @@ function readSchedule(p: Record<string, unknown>): { inner: Record<string, unkno
   const weekdays = Array.isArray(window.weekdays)
     ? (window.weekdays as unknown[]).filter((w): w is string => typeof w === "string")
     : undefined;
+  const budget = readBudget(p.budget);
   return {
     inner: wraps,
+    ...(budget ? { budget } : {}),
     schedule: {
       fromHour, toHour,
       ...(weekdays && weekdays.length > 0 ? { weekdays } : {}),
       outsideWindow: p.outsideWindow === "passthrough" ? "passthrough" : "inactive",
     },
+  };
+}
+
+/** `outcome.windowMs` and `serves.areaId`, when present and well-formed. */
+function readOutcome(value: Record<string, unknown>): { windowMs?: number; servesAreaId?: string } {
+  const windowMs = isRecord(value.outcome) ? Number(value.outcome.windowMs) : NaN;
+  const areaId = isRecord(value.serves) ? text(value.serves.areaId) : "";
+  return {
+    ...(Number.isFinite(windowMs) && windowMs > 0 ? { windowMs } : {}),
+    ...(areaId === "" ? {} : { servesAreaId: areaId }),
   };
 }
 
@@ -263,13 +318,15 @@ function readProbability(raw: unknown): number {
  * never read as "nothing is fenced" — but an explicitly empty record is the
  * person taking a fence down, and it has to land.
  */
-export function parseFences(raw: unknown): ParsedFences | null {
+export function parseFences(raw: unknown, now: number = Date.now()): ParsedFences | null {
   if (!isRecord(raw)) {
     return null;
   }
 
   const fences: Record<string, Fence> = {};
   const refused: Refusal[] = [];
+  const openings: Opening[] = [];
+  let allowance: PassAllowance | undefined;
 
   for (const [key, value] of Object.entries(raw)) {
     if (!isRecord(value)) {
@@ -277,6 +334,18 @@ export function parseFences(raw: unknown): ParsedFences | null {
     }
     const id = (text(value.id) || key).slice(0, MAX_ID);
     if (id === "") {
+      continue;
+    }
+
+    // Not fences: a planned opening lifts, the allowance prices a pass. Neither
+    // is refused, and an expired opening simply stops being read.
+    if (value.kind === OPENING_KIND) {
+      const opening = readOpening(id, value, now);
+      if (opening !== null) openings.push(opening);
+      continue;
+    }
+    if (value.kind === ALLOWANCE_KIND) {
+      allowance = readAllowance(value) ?? undefined;
       continue;
     }
 
@@ -292,6 +361,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
     let proceed = readProceed(value.proceed);
     let domains = readDomains(value.domains);
     let schedule: ScheduleWindow | undefined;
+    let budget: Fence["budget"];
     let abortLabel = isRecord(value.abort) ? text(value.abort.label) : "";
 
     if (enforcement === null && Array.isArray(value.primitives)) {
@@ -305,6 +375,7 @@ export function parseFences(raw: unknown): ParsedFences | null {
         if (sched) {
           inner = sched.inner;
           schedule = sched.schedule;
+          budget = sched.budget;
         }
         enforcement = enforcementFromPrimitive(inner);
         proceed = proceed ?? proceedFromPrimitive(inner);
@@ -312,6 +383,33 @@ export function parseFences(raw: unknown): ParsedFences | null {
           abortLabel = abortLabel || text(inner.abortAffordance.label);
         }
       }
+    }
+
+    // A ladder: more than one gate primitive. Each rung is unwrapped like rung 0
+    // (a schedule on a later rung is ignored; rung 0's window governs the fence).
+    let rungs: GateRungSpec[] | undefined;
+    if (enforcement?.kind === "gate" && Array.isArray(value.primitives) && value.primitives.length > 1) {
+      const built: GateRungSpec[] = [];
+      for (const raw of value.primitives as unknown[]) {
+        const inner = isRecord(raw) ? (readSchedule(raw)?.inner ?? raw) : null;
+        const e = inner ? enforcementFromPrimitive(inner) : null;
+        if (!inner || e?.kind !== "gate") break;
+        const pr = proceedFromPrimitive(inner);
+        if (pr === null) {
+          proceed = null; // a rung with no exit refuses the whole fence (invariant 6)
+          break;
+        }
+        const label = isRecord(inner.abortAffordance) ? text(inner.abortAffordance.label) : "";
+        built.push({
+          everyMinutes: e.everyMinutes,
+          friction: e.friction,
+          ...(e.click ? { click: e.click } : {}),
+          ...(e.entry ? { entry: e.entry } : {}),
+          proceed: pr,
+          ...(label === "" ? {} : { abort: { label } }),
+        });
+      }
+      if (built.length > 1) rungs = built;
     }
 
     if (enforcement === null) {
@@ -334,12 +432,16 @@ export function parseFences(raw: unknown): ParsedFences | null {
       enforcement,
       proceed,
       ...(abortLabel === "" ? {} : { abort: { label: abortLabel } }),
+      ...(rungs ? { rungs } : {}),
       ...(schedule ? { schedule } : {}),
+      ...(budget ? { budget } : {}),
+      ...readPool(id, value),
       deliveryProbability: readProbability(value.deliveryProbability),
+      ...readOutcome(value),
     };
   }
 
-  return { fences, refused };
+  return { fences, refused, openings, ...(allowance ? { allowance } : {}) };
 }
 
 /** Does `host` fall under `domain`? Exact match or a true subdomain, which is
@@ -348,25 +450,56 @@ function covers(domain: string, host: string): boolean {
   return host === domain || host.endsWith(`.${domain}`);
 }
 
-/** Whether a scheduled fence is currently active (outside the watering window). */
+/** The policy's own pass pool: the `passAllowance` stamp plus the policy named in `watering:<name>:browser:<host>`. */
+function readPool(id: string, value: Record<string, unknown>): Pick<Fence, "pool"> {
+  const policy = /^watering:(.+):browser:/.exec(id)?.[1];
+  const a = isRecord(value.passAllowance) ? readAllowance(value.passAllowance) : null;
+  return policy && a ? { pool: { policy, ...a } } : {};
+}
+
+/**
+ * Whether a scheduled fence holds at `now`. Canonical reading, shared with the
+ * domain, plugin and MCP (`scheduleWindow.ts`): the wrapped primitive applies
+ * INSIDE the window; outside it, `inactive` lifts it and `passthrough` keeps it.
+ */
 export function isScheduleActive(schedule: ScheduleWindow, now: Date = new Date()): boolean {
-  if (schedule.weekdays && schedule.weekdays.length > 0) {
-    const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-    const today = dayNames[now.getDay()];
-    if (!schedule.weekdays.includes(today)) return false;
+  return schedule.outsideWindow === "inactive" ? isInScheduleWindow(schedule, now) : true;
+}
+
+/**
+ * The next instant any scheduled fence turns on or off, or null if none will.
+ *
+ * Windows are whole local hours, so the answer is always a top of the hour:
+ * walk forward hour by hour (a week and a day covers every weekday filter)
+ * and return the first one where some fence's state differs from now's.
+ * Stepping with `setHours` keeps it on local wall-clock hours across DST.
+ */
+export function nextScheduleBoundary(fences: Fences, now: Date = new Date()): number | null {
+  const scheduled = Object.values(fences)
+    .map((f) => f.schedule)
+    .filter((s): s is ScheduleWindow => s !== undefined && s.outsideWindow === "inactive");
+  if (scheduled.length === 0) return null;
+  const current = scheduled.map((s) => isScheduleActive(s, now));
+  for (let i = 1; i <= 24 * 8; i++) {
+    const t = new Date(now);
+    t.setMinutes(0, 0, 0);
+    t.setHours(t.getHours() + i);
+    if (scheduled.some((s, k) => isScheduleActive(s, t) !== current[k])) return t.getTime();
   }
-  const hour = now.getHours();
-  const { fromHour, toHour } = schedule;
-  const inWindow = fromHour <= toHour
-    ? hour >= fromHour && hour < toHour
-    : hour >= fromHour || hour < toHour;
-  return schedule.outsideWindow === "inactive" ? !inWindow : true;
+  return null;
 }
 
 /** Whether a fence is currently active, considering its schedule. */
 function isFenceActive(fence: Fence): boolean {
   if (!fence.schedule) return true;
   return isScheduleActive(fence.schedule);
+}
+
+/** Browser blocks holding `host` in `fences`. */
+export function blockingFences(fences: Fences, host: string): Fence[] {
+  return fencesFor(fences, host).filter(
+    (f) => f.enforcement.kind === "block" && f.enforcement.standing && f.enforcement.enforcement === "browser"
+  );
 }
 
 /** Every active fence on `host`. The hot-path read: pure, local, no round trip. */
@@ -377,6 +510,7 @@ export function fencesFor(fences: Fences, host: string): readonly Fence[] {
   }
   const out: Fence[] = [];
   for (const entry of Object.values(fences)) {
+    if (entry.budget?.exclude.some((x) => covers(x, needle))) continue;
     if (entry.domains.some((d) => covers(d, needle)) && isFenceActive(entry)) {
       out.push(entry);
     }
@@ -390,14 +524,22 @@ export function fencesFor(fences: Fences, host: string): readonly Fence[] {
  * Resolver- and device-enforced blocks are deliberately absent: they hold
  * somewhere the extension is not, and projecting them here would double-block
  * on this machine while reporting a firing that another surface actually made.
+ *
+ * `reach` narrows to one DNR projection; omitted, every standing browser block.
  */
-export function standingBlockHosts(fences: Fences): readonly string[] {
+export function standingBlockHosts(
+  fences: Fences,
+  reach?: "all" | "navigation"
+): readonly string[] {
   const out = new Set<string>();
   for (const entry of Object.values(fences)) {
     const e = entry.enforcement;
     if (e.kind !== "block" || !e.standing || e.enforcement !== "browser") {
       continue;
     }
+    // Budgeted fences project through `rationBlocks`, which carries their exclusions.
+    if (entry.budget) continue;
+    if (reach !== undefined && (e.reach ?? "all") !== reach) continue;
     if (!isFenceActive(entry)) continue;
     for (const domain of entry.domains) {
       out.add(domain);
@@ -461,7 +603,24 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
     if (entry.enforcement.kind !== "gate") {
       continue;
     }
+    // `click` is set on every rung, even when undefined, so laying a dwell rung
+    // over a click rung 0 (`gateAtRung`) clears the trigger rather than keeping it.
+    const rungs = entry.rungs?.map((r) => ({
+      everyMinutes: r.everyMinutes,
+      friction: r.friction,
+      click: r.click,
+      entry: r.entry,
+      proceed: { label: r.proceed.label, action: gateAction(r.proceed) },
+      abort: r.abort ?? { label: "Close the tab" },
+    }));
+    const { click, entry: onEntry } = entry.enforcement;
     out.push({
+      ...(rungs ? { rungs } : {}),
+      ...(click ? { click } : {}),
+      ...(onEntry ? { entry: onEntry } : {}),
+      ...(entry.deliveryProbability < 1 ? { deliveryProbability: entry.deliveryProbability } : {}),
+      ...(entry.windowMs === undefined ? {} : { windowMs: entry.windowMs }),
+      ...(entry.servesAreaId === undefined ? {} : { servesAreaId: entry.servesAreaId }),
       ruleId: entry.id,
       domains: entry.domains,
       everyMinutes: entry.enforcement.everyMinutes,

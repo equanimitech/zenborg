@@ -205,3 +205,52 @@ describe("wateringHoursRules — by_hand mode", () => {
     expect(validateRuleSpec(rules[0])).toEqual([]);
   });
 });
+
+const RATIONED_INPUT: WateringHoursInput = {
+  policyName: "youtube-weekend",
+  mode: "rationed",
+  window: { fromHour: 0, toHour: 0, weekdays: [Weekday.SAT, Weekday.SUN] },
+  serves,
+  returnsTo: ["area-wellness"],
+  restricts: { hosts: ["youtube.com", "youtu.be"] },
+  unlockNote: "Tomorrow.",
+  reach: "navigation",
+  budget: { minutes: 60, exclude: ["music.youtube.com"] },
+};
+
+describe("wateringHoursRules — rationed mode", () => {
+  it("emits one access-block browser rule per host, each carrying the pool budget", () => {
+    const rules = wateringHoursRules(RATIONED_INPUT);
+    expect(rules.map((r) => r.id)).toEqual([
+      "watering:youtube-weekend:browser:youtube.com",
+      "watering:youtube-weekend:browser:youtu.be",
+    ]);
+    for (const rule of rules) {
+      expect(rule.mechanism).toBe("access-block");
+      expect(validateRuleSpec(rule)).toEqual([]);
+      expect(carriesExit(rule.primitives[0])).toBe(true);
+      const p = rule.primitives[0];
+      if (p.kind !== "schedule") throw new Error("expected schedule");
+      expect(p.budget).toEqual({
+        minutes: 60,
+        pool: "youtube-weekend",
+        exclude: ["music.youtube.com"],
+      });
+      if (p.wraps.kind !== "cooldown") throw new Error("expected cooldown");
+      expect(p.wraps.enforcement).toEqual({
+        at: "browser",
+        reach: "navigation",
+      });
+    }
+  });
+
+  it("puts no budget on a dry rule", () => {
+    const [rule] = wateringHoursRules({
+      ...RATIONED_INPUT,
+      mode: "dry",
+      budget: undefined,
+    });
+    const p = rule.primitives[0];
+    expect(p.kind === "schedule" && p.budget).toBeFalsy();
+  });
+});
