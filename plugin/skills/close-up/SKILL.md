@@ -81,8 +81,20 @@ chain. For each oracle name in the chain:
    synthesis bullets.
 4. Write via its `write` command (`$CONTENT` = the full markdown entry).
 
+**`hey` replaces the whole day's entry and has no file or stdin flag.** So: `hey
+journal read --markdown --quiet` gives JSON whose `content` is HTML
+(`<div class="trix-content">…</div>`); insert the new block as HTML just before the
+wrapper's closing `</div>`, save to a temp file, then `hey journal write
+--content-html "$(cat "$FILE")"` (quotes and newlines survive the expansion). Read
+back to confirm earlier entries remain; abort on a failed or unexpectedly empty read
+(empty content deletes the entry).
+
 If no oracle is reachable, name the failure in the close line — silent skipping
 is how a dead beat survives for months.
+
+**Reply-only mode.** When `sunset` asked for this close-up during its fleet step, do
+not write the journal: reply to `sunset` with the entry text (`## HH:MM — …` + bullets
++ Carry-over line) and skip the write. `sunset` writes once, so entries are not lost.
 
 One entry per session. Don't stack a second one on the same session because he
 added a thought.
