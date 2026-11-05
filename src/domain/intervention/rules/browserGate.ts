@@ -1,5 +1,5 @@
 import type { AreaId, Duration, RuleId } from "../../attention/ids";
-import type { GateSpec } from "../Primitive";
+import type { GateSpec, GateTrigger } from "../Primitive";
 import type { DistalRef } from "../ProximalOutcome";
 import type { RuleSpec } from "../RuleSpec";
 
@@ -69,20 +69,63 @@ export interface BrowserDwellGateInput {
 }
 
 export function browserDwellGateRule(input: BrowserDwellGateInput): RuleSpec {
-  const everyMinutes = Number.isFinite(input.everyMinutes)
-    ? Math.max(MIN_EVERY_MINUTES, Math.round(input.everyMinutes))
-    : MIN_EVERY_MINUTES;
+  return browserGateRule({
+    ...input,
+    rungs: [
+      {
+        trigger: { type: "dwell", everyMinutes: input.everyMinutes },
+        friction: { type: "intention", prompt: input.prompt },
+        proceedLabel: input.proceedLabel,
+        abortLabel: input.abortLabel,
+      },
+    ],
+  });
+}
 
-  const gate: GateSpec = {
+/**
+ * One rung of a gate ladder: when it fires, what it asks, and its two labels.
+ * A rule with several rungs escalates by crossings: the Nth "proceed" today
+ * meets rung N+1 (the extension resets the count at local midnight).
+ */
+export interface GateRung {
+  readonly trigger: GateTrigger;
+  readonly friction: GateSpec["frictionType"];
+  readonly proceedLabel?: string;
+  readonly abortLabel?: string;
+}
+
+export interface BrowserGateInput
+  extends Omit<BrowserDwellGateInput, "everyMinutes" | "prompt"> {
+  /** At least one. More than one is a ladder. */
+  readonly rungs: readonly GateRung[];
+  /** Defaults to 0.7: whether a cue returns attention is the open question. */
+  readonly deliveryProbability?: number;
+}
+
+/** A dwell interval is whole minutes, never below one (see `MIN_EVERY_MINUTES`). */
+function normalTrigger(trigger: GateTrigger): GateTrigger {
+  if (trigger.type !== "dwell") return trigger;
+  const every = trigger.everyMinutes;
+  return {
+    type: "dwell",
+    everyMinutes: Number.isFinite(every)
+      ? Math.max(MIN_EVERY_MINUTES, Math.round(every))
+      : MIN_EVERY_MINUTES,
+  };
+}
+
+/** A browser gate of one rung or a ladder of several, every rung with its exit. */
+export function browserGateRule(input: BrowserGateInput): RuleSpec {
+  const primitives: GateSpec[] = input.rungs.map((rung) => ({
     kind: "gate",
-    trigger: { type: "dwell", everyMinutes },
-    frictionType: { type: "intention", prompt: input.prompt },
+    trigger: normalTrigger(rung.trigger),
+    frictionType: rung.friction,
     proceedAffordance: {
-      label: input.proceedLabel ?? "Still what I came for",
+      label: rung.proceedLabel ?? "Still what I came for",
       action: { type: "continue" },
     },
-    abortAffordance: { label: input.abortLabel ?? "Close the tab" },
-  };
+    abortAffordance: { label: rung.abortLabel ?? "Close the tab" },
+  }));
 
   return {
     id: input.id,
@@ -108,13 +151,14 @@ export function browserDwellGateRule(input: BrowserDwellGateInput): RuleSpec {
     },
     serves: input.serves,
     /**
-     * Below 1, deliberately. Unlike a host block, nobody knows whether this
-     * works: the whole open question is whether a recurring stopping cue returns
-     * attention or is merely absorbed. A rule shipped to find that out ships
-     * with a comparison condition, which is what a probability below 1 buys.
+     * Below 1 by default, deliberately. Unlike a host block, nobody knows
+     * whether this works: the whole open question is whether a recurring
+     * stopping cue returns attention or is merely absorbed. A rule shipped to
+     * find that out ships with a comparison condition, which is what a
+     * probability below 1 buys.
      */
-    deliveryProbability: 0.7,
-    primitives: [gate],
+    deliveryProbability: input.deliveryProbability ?? 0.7,
+    primitives,
   };
 }
 

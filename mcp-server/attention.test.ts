@@ -89,6 +89,50 @@ describe("getFootprints", () => {
   });
 });
 
+describe("getFootprints for one day", () => {
+  it("reads the day alone when given `from`, phase by phase", () => {
+    const vault = fs.mkdtempSync(path.join(os.tmpdir(), "zenborg-footprints-"));
+    fs.mkdirSync(path.join(vault, "log"));
+    const app = (h: number, m: number) =>
+      JSON.stringify({
+        id: `a${h}${m}`,
+        kind: "app_switched",
+        ts: at("2026-10-06", h, m),
+        sessionId: "",
+        payload: { app_name: "Slack" },
+      });
+    fs.writeFileSync(
+      path.join(vault, "log", "2026-10-06.desktop.jsonl"),
+      [app(9, 0), app(9, 10), app(9, 20)].join("\n"),
+    );
+    const collections = {
+      ...empty,
+      areas: {
+        work: { id: "work", name: "Work", surfaces: { apps: ["Slack"] } },
+      },
+      phaseConfigs: {
+        am: { phase: "MORNING", order: 0, startHour: 6, endHour: 12 },
+      },
+    } as unknown as Parameters<typeof getFootprints>[1];
+    const r = getFootprints(vault, collections, { from: "2026-10-06" });
+    expect(r.window).toEqual({ from: "2026-10-06", to: "2026-10-06" });
+    expect(r.trace).toEqual([
+      {
+        day: "2026-10-06",
+        moments: [],
+        unplanted: [
+          {
+            phase: "MORNING",
+            areaName: "Work",
+            surface: "desktop",
+            minutes: 20,
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe("footprintParamsError", () => {
   it("refuses `to` without `from`, both forms at once, and ranges over 31 days", () => {
     expect(footprintParamsError({ to: "2026-10-11" })).toMatch(/needs `from`/);

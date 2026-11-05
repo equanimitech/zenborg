@@ -31,18 +31,37 @@ import {
 import { tabUuid, type TabMap } from "./tabs";
 import { appendEvent, countEvents, deleteOldestEvents } from "./log";
 import {
+  clickGateQuery,
   isArmQuery,
   isGateQuery,
   sensorAllowed,
   validateSensorMessage,
 } from "../sensors/events";
 import { derivedObserveDomains } from "../watchlist/store";
-import { evaluateGates } from "../friction/gate/decide";
+import {
+  evaluateClickGate,
+  evaluateGates,
+  recordProceed,
+  type GateVerdict,
+} from "../friction/gate/decide";
+import { clickGatesOf } from "../friction/gate/click";
 import { evaluateMomentGate } from "../friction/gate/moment";
+import {
+  gateMomentFor,
+  readReflectRequest,
+  readStartRequest,
+  reflectionDue,
+  type GateSession,
+  type StartOffer,
+} from "../friction/gate/intention";
+import { queryTodayMoments, reflectOnMoment, switchMoment } from "../relay/client";
 import { fencesFor, gatesFrom } from "../fence/parse";
-import { fenceCache } from "../fence/store";
+import { liveFences } from "../fence/store";
+import { blockInfo, usePass } from "../fence/pass";
+import { readBlockInfoRequest, readPassRequest } from "../fence/lifts";
 import type { Fence, Fences } from "../fence/types";
 import {
+  decisionPointEvent,
   interventionEvent,
   isSettlement,
   settlementKind,
@@ -70,6 +89,22 @@ function fenceGatesFor(fences: Fences, host: string) {
   return gatesFrom(onHost);
 }
 
+/** The switch an intention gate started, until its reflection is asked. */
+const gateSession = storage.defineItem<GateSession | null>("local:friction:gateSession", { fallback: null });
+
+/**
+ * A firing gate carries the start offer when a moment for this host is planted
+ * today. Asked only on a firing, so a quiet poll makes no host round trip.
+ */
+async function withStartOffer<V extends { readonly fire?: boolean }>(
+  verdict: V,
+  domain: string
+): Promise<V & { start?: StartOffer }> {
+  if (verdict.fire !== true) return verdict;
+  const offer = gateMomentFor(domain, (await queryTodayMoments()).moments);
+  return offer === null ? verdict : { ...verdict, start: offer };
+}
+
 const tabMapItem = storage.defineItem<TabMap>("session:activity:tabMap", { fallback: {} });
 const focusSinceItem = storage.defineItem<number | null>("session:activity:focusSince", { fallback: null });
 const routeByTab = storage.defineItem<Record<number, string | null>>("session:activity:routeByTab", { fallback: {} });
@@ -78,7 +113,7 @@ const routeByTab = storage.defineItem<Record<number, string | null>>("session:ac
  * Register all attention-event listeners. Must be called synchronously
  * from the background entrypoint so MV3 event-driven wakeups re-attach.
  */
-export function startActivityWriter(): void {
+export function startActivityWriter(): WriteFn {
   const sessionId = crypto.randomUUID();
 
   /**
@@ -104,6 +139,16 @@ export function startActivityWriter(): void {
         sessionId,
       })
     );
+  };
+
+  /** Every decision point the verdict reached, delivered or withheld. Written before
+   * `intervention_shown`, so the draw precedes what it caused. */
+  const writePoints = (verdict: GateVerdict, domain: string): void => {
+    for (const point of verdict.points ?? []) {
+      void appendEvent(
+        decisionPointEvent({ point, domain, id: crypto.randomUUID(), ts: Date.now(), sessionId })
+      );
+    }
   };
 
   const write: WriteFn = (kind, payload, durationMs) => {
@@ -271,18 +316,20 @@ export function startActivityWriter(): void {
     // Arm handshake: a content script asks whether to observe at all.
     if (isArmQuery(message)) {
       return derivedObserveDomains()
-        .then(async (observe) => ({
-          observed: sensorAllowed(domain, observe),
+        .then(async (observe) => {
           // The fence cache is consulted here as well as in the poll, or a
           // fence would never gate its page in the first place. One store since
           // migration step 5: the policy mirror's gate list came from
           // `~/.zenborg/keel/rules/*.json`, which is retired.
-          gate:
-            domain === null
-              ? null
-              : (fenceGatesFor(await fenceCache.getValue(), domain)[0] ?? null),
-        }))
-        .catch(() => ({ observed: false, gate: null }));
+          const gates = domain === null ? [] : fenceGatesFor(await liveFences(), domain);
+          return {
+            observed: sensorAllowed(domain, observe),
+            gate: gates[0] ?? null,
+            // Selectors only: the page learns which controls to hold, never a verdict.
+            clickGates: clickGatesOf(gates),
+          };
+        })
+        .catch(() => ({ observed: false, gate: null, clickGates: [] }));
     }
 
     // "Close the tab" from a gate. The page cannot close a tab it did not
@@ -312,10 +359,14 @@ export function startActivityWriter(): void {
       // null otherwise. Null falls through to the area's own dwell gates —
       // which is also what a moment with nothing declared does, so the area
       // policy remains the floor rather than being replaced by one.
-      return evaluateMomentGate(domain)
-        .then(async (moment) => {
-          if (moment !== null) {
-            return moment;
+      // The end of an intention gate's switch, while on its host: this poll
+      // asks what it gave instead of gating. Asked once.
+      return gateSession
+        .getValue()
+        .then(async (session) => {
+          if (session !== null && reflectionDue(session, domain, Date.now())) {
+            await gateSession.setValue({ ...session, asked: true });
+            return { fire: false, dwellMs: 0, reflect: { name: session.name } };
           }
           // Every gate on the domain, not the first — see `evaluateGates`. A second
           // rule used to be dropped on the floor here.
@@ -324,21 +375,95 @@ export function startActivityWriter(): void {
           // policy mirror because the two carried different rules from different
           // files; step 5 retired the second file, so the union has nothing left
           // to add. The read is local, so the hot path makes no round trip.
-          return evaluateGates(fenceGatesFor(await fenceCache.getValue(), domain));
-        })
-        .then((verdict) => {
+          const verdict =
+            (await evaluateMomentGate(domain)) ??
+            (await evaluateGates(fenceGatesFor(await liveFences(), domain)));
           // The delivery, recorded here rather than in the page for the same
           // reason the firing is: a content script that could decline to report
           // would earn a free pass by refreshing. `intervention_shown` is a
           // completion in `logs` — there is no second collection.
+          writePoints(verdict, domain);
           if (verdict.fire && verdict.ruleId !== undefined) {
             writeDelivery("intervention_shown", {
               domain,
               ruleId: verdict.ruleId,
               primitive: "gate",
+              ..."rung" in verdict && verdict.rung !== undefined ? { rung: verdict.rung } : {},
             });
           }
-          return verdict;
+          return withStartOffer(verdict, domain);
+        })
+        .catch(() => ({ fire: false }));
+    }
+
+    // The intention gate's start. The page names a moment and a duration; the
+    // background starts it only if it is the one this attested host is offered,
+    // and the switch goes through the writer, never a vault write from here.
+    const start = readStartRequest(message);
+    if (start !== null) {
+      if (domain === null) {
+        return Promise.resolve({ ok: false });
+      }
+      return queryTodayMoments()
+        .then(async (board) => {
+          const offer = gateMomentFor(domain, board.moments);
+          if (offer?.momentId !== start.momentId) return { ok: false };
+          const ok = await switchMoment(start.momentId, start.minutes);
+          if (ok) {
+            await gateSession.setValue({
+              domain,
+              momentId: offer.momentId,
+              name: offer.name,
+              intention: start.intention,
+              until: Date.now() + start.minutes * 60_000,
+            });
+          }
+          return { ok };
+        })
+        .catch(() => ({ ok: false }));
+    }
+
+    // The reflection at the end, or its skip. Only the session asked on this
+    // host is answered; a skip stores nothing.
+    const reflection = readReflectRequest(message);
+    if (reflection !== undefined) {
+      void gateSession
+        .getValue()
+        .then(async (session) => {
+          if (session === null || session.asked !== true || session.domain !== domain) return;
+          await gateSession.setValue(null);
+          if (reflection.text !== null) {
+            await reflectOnMoment(session.momentId, reflection.text, session.intention);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
+    // A click on a gated control. Decided and recorded here for the same reason
+    // the dwell poll is; the page names a rule, the domain is the attested one,
+    // and a rule not in force on that domain answers "no".
+    const clickRule = clickGateQuery(message);
+    if (clickRule !== null) {
+      if (domain === null) {
+        return Promise.resolve({ fire: false });
+      }
+      return liveFences()
+        .then((fences): Promise<GateVerdict> | GateVerdict => {
+          const gate = fenceGatesFor(fences, domain).find((g) => g.ruleId === clickRule);
+          return gate ? evaluateClickGate(gate) : { fire: false, dwellMs: 0 };
+        })
+        .then((verdict) => {
+          writePoints(verdict, domain);
+          if (verdict.fire && verdict.ruleId !== undefined) {
+            writeDelivery("intervention_shown", {
+              domain,
+              ruleId: verdict.ruleId,
+              primitive: "gate",
+              ...(verdict.rung !== undefined ? { rung: verdict.rung } : {}),
+            });
+          }
+          return withStartOffer(verdict, domain);
         })
         .catch(() => ({ fire: false }));
     }
@@ -348,6 +473,18 @@ export function startActivityWriter(): void {
     // sender tab, exactly as the sensor channel does.
     if (isSettlement(message)) {
       if (domain !== null) {
+        // A crossing is the person proceeding, counted here because the page is
+        // untrusted. Only a rule that actually gates this host counts: the page
+        // may lie about the id, but not into inflating one that is not in force.
+        if (message.proceeded) {
+          void liveFences()
+            .then((fences) => {
+              if (fenceGatesFor(fences, domain).some((g) => g.ruleId === message.ruleId)) {
+                return recordProceed(message.ruleId);
+              }
+            })
+            .catch(() => {});
+        }
         writeDelivery(settlementKind(message.proceeded), {
           domain,
           ruleId: message.ruleId,
@@ -355,6 +492,15 @@ export function startActivityWriter(): void {
         });
       }
       return;
+    }
+
+    // The block page: what holds on a host, and spending a pass. Only our own
+    // block page may ask; the checks and the writes are all on this side.
+    const pass = readPassRequest(message);
+    const infoHost = readBlockInfoRequest(message);
+    if (pass !== null || infoHost !== null) {
+      if (!sender.url?.startsWith(browser.runtime.getURL("/block.html"))) return;
+      return pass !== null ? usePass(pass.host, pass.reason, write) : blockInfo(infoHost as string);
     }
 
     const validated = validateSensorMessage(message);
@@ -390,6 +536,8 @@ export function startActivityWriter(): void {
       write(t.kind, undefined, t.durationMs);
     }
   });
+
+  return write;
 }
 
 /**

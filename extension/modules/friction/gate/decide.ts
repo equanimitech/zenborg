@@ -13,6 +13,9 @@ import { bouts, createDomain } from "../../domain";
 import { startOfLocalDay } from "@/modules/activity/events";
 import { queryEvents } from "@/modules/relay/client";
 import { storage } from "wxt/storage";
+import { crossingsOf, gateAtRung, NO_CROSSINGS, recordCrossing, type Crossings } from "./ladder";
+import { DEFAULT_WINDOW_MS, type DecisionPoint } from "../../fence/events";
+import { isArrival } from "./arrival";
 import { nextFiredAt, shouldGate, type GateReading } from "./state";
 
 /**
@@ -29,6 +32,18 @@ export type GateFriction =
   | { readonly type: "delay"; readonly seconds: number }
   | { readonly type: "breath"; readonly cycles: number };
 
+/** One rung of a ladder: everything that varies as the person crosses. */
+export interface DwellRung {
+  readonly everyMinutes: number;
+  readonly friction: GateFriction;
+  /** Click-trigger selectors for this rung; absent means a dwell rung. */
+  readonly click?: readonly string[];
+  /** Entry-trigger rung; absent means dwell (or click). */
+  readonly entry?: true;
+  readonly proceed: DwellGate["proceed"];
+  readonly abort: DwellGate["abort"];
+}
+
 /** A dwell gate as the extension sees it, pulled from ~/.zenborg/keel/rules. */
 export interface DwellGate {
   readonly ruleId: string;
@@ -43,6 +58,25 @@ export interface DwellGate {
       | { readonly type: "abort" };
   };
   readonly abort: { readonly label: string };
+  /**
+   * Click trigger: the selectors of the controls this gate stands in front of.
+   * Present, the gate fires on a click on a match (`evaluateClickGate`) and never
+   * on dwell; absent, it is a dwell gate.
+   */
+  readonly click?: readonly string[];
+  /**
+   * Entry trigger: the gate asks once when the person arrives at the host (`isArrival`)
+   * and never on dwell. Absent, it is a dwell gate (or a click gate).
+   */
+  readonly entry?: true;
+  /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click and per entry firing. */
+  readonly deliveryProbability?: number;
+  /** Outcome window from the vault record, for `decision_point`. */
+  readonly windowMs?: number;
+  /** `serves.areaId` from the vault record, for `decision_point`. */
+  readonly servesAreaId?: string;
+  /** Ladder: two or more rungs, indexed by today's crossings. Top-level fields mirror rung 0. */
+  readonly rungs?: readonly DwellRung[];
   /** @deprecated Pre-2026-08-08 mirror shape. Read only by `normalizeGate`. */
   readonly prompt?: string;
 }
@@ -80,6 +114,16 @@ export const gateFiredDay = storage.defineItem<string>("local:friction:gateFired
   fallback: "",
 });
 
+/** When each entry gate last saw an attended poll, keyed by rule id. Background only. */
+export const gateLastSeen = storage.defineItem<Record<string, number>>("local:friction:gateLastSeen", {
+  fallback: {},
+});
+
+/** Proceeds per rule today — the ladder's position. Written only by the background. */
+export const gateCrossings = storage.defineItem<Crossings>("local:friction:gateCrossings", {
+  fallback: NO_CROSSINGS,
+});
+
 /**
  * Day key on the SAME boundary the dwell read uses.
  *
@@ -90,7 +134,7 @@ export const gateFiredDay = storage.defineItem<string>("local:friction:gateFired
  * just after local midnight, which is exactly when a long night session is
  * running.
  */
-function dayKey(now: number): string {
+export function dayKey(now: number): string {
   return String(startOfLocalDay(now));
 }
 
@@ -131,6 +175,39 @@ export interface GateVerdict {
   readonly friction?: GateFriction;
   readonly proceed?: DwellGate["proceed"];
   readonly abort?: DwellGate["abort"];
+  /** Rung index the rule was on when it fired; 0 for a single-gate rule. */
+  readonly rung?: number;
+  /** Interval of the rung that fired, for picking among rules. */
+  readonly everyMinutes?: number;
+  /** One per decision point reached on this evaluation, delivered or withheld. */
+  readonly points?: readonly DecisionPoint[];
+}
+
+/** The decision point for `g` at `rung`: delivered iff `draw < p`. */
+export function decisionPoint(
+  g: DwellGate,
+  trigger: DecisionPoint["trigger"],
+  rung: number,
+  draw: number
+): DecisionPoint {
+  const p = g.deliveryProbability ?? 1;
+  const delivered = draw < p;
+  return {
+    ruleId: g.ruleId,
+    trigger,
+    delivered,
+    p,
+    draw,
+    rung,
+    windowMs: g.windowMs ?? DEFAULT_WINDOW_MS,
+    ...(g.servesAreaId === undefined ? {} : { servesAreaId: g.servesAreaId }),
+    ...(delivered ? {} : { reason: "draw" as const }),
+  };
+}
+
+/** The person chose to proceed on `ruleId`: one more crossing today. Background only. */
+export async function recordProceed(ruleId: string, now: number = Date.now()): Promise<void> {
+  await gateCrossings.setValue(recordCrossing(await gateCrossings.getValue(), dayKey(now), ruleId));
 }
 
 /**
@@ -142,15 +219,50 @@ export interface GateVerdict {
  */
 export async function evaluateGate(
   gate: DwellGate,
-  now: number = Date.now()
+  now: number = Date.now(),
+  draw: number = Math.random()
 ): Promise<GateVerdict> {
-  const g = normalizeGate(gate);
+  const base = normalizeGate(gate);
   const today = dayKey(now);
   if ((await gateFiredDay.getValue()) !== today) {
     await gateFiredDay.setValue(today);
     await gateFiredAt.setValue({});
   }
 
+  const { gate: g, rung } = gateAtRung(
+    base,
+    crossingsOf(await gateCrossings.getValue(), today, base.ruleId)
+  );
+  // A click rung never fires on dwell: that is the mid-game interruption it exists to end.
+  if (g.click !== undefined) {
+    return { fire: false, dwellMs: 0 };
+  }
+  if (g.entry) {
+    // Every attended poll refreshes the stay; only the first after a long absence asks.
+    // A withheld delivery (the draw) still consumes the arrival: once per visit, not
+    // "retry on the next poll until the dice land".
+    const seen = await gateLastSeen.getValue();
+    const arrived = isArrival(seen[g.ruleId] ?? null, now);
+    await gateLastSeen.setValue({ ...seen, [g.ruleId]: now });
+    if (!arrived) {
+      return { fire: false, dwellMs: 0 };
+    }
+    const point = decisionPoint(g, "entry", rung, draw);
+    if (!point.delivered) {
+      return { fire: false, dwellMs: 0, points: [point] };
+    }
+    return {
+      points: [point],
+      fire: true,
+      dwellMs: await dwellTodayFor(g.domains, now),
+      ruleId: g.ruleId,
+      friction: g.friction,
+      proceed: g.proceed,
+      abort: g.abort,
+      rung,
+      everyMinutes: g.everyMinutes,
+    };
+  }
   const dwellMs = await dwellTodayFor(g.domains, now);
   const fired = await gateFiredAt.getValue();
   const reading: GateReading = {
@@ -162,14 +274,61 @@ export async function evaluateGate(
   if (!shouldGate(reading)) {
     return { fire: false, dwellMs };
   }
+  // Advance even when the draw withholds: the point was reached, so it must not re-fire
+  // on the next poll.
   await gateFiredAt.setValue({ ...fired, [g.ruleId]: nextFiredAt(reading) });
+  const point = decisionPoint(g, "dwell", rung, draw);
+  if (!point.delivered) {
+    return { fire: false, dwellMs, points: [point] };
+  }
   return {
+    points: [point],
     fire: true,
     dwellMs,
     ruleId: g.ruleId,
     friction: g.friction,
     proceed: g.proceed,
     abort: g.abort,
+    rung,
+    everyMinutes: g.everyMinutes,
+  };
+}
+
+/**
+ * The verdict for a click on one of `gate`'s controls.
+ *
+ * The click itself is the decision point, so there is no interval to check: the
+ * rung is today's crossings, and the only reason not to fire is the delivery
+ * draw. `draw` is injectable so a test can pin it. A withheld delivery still
+ * carries its decision point; the click goes through as if no gate were there.
+ */
+export async function evaluateClickGate(
+  gate: DwellGate,
+  now: number = Date.now(),
+  draw: number = Math.random()
+): Promise<GateVerdict> {
+  const base = normalizeGate(gate);
+  const { gate: g, rung } = gateAtRung(
+    base,
+    crossingsOf(await gateCrossings.getValue(), dayKey(now), base.ruleId)
+  );
+  if (g.click === undefined) {
+    return { fire: false, dwellMs: 0 };
+  }
+  const point = decisionPoint(g, "click", rung, draw);
+  if (!point.delivered) {
+    return { fire: false, dwellMs: 0, points: [point] };
+  }
+  return {
+    points: [point],
+    fire: true,
+    dwellMs: await dwellTodayFor(g.domains, now),
+    ruleId: g.ruleId,
+    friction: g.friction,
+    proceed: g.proceed,
+    abort: g.abort,
+    rung,
+    everyMinutes: g.everyMinutes,
   };
 }
 
@@ -229,22 +388,32 @@ export function gateFor(gates: readonly DwellGate[], domain: string): DwellGate 
  */
 export async function evaluateGates(
   gates: readonly DwellGate[],
-  now: number = Date.now()
+  now: number = Date.now(),
+  draw: () => number = Math.random
 ): Promise<GateVerdict> {
+  const points: DecisionPoint[] = [];
   let best: GateVerdict = { fire: false, dwellMs: 0 };
   let bestEvery = -1;
   for (const gate of gates) {
-    const verdict = await evaluateGate(gate, now);
+    const verdict = await evaluateGate(gate, now, draw());
+    points.push(...(verdict.points ?? []));
     if (!verdict.fire) {
       if (!best.fire) {
         best = { ...best, dwellMs: Math.max(best.dwellMs, verdict.dwellMs) };
       }
       continue;
     }
-    if (!best.fire || gate.everyMinutes > bestEvery) {
+    const every = verdict.everyMinutes ?? gate.everyMinutes;
+    if (!best.fire || every > bestEvery) {
       best = verdict;
-      bestEvery = gate.everyMinutes;
+      bestEvery = every;
     }
   }
-  return best;
+  // Only one overlay shows: a due gate that drew "deliver" but lost to a rarer one
+  // was not delivered, and says why.
+  const shown = best.fire ? best.ruleId : undefined;
+  const settled = points.map((p) =>
+    p.delivered && p.ruleId !== shown ? { ...p, delivered: false, reason: "superseded" as const } : p
+  );
+  return { ...best, points: settled };
 }

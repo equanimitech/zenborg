@@ -1,5 +1,18 @@
 import { defineConfig } from "wxt";
 import tailwindcss from "@tailwindcss/vite";
+import pkg from "./package.json" with { type: "json" };
+
+// A version per build. package.json stays at 0.2.0, so every rebuild used to
+// ship the same manifest version and a stale service worker was
+// indistinguishable from a fresh one (that is how a pre-f0eb615 worker kept
+// asking for the retired `request_armed` without anyone seeing it).
+// major.minor from package.json, then days since 2026-01-01 and minute of the
+// UTC day: monotonic, unique per minute, each part well under Chrome's 65535.
+const built = new Date();
+const [major, minor] = pkg.version.split(".");
+const days = Math.floor((built.getTime() - Date.UTC(2026, 0, 1)) / 86_400_000);
+const minuteOfDay = built.getUTCHours() * 60 + built.getUTCMinutes();
+const buildVersion = `${major}.${minor}.${days}.${minuteOfDay}`;
 
 export default defineConfig({
   outDir: "dist",
@@ -28,6 +41,8 @@ export default defineConfig({
   }),
   manifest: {
     name: "zenborg",
+    version: buildVersion,
+    version_name: `${pkg.version} (built ${built.toISOString().slice(0, 16)}Z)`,
     // Stable extension ID: Chromium derives a deterministic ID from this
     // public key, so chrome.storage contents and granted permissions survive
     // every rebuild, reload, and browser restart. Public key is safe to commit;
@@ -59,19 +74,15 @@ export default defineConfig({
     //     runs from the extension's own log, so the permission had nothing left to
     //     justify it. An unused permission on a manifest that calls itself the
     //     privacy statement is worse than a missing feature.
-    permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon"],
-    // A keyboard path to the cooldown, so reaching for the lock costs less
-    // than reaching for the temptation. No popup to open, no menu to find.
-    commands: {
-      cooldown: {
-        suggested_key: { default: "Ctrl+Shift+K", mac: "Command+Shift+K" },
-        description: "Lock the watched domains for 2h",
-      },
-    },
+    //   • webNavigation (2026-10-24) hears one thing: a top-level load that DNR
+    //     blocked (net::ERR_BLOCKED_BY_CLIENT), so the tab can show zenborg's block
+    //     page and its pass instead of the browser's error page. Same warning as
+    //     `tabs`, nothing written from it but the redirect.
+    permissions: ["storage", "tabs", "activeTab", "declarativeNetRequest", "idle", "alarms", "nativeMessaging", "favicon", "webNavigation"],
     // Single shared instance in incognito so the porn Drogue's block holds
     // there too (where porn is most often browsed). The user must still flip
     // "Allow in incognito" once — see README. Shared storage = one source of
-    // truth for shields/cooldowns across normal + incognito.
+    // truth for shields across normal + incognito.
     incognito: "spanning",
     // WXT auto-discovers `entrypoints/newtab/index.html` and would register it
     // on its own, but the mapped filename depends on how the dev server names

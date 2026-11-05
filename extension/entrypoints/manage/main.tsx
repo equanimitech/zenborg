@@ -4,7 +4,7 @@
  * Replaces the vanilla-TS "areas" page (history + watchlist) with a React
  * app. History moves to zenborg harvest; watchlist management retires because
  * observe is now derived from fences ∪ area-map (Task 1). What is left is
- * read-mostly: fences, cooldown, area-map assignment, activity export.
+ * read-mostly: fences, area-map assignment, activity export.
  */
 
 import React from "react";

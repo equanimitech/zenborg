@@ -3,6 +3,7 @@ import {
   INITIAL_PLAYBACK,
   PAUSE_SETTLE_MS,
   SENSOR_KINDS,
+  clickGateQuery,
   finiteSeconds,
   isArmQuery,
   isSponsoredLabel,
@@ -131,6 +132,21 @@ describe("isArmQuery (content script asks: am I observed?)", () => {
     expect(isArmQuery({ type: "kairos-sensor", kind: "video_ended" })).toBe(false);
     expect(isArmQuery(null)).toBe(false);
     expect(isArmQuery("kairos-sensor-arm")).toBe(false);
+  });
+});
+
+describe("clickGateQuery (a click gate asks for its verdict)", () => {
+  it("returns the named rule id", () => {
+    expect(clickGateQuery({ type: "kairos-gate-click", ruleId: "chess-ladder" })).toBe("chess-ladder");
+  });
+
+  it("rejects a missing, empty, oversized or non-string id, and other messages", () => {
+    expect(clickGateQuery({ type: "kairos-gate-click" })).toBeNull();
+    expect(clickGateQuery({ type: "kairos-gate-click", ruleId: "" })).toBeNull();
+    expect(clickGateQuery({ type: "kairos-gate-click", ruleId: "x".repeat(129) })).toBeNull();
+    expect(clickGateQuery({ type: "kairos-gate-click", ruleId: 7 })).toBeNull();
+    expect(clickGateQuery({ type: "kairos-gate-check" })).toBeNull();
+    expect(clickGateQuery(null)).toBeNull();
   });
 });
 

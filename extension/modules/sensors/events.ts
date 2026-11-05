@@ -95,6 +95,16 @@ export function isGateQuery(msg: unknown): boolean {
   );
 }
 
+/** A click gate asking for its verdict. Returns the rule id the page names, or
+ * null for anything else. The id is only a claim: the background answers only
+ * for a click gate actually in force on the sender's attested domain. */
+export function clickGateQuery(msg: unknown): string | null {
+  if (typeof msg !== "object" || msg === null) return null;
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "kairos-gate-click") return null;
+  return typeof m.ruleId === "string" && m.ruleId !== "" && m.ruleId.length <= 128 ? m.ruleId : null;
+}
+
 /**
  * Reduce a media time (seconds — possibly NaN before metadata loads, or
  * negative/Infinity on a detached element) to a finite, non-negative
