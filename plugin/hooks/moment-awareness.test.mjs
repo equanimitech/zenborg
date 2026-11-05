@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,6 +67,33 @@ test("no active moment lists what is planted and proposes nothing", () => {
   assert.match(out, /No active intention/);
   assert.match(out, /Planted this phase: "write spec"/);
   assert.doesNotMatch(out, /Propose|set_active_moment|spawn_spontaneous|add_moment/);
+});
+
+test("the cached cycle spend rides on the same line; no cache, no change", () => {
+  const vault = garden(wakingDayKey());
+  assert.doesNotMatch(run(vault), /Cycle:/);
+  mkdirSync(join(vault, "cache"));
+  writeFileSync(
+    join(vault, "cache", "cycle-spend.json"),
+    JSON.stringify({
+      computedAt: new Date().toISOString(),
+      allocations: [
+        { name: "Data trust", appetiteDays: 3, days: 2, pct: 67 },
+        { name: "Rente", appetiteDays: 5, days: 4.1, pct: 82 },
+      ],
+      unattributed: { pct: 18 },
+    }),
+  );
+  const out = run(vault);
+  assert.match(out, /Cycle: Rente 4\.1\/5 d · 82 % · Data trust 2\/3 d · unattributed 18 %\.>$/);
+  assert.equal(out.match(/<zenborg-intention/g).length, 1);
+});
+
+test("a malformed cache never blocks the hook", () => {
+  const vault = garden(wakingDayKey());
+  mkdirSync(join(vault, "cache"));
+  writeFileSync(join(vault, "cache", "cycle-spend.json"), "{nope");
+  assert.match(run(vault), /active "write spec"/);
 });
 
 test("the vendored staleness rule is byte-identical to src/domain", () => {

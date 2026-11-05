@@ -29,3 +29,59 @@ export function staleReason(
   if (moment.day === today) return null;
   return `moment is allocated to ${moment.day ?? "no day"}, not today`;
 }
+
+/**
+ * The pointer as stored. `until` + `returnTo` make it a timed switch: the
+ * pointer names `momentId` until `until`, then the one it switched away from.
+ * Switch, don't stack: there is only ever one place to return to.
+ */
+export interface PointerAt {
+  momentId: string;
+  at: string;
+}
+export interface Pointer extends PointerAt {
+  until?: string;
+  returnTo?: PointerAt;
+}
+
+/**
+ * The pointer in force at `now`. Expiry is resolved lazily, on read, the same
+ * way by every reader: past `until` the pointer is `returnTo`, or nothing. The
+ * file is left as written; the next write starts from what is in force. An
+ * unparseable `until` reads as untimed (fail soft).
+ */
+export function resolvePointer(
+  p: Pointer | null | undefined,
+  now: number,
+): Pointer | null {
+  if (!p?.momentId) return null;
+  if (!p.until || !(Date.parse(p.until) <= now)) return p;
+  return p.returnTo?.momentId
+    ? { momentId: p.returnTo.momentId, at: p.returnTo.at }
+    : null;
+}
+
+/**
+ * The pointer after switching to `momentId` at `at`. Without `minutes` it is a
+ * plain set (no timer). With `minutes` it returns to what was in force — or,
+ * when that was itself a timed switch, to where that one would return, so a
+ * second switch never nests. `current` must already be resolved.
+ */
+export function switchPointer(
+  current: Pointer | null,
+  momentId: string,
+  at: string,
+  minutes?: number,
+): Pointer {
+  if (!minutes || minutes <= 0) return { momentId, at };
+  const base = current?.until ? current.returnTo : current;
+  const until = new Date(Date.parse(at) + minutes * 60_000).toISOString();
+  return {
+    momentId,
+    at,
+    until,
+    ...(base?.momentId && base.momentId !== momentId
+      ? { returnTo: { momentId: base.momentId, at: base.at } }
+      : {}),
+  };
+}

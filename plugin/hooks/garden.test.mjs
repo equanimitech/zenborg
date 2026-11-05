@@ -19,7 +19,13 @@ test("a fresh active moment: status only, no band", () => {
     vault({ active: { momentId: "n", at: at(8).toISOString() }, moments: { n: filmMoment("MORNING") } }),
     at(9),
   );
-  assert.deepEqual(r, { status: "≋ 🍿 film", band: null });
+  assert.deepEqual(r, { status: "≋ 🍿 film · 60m", band: null });
+});
+
+test("a timed switch counts down to its until", () => {
+  const active = { momentId: "n", at: at(8).toISOString(), until: at(9, 15).toISOString() };
+  const r = reading(vault({ active, moments: { n: filmMoment("MORNING") } }), at(9));
+  assert.equal(r.status, "≋ 🍿 film · 15m left");
 });
 
 test("an active moment from another phase offers three of this phase's moments, in order", () => {
@@ -174,4 +180,69 @@ test("band habits: a declared path beats the name fallback, deepest prefix wins"
   const first = (cwd) => reading(vault({ areas: A, habits }), at(9), cwd).band.taps[0].habitId;
   assert.equal(first("/w/zen/src"), "d1");
   assert.equal(first("/w/zen/deep/x"), "k1");
+});
+
+const timed = (extra, active = { at: at(8).toISOString() }, now = at(8, 23)) =>
+  reading(
+    vault({ active: { momentId: "n", ...active }, moments: { n: { ...filmMoment("MORNING"), ...extra } } }),
+    now,
+  ).status;
+
+test("timer: elapsed minutes without a duration, floored, 0m under a minute", () => {
+  assert.equal(timed({}), "≋ 🍿 film · 23m");
+  assert.equal(timed({}, undefined, new Date(at(8).getTime() + 30_000)), "≋ 🍿 film · 0m");
+});
+
+test("timer: minutes left with a duration, rounded up; quiet once time is up", () => {
+  assert.equal(timed({ durationMin: 30 }), "≋ 🍿 film · 7m left");
+  assert.equal(timed({ durationMin: 23 }), "≋ 🍿 film");
+  assert.equal(timed({ durationMin: 20 }), "≋ 🍿 film");
+});
+
+test("timer: no active.at means no counter", () => {
+  assert.equal(timed({}, {}), "≋ 🍿 film");
+});
+
+const { resolveNow } = await import("./garden.ts");
+const nowVault = () =>
+  vault({
+    areas: { ...areas, th: { id: "th", name: "Themia", surfaces: { paths: ["/w/themia"] } } },
+    moments: {
+      s: moment("s", "Stratégie", "MORNING", { emoji: "♟️" }),
+      l: moment("l", "lunch", "AFTERNOON"),
+      c: { id: "c", name: "call", emoji: "📞" },
+      x: { id: "x", name: "old call", day: "2026-10-20", phase: "MORNING" },
+    },
+    habits: { h: { id: "h", name: "singing", emoji: "🎸", phase: "EVENING" }, g: { id: "g", name: "gone", isArchived: true } },
+  });
+const plan = (words, cwd) => resolveNow(nowVault(), words, at(9), cwd);
+
+test("/now resolves: this phase, other phase, board, habit, new", () => {
+  assert.deepEqual(plan("strat"), { kind: "set", momentId: "s", text: "≋ ♟️ Stratégie, now" });
+  assert.deepEqual(plan("lun"), { kind: "set", momentId: "l", text: "≋ lunch, now" });
+  assert.deepEqual(plan("call"), {
+    kind: "move", momentId: "c", day: TODAY, phase: "MORNING", text: "≋ 📞 call, from the board",
+  });
+  assert.deepEqual(plan("sing"), {
+    kind: "plant", habitId: "h", day: TODAY, phase: "MORNING", text: "≋ 🎸 singing, planted",
+  });
+  assert.equal(plan("gone").kind, "create");
+  assert.deepEqual(plan("deep work", "/w/themia/x"), {
+    kind: "create", name: "deep work", areaId: "th", day: TODAY, phase: "MORNING",
+    text: '≋ new moment "deep work" planted in Themia',
+  });
+  assert.equal(plan("deep work").text, '≋ new moment "deep work" planted');
+});
+
+test("/now: more than 3 new words refuses, no words hints", () => {
+  assert.deepEqual(plan("a b c d"), { kind: "reply", text: "now: 3 words or fewer, nothing changed" });
+  assert.deepEqual(plan(""), { kind: "reply", text: "now: Stratégie" });
+});
+
+test("a label that already starts with the glyph is not prefixed twice", () => {
+  const v = vault({
+    moments: { s: { id: "s", name: "zenborg", emoji: "≋", day: TODAY, phase: "MORNING" } },
+    active: { momentId: "s", at: new Date(at(9).getTime() - 60_000).toISOString() },
+  });
+  assert.equal(reading(v, at(9)).status, "≋ zenborg · 1m");
 });

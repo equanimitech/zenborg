@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::{Local, Timelike, TimeZone};
 use serde_json::{json, Value};
@@ -44,6 +45,61 @@ fn read_json(path: &Path) -> Value {
 
 fn read_collection(root: &Path, name: &str) -> Value {
     read_json(&root.join(format!("{name}.json")))
+}
+
+/// The moment the pointer names at `now_ms`. Mirrors `resolvePointer` in
+/// `src/domain/attention/ActiveMoment.ts`: a timed switch past its `until`
+/// reads as its `returnTo`, or none. An unparseable `until` reads as untimed.
+fn resolve_active(pointer: &Value, now_ms: i64) -> Option<String> {
+    let id = pointer.get("momentId").and_then(|v| v.as_str()).filter(|s| !s.is_empty())?;
+    let expired = pointer
+        .get("until")
+        .and_then(|v| v.as_str())
+        .and_then(|u| chrono::DateTime::parse_from_rfc3339(u).ok())
+        .is_some_and(|u| u.timestamp_millis() <= now_ms);
+    if !expired {
+        return Some(id.to_string());
+    }
+    pointer
+        .get("returnTo")
+        .and_then(|r| r.get("momentId"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
+fn active_moment_id(vault: &Path) -> Option<String> {
+    resolve_active(
+        &read_json(&vault.join("activeMoment.json")),
+        chrono::Utc::now().timestamp_millis(),
+    )
+}
+
+/// Ask the writer. The extension is a reader of the vault, so a state change
+/// runs `zenborg-mcp` — the sibling binary in the app bundle — as a one-shot
+/// CLI rather than writing here. Its stdout is captured, never forwarded:
+/// this process's stdout is the native messaging channel.
+fn run_mcp(vault: &Path, args: &[&str]) -> Result<Value, String> {
+    // ponytail: sibling-of-exe only; a dev build has no bundled zenborg-mcp and fails soft
+    let bin = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .with_file_name("zenborg-mcp");
+    let out = Command::new(&bin)
+        .args(args)
+        .arg("--vault")
+        .arg(vault)
+        .output()
+        .map_err(|e| format!("{}: {e}", bin.display()))?;
+    let reply: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
+    if out.status.success() {
+        Ok(reply)
+    } else {
+        Err(reply
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("zenborg-mcp refused")
+            .to_string())
+    }
 }
 
 // ── Native messaging protocol ───────────────────────────────────────────
@@ -273,10 +329,9 @@ fn handle_request_policy(vault: &Path) {
 
     // Moment friction from active moment
     let mut moment_friction = Value::Null;
-    let active = read_json(&vault.join("activeMoment.json"));
-    if let Some(moment_id) = active.get("momentId").and_then(|v| v.as_str()) {
+    if let Some(moment_id) = active_moment_id(vault) {
         let moments = read_collection(vault, "moments");
-        if let Some(moment) = moments.get(moment_id) {
+        if let Some(moment) = moments.get(&moment_id) {
             let today = today_str();
             if moment.get("day").and_then(|v| v.as_str()) == Some(&today) {
                 let allow: Vec<String> = moment
@@ -303,8 +358,7 @@ fn handle_request_policy(vault: &Path) {
 }
 
 fn handle_request_active_moment(vault: &Path) {
-    let active = read_json(&vault.join("activeMoment.json"));
-    let moment_id = match active.get("momentId").and_then(|v| v.as_str()) {
+    let moment_id = match active_moment_id(vault) {
         Some(id) => id,
         None => {
             write_message(&json!({"type": "active_moment", "moment": null}));
@@ -316,7 +370,7 @@ fn handle_request_active_moment(vault: &Path) {
     let areas = read_collection(vault, "areas");
     let today = today_str();
 
-    let moment = match moments.get(moment_id) {
+    let moment = match moments.get(&moment_id) {
         Some(m) if m.get("day").and_then(|v| v.as_str()) == Some(&today) => m,
         _ => {
             write_message(&json!({"type": "active_moment", "moment": null}));
@@ -343,8 +397,8 @@ fn handle_request_today_moments(vault: &Path) {
     let moments = read_collection(vault, "moments");
     let areas = read_collection(vault, "areas");
     let configs = read_collection(vault, "phaseConfigs");
-    let active = read_json(&vault.join("activeMoment.json"));
-    let active_id = active.get("momentId").and_then(|v| v.as_str()).unwrap_or("");
+    let habits = read_collection(vault, "habits");
+    let active_id = active_moment_id(vault).unwrap_or_default();
 
     let mut today_moments: Vec<(i64, Value)> = Vec::new();
     if let Value::Object(map) = &moments {
@@ -356,6 +410,20 @@ fn handle_request_today_moments(vault: &Path) {
             let area = areas.get(area_id);
             let mid = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let order = m.get("order").and_then(|v| v.as_i64()).unwrap_or(0);
+            // What the intention gate matches a host against: the moment's refs as
+            // hostnames, and the name of the habit it waters.
+            let hosts: Vec<String> = m
+                .get("refs")
+                .and_then(|v| v.as_array())
+                .map(|refs| refs.iter().filter_map(|r| r.as_str()).filter_map(hostname_from_url).collect())
+                .unwrap_or_default();
+            let habit_name = m
+                .get("habitId")
+                .and_then(|v| v.as_str())
+                .and_then(|h| habits.get(h))
+                .and_then(|h| h.get("name"))
+                .cloned()
+                .unwrap_or(Value::Null);
 
             today_moments.push((order, json!({
                 "id": mid,
@@ -368,6 +436,8 @@ fn handle_request_today_moments(vault: &Path) {
                 "startTime": m.get("startTime"),
                 "durationMin": m.get("durationMin"),
                 "status": m.get("status").unwrap_or(&json!("accepted")),
+                "hosts": hosts,
+                "habitName": habit_name,
             })));
         }
     }
@@ -454,6 +524,36 @@ fn handle_request_events(msg: &Value, vault: &Path) {
     }
 }
 
+/// The intention gate's start: a timed switch, through the writer.
+fn handle_switch_moment(msg: &Value, vault: &Path) {
+    let id = msg.get("momentId").and_then(|v| v.as_str()).filter(|s| !s.is_empty() && s.len() <= 128);
+    let minutes = msg.get("minutes").and_then(|v| v.as_u64()).filter(|m| (1..=240).contains(m));
+    let result = match (id, minutes) {
+        (Some(id), Some(min)) => run_mcp(vault, &["switch-moment", id, &min.to_string()]),
+        _ => Err("bad switch_moment".to_string()),
+    };
+    write_message(&match result {
+        Ok(reply) => json!({"type": "moment_switched", "ok": true, "pointer": reply.get("value")}),
+        Err(e) => json!({"type": "moment_switched", "ok": false, "error": e}),
+    });
+}
+
+/// The reflection at the end of a gate's switch, through the writer.
+fn handle_reflect(msg: &Value, vault: &Path) {
+    let field = |k: &str| msg.get(k).and_then(|v| v.as_str()).filter(|s| s.len() <= 500);
+    let result = match (field("momentId"), field("text")) {
+        (Some(id), Some(text)) if !id.is_empty() && !text.trim().is_empty() => run_mcp(
+            vault,
+            &["reflect", id, text, "--intention", field("intention").unwrap_or("")],
+        ),
+        _ => Err("bad reflect".to_string()),
+    };
+    write_message(&match result {
+        Ok(_) => json!({"type": "reflected", "ok": true}),
+        Err(e) => json!({"type": "reflected", "ok": false, "error": e}),
+    });
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 
 fn main() {
@@ -481,11 +581,51 @@ fn main() {
             "request_active_moment" => handle_request_active_moment(&vault),
             "request_today_moments" => handle_request_today_moments(&vault),
             "request_events" => handle_request_events(&msg, &vault),
+            "switch_moment" => handle_switch_moment(&msg, &vault),
+            "reflect" => handle_reflect(&msg, &vault),
             // Never drop silently: a stale extension speaking a retired
             // message name (request_armed, before f0eb615) must hear why it
             // gets nothing back.
             other => write_message(&json!({"type": "error", "error": "unknown_type", "received": other})),
         }
+    }
+}
+
+#[cfg(test)]
+mod pointer_tests {
+    use super::*;
+
+    const T0: i64 = 1_793_476_800_000; // 2026-10-31T20:00:00Z
+
+    #[test]
+    fn old_pointer_without_new_fields() {
+        let p = json!({"momentId": "a", "at": "2026-10-31T20:00:00.000Z"});
+        assert_eq!(resolve_active(&p, T0 + 999_999_999), Some("a".into()));
+    }
+
+    #[test]
+    fn timed_switch_returns_on_expiry() {
+        let p = json!({
+            "momentId": "yt", "at": "2026-10-31T20:00:00.000Z",
+            "until": "2026-10-31T20:30:00.000Z",
+            "returnTo": {"momentId": "work", "at": "2026-10-31T18:00:00.000Z"},
+            "future": "unknown fields are ignored"
+        });
+        assert_eq!(resolve_active(&p, T0 + 29 * 60_000), Some("yt".into()));
+        assert_eq!(resolve_active(&p, T0 + 30 * 60_000), Some("work".into()));
+    }
+
+    #[test]
+    fn timed_switch_without_return_clears() {
+        let p = json!({"momentId": "yt", "at": "x", "until": "2026-10-31T20:15:00.000Z"});
+        assert_eq!(resolve_active(&p, T0 + 15 * 60_000), None);
+    }
+
+    #[test]
+    fn empty_or_malformed() {
+        assert_eq!(resolve_active(&json!({}), T0), None);
+        let p = json!({"momentId": "a", "at": "x", "until": "soon"});
+        assert_eq!(resolve_active(&p, T0), Some("a".into()));
     }
 }
 

@@ -2,7 +2,7 @@
  * zenborg block page. The background sends a DNR-blocked top-level load here.
  *
  * It shows what holds (the unlock note) and, on a time block, a pass: one line
- * of why, then "Use a pass, N of 4 left in <month>". The page decides nothing
+ * of why, then "Use a pass, N of 4 left in <month>" (counted for this domain). The page decides nothing
  * and writes nothing; it asks the background, which checks and records.
  */
 import "@/styles/fonts.css";

@@ -101,6 +101,8 @@ export interface Fence {
   readonly rungs?: readonly GateRungSpec[];
   /** When set, the fence holds inside this window (and outside it only on `passthrough`). */
   readonly schedule?: ScheduleWindow;
+  /** The watering policy's own pass pool, when its rule carries one. */
+  readonly pool?: { readonly policy: string; readonly perMonth: number; readonly hours: number };
   /** Rationed watering: holds only once the pool's minutes today reach `minutes`. */
   readonly budget?: { readonly minutes: number; readonly pool: string; readonly exclude: readonly string[] };
   /**

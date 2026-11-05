@@ -56,7 +56,10 @@ One JSON file per collection, each a **JSON object keyed by entity UUID** (not a
 the list of record.
 
 Plus one **singleton** file that is not a collection: `activeMoment.json`, a
-`{ momentId, at }` pointer naming the moment that IS the current intention. It is
+`{ momentId, at }` pointer naming the moment that IS the current intention. A timed
+switch adds `until` + `returnTo: { momentId, at }`; every reader resolves expiry
+lazily with `resolvePointer` (`src/domain/attention/ActiveMoment.ts`, mirrored in the
+native host's `resolve_active`) — no timer process. It is
 deliberately outside `DomainModelRegistry`, export/import and the synced stores — it has
 its own shape and its own module (`src/infrastructure/vault/active-moment.ts`). Adding
 another singleton is a design decision; the parity test in
@@ -69,7 +72,9 @@ app must not trash the real vault.
 
 - **One writer per collection.** Zenborg is the writer for every collection above, and for
   `activeMoment`. The plugin reads `areas`, `dayNotes` and `activeMoment` live. Readers
-  never mutate — not even to add a missing record.
+  never mutate — not even to add a missing record. Declared plugin writes, caches only:
+  `<vault>/cache/spend-warnings/` (per-session warned level) and the spend cache
+  refresh it triggers via `zenborg-mcp refresh-spend`.
 - **`id` is a UUID.** Stable, opaque, never regenerated. The filename is the id, never a
   slug of the name.
 - **Time is UTC, ISO-8601, milliseconds.** Local time is computed at render, never stored.

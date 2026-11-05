@@ -12,6 +12,12 @@ const BAND = {
   surface: 'terminal',
   props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
+const HINT = {
+  plugin: 'zenborg',
+  component: 'PromptHint',
+  surface: 'terminal',
+  props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
+} as const
 const TOOLS = ['mcp__zenborg__set_active_moment', 'mcp__zenborg__add_moment']
 
 const base = () => ({
@@ -24,13 +30,13 @@ const base = () => ({
 
 // Stands for the engine: the vault on disk, the clock, the zenborg MCP tools.
 // A successful set_active_moment moves the pointer, as the app would.
-const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]; fail?: boolean } = {}) => {
+const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]; fail?: boolean; cwd?: string } = {}) => {
   const calls: { tool: string; input: Record<string, unknown> }[] = []
   const statuses: (string | undefined)[] = []
   const toasts: string[] = []
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/g' : undefined }))
   on('clock.now', () => ({ value: NOW }))
-  on('session.cwd', () => ({ value: '/home/g/work' }))
+  on('session.cwd', () => ({ value: opts.cwd ?? '/home/g/work' }))
   on('fs.read', (_, e) => {
     const name = e.path.replace(ROOT, '')
     if (!(name in files)) throw new Error(`ENOENT ${e.path}`)
@@ -42,7 +48,7 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
     const { tool, tool_use_id: _envelope, ...input } = e as { tool: string; tool_use_id: string } & Record<string, unknown>
     calls.push({ tool, input })
     if (opts.fail) return { result: {}, text: 'Error: no', isError: true }
-    if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ created: { id: 'new1' } }) }
+    if (tool.endsWith('__add_moment')) return { result: {}, text: JSON.stringify({ id: 'new1', name: 'build' }) }
     files['activeMoment.json'] = { momentId: input.momentIdOrName, at: new Date(NOW).toISOString() }
     files['moments.json'] = { ...(files['moments.json'] as object), new1: { id: 'new1', name: 'sit', day: TODAY, phase: 'MORNING' } }
     return { result: {}, text: JSON.stringify({ set: {} }) }
@@ -52,9 +58,19 @@ const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
+    // The engine's hint line draws the tail it is handed.
+    if (e.component === 'PromptHint') return <Text>{`hint|${e.props.tail ?? ''}`}</Text>
     return <Text>engine</Text>
   })
   return { calls, statuses, toasts }
+}
+
+// What the prompt hint draws after a refresh.
+const tailOf = async ($: Parameters<TestBody>[0]) => {
+  const ui = await $.ui.mount(HINT)
+  const text = (await ui.find({ type: 'Text', text: /^hint\|/ }))?.text
+  await ui.unmount()
+  return text?.slice(5)
 }
 
 const staleWithThree = () => ({
@@ -69,9 +85,13 @@ const staleWithThree = () => ({
 })
 
 test('a stale moment: status line, band with three taps; a tap tends it and the band leaves', async ($, on) => {
-  const { calls, statuses } = garden(on, staleWithThree())
+  const files = staleWithThree()
+  // tea carries its own length: it wins over the band's 120-minute horizon.
+  files['moments.json'].b = { ...files['moments.json'].b, durationMin: 45 } as never
+  const { calls, statuses } = garden(on, files)
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
+  expect(statuses).toEqual([])
 
   const ui = await $.ui.mount(BAND)
   expect(await ui.find({ type: 'Text', text: '≋ film is from the afternoon' })).toBeDefined()
@@ -82,9 +102,9 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   }
 
   await ui.press({ key: 'tap-1' })
-  expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
+  expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b', minutes: 45 } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(statuses.at(-1)).toBe('≋ 🥐 tea')
+  expect(await tailOf($)).toBe('≋ 🥐 tea · 45m left')
   await ui.unmount()
 })
 
@@ -99,7 +119,7 @@ test('nothing planted: a habit tap plants it today in this phase, then tends it'
   await ui.press({ key: 'tap-0' })
   expect(calls).toEqual([
     { tool: 'mcp__zenborg__add_moment', input: { habitId: 'h1', day: TODAY, phase: 'MORNING' } },
-    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1' } },
+    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1', minutes: 120 } },
   ])
   await ui.unmount()
 })
@@ -125,7 +145,7 @@ test('typing filters habits across phases; submit plants the first match', async
   await ui.input({ key: 'search', text: 'cafe' })
   expect(calls).toEqual([
     { tool: 'mcp__zenborg__add_moment', input: { habitId: 'h1', day: TODAY, phase: 'MORNING' } },
-    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1' } },
+    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1', minutes: 120 } },
   ])
   await ui.unmount()
 })
@@ -146,15 +166,15 @@ test('a failing write toasts once and leaves the band as it was', async ($, on) 
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const ui = await $.ui.mount(BAND)
   await ui.press({ key: 'tap-0' })
-  expect(toasts).toEqual(['zenborg: not saved, try again'])
+  expect(toasts).toEqual(['zenborg: not saved (set_active_moment failed: Error: no)'])
   expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('🧘 sit')
   await ui.unmount()
 })
 
 test('no zenborg MCP server: status line only, the drawing goes to the engine', async ($, on) => {
-  const { statuses } = garden(on, staleWithThree(), { tools: ['Read'] })
+  garden(on, staleWithThree(), { tools: ['Read'] })
   await $.turn.start({ text: 'hi', turnId: 't1' })
-  expect(statuses.at(-1)).toBe('≋ 🍿 film · from the afternoon')
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
   await ui.unmount()
@@ -169,5 +189,70 @@ test('a fresh moment: no band', async ($, on) => {
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+  await ui.unmount()
+})
+
+test('a fresh moment in another area proposes; its Later holds only until the pointer changes, and never hides the no-intention band', async ($, on) => {
+  const files: Record<string, unknown> = {
+    ...base(),
+    'areas.json': { fun: { id: 'fun', name: 'Leisure' }, th: { id: 'th', name: 'Themia' } },
+    'habits.json': { h: { id: 'h', name: 'api', areaId: 'th' } },
+    'moments.json': {
+      n: { id: 'n', name: 'film', day: TODAY, phase: 'MORNING', areaId: 'fun' },
+      o: { id: 'o', name: 'tv', day: TODAY, phase: 'MORNING', areaId: 'fun' },
+    },
+    'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
+  }
+  garden(on, files, { cwd: '/home/g/themia/minerva' })
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  const ui = await $.ui.mount(BAND)
+  expect(await ui.find({ type: 'Text', text: '≋ In Themia · the intention is film' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('+ api')
+
+  await ui.press({ key: 'later' })
+  expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  expect(await ui.find({ key: 'tap-0' })).toBeUndefined() // still silenced
+
+  // Another session moves the pointer: the proposal is raised again.
+  files['activeMoment.json'] = { momentId: 'o', at: new Date(NOW - 60_000).toISOString() }
+  await $.turn.start({ text: 'hop', turnId: 't3' })
+  expect(await ui.find({ type: 'Text', text: '≋ In Themia · the intention is tv' })).toBeDefined()
+
+  // Later there, then no intention at all: that band is not hidden by the proposal's Later.
+  await ui.press({ key: 'later' })
+  files['activeMoment.json'] = {}
+  await $.turn.start({ text: 'cleared', turnId: 't4' })
+  expect(await ui.find({ type: 'Text', text: '≋ No intention this morning' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('+ api') // the proposal's tap leads
+  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('film')
+  await ui.unmount()
+})
+
+test('session.start registers /phase and sets the hint tail', async ($, on) => {
+  const { statuses } = garden(on, staleWithThree())
+  const commands: string[] = []
+  on('command.register', (_, e) => (commands.push(e.name), { value: { command: e.name } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/home/g/work' })
+  expect(commands).toEqual(['phase', 'now'])
+  expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
+  expect(statuses).toEqual([])
+})
+
+test('a label that already starts with the glyph is not prefixed twice', async ($, on) => {
+  garden(on, {
+    ...base(),
+    'moments.json': { n: { id: 'n', name: 'zenborg', emoji: '≋', day: TODAY, phase: 'MORNING' } },
+    'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
+  })
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  expect(await tailOf($)).toBe('≋ zenborg · 1m')
+})
+
+test('no status leaves the hint as the engine drew it', async ($, on) => {
+  garden(on, base())
+  const ui = await $.ui.mount(HINT)
+  expect((await ui.find({ type: 'Text', text: /^hint\|/ }))?.text).toBe('hint|')
   await ui.unmount()
 })

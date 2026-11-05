@@ -28,6 +28,7 @@ export interface Opening extends Lift {
   readonly reason: string;
 }
 
+/** Passes per month and hours per pass. Counted per domain, unless a policy has its own pool. */
 export interface PassAllowance {
   readonly perMonth: number;
   readonly hours: number;
@@ -159,18 +160,41 @@ export function blockHitPayload(domain: string, fences: readonly { readonly id: 
   return { domain, fenceIds: fences.map((f) => f.id) };
 }
 
-/** Passes spent this local month, from `pass_used` events. Counted, never scored. */
-export function passesUsedThisMonth(
-  events: readonly { readonly kind: string; readonly ts: number }[],
-  now: number
-): number {
-  const since = startOfLocalMonth(now);
-  return events.filter((e) => e.kind === PASS_USED_KIND && e.ts >= since && e.ts <= now).length;
+/**
+ * The key a domain's passes are counted under: a leading `www.` or `m.` is
+ * dropped, so youtube.com, www.youtube.com and m.youtube.com share one count.
+ *
+ * ponytail: no public-suffix list, so youtu.be counts apart from youtube.com
+ * and other alias pairs stay separate. Add a list only if a real pair matters.
+ */
+export function passDomainKey(host: string): string {
+  return host.replace(/^(www|m)\./, "");
 }
 
-/** `pass_used`: the domain, the one line of why, and when it closes. Nothing else. */
-export function passUsedPayload(domain: string, reason: string, until: number) {
-  return { domain, reason, until };
+/**
+ * Passes spent this local month, from `pass_used` events. Counted, never scored.
+ * A policy's own pool counts that policy's events; with no policy, each domain
+ * has its own count: only events for `domain` (by key) and with no policy.
+ */
+export function passesUsedThisMonth(
+  events: readonly { readonly kind: string; readonly ts: number; readonly payload?: Readonly<Record<string, unknown>> }[],
+  now: number,
+  policy?: string,
+  domain?: string
+): number {
+  const since = startOfLocalMonth(now);
+  const key = domain === undefined ? undefined : passDomainKey(domain);
+  return events.filter((e) => {
+    if (e.kind !== PASS_USED_KIND || e.ts < since || e.ts > now || e.payload?.policy !== policy) return false;
+    if (policy !== undefined || key === undefined) return true;
+    const spent = e.payload?.domain;
+    return typeof spent === "string" && passDomainKey(spent) === key;
+  }).length;
+}
+
+/** `pass_used`: the domain, the one line of why, when it closes, and the policy whose own pool paid. */
+export function passUsedPayload(domain: string, reason: string, until: number, policy?: string) {
+  return { domain, reason, until, ...(policy ? { policy } : {}) };
 }
 
 /** `opening_active`: hosts, when it closes, and the declared why. */

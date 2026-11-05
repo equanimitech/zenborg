@@ -23,10 +23,11 @@ import {
   passesUsedThisMonth,
   startOfLocalMonth,
 } from "./lifts";
-import { fencesFor } from "./parse";
+import { blockingFences } from "./parse";
+
+export { blockingFences };
 import { syncFenceRules } from "./project";
 import { liveFences, openingsAnnounced, openingsCache, passAllowance, passLifts } from "./store";
-import type { Fence, Fences } from "./types";
 
 type Write = (kind: string, payload?: Readonly<Record<string, unknown>>) => void;
 
@@ -37,24 +38,24 @@ export interface BlockInfo {
   /** The unlock notes of the blocks holding it. */
   readonly notes: readonly string[];
   /** Present only when every block on the host is a time block a pass can lift. */
-  readonly pass: { readonly left: number; readonly perMonth: number; readonly hours: number; readonly month: string } | null;
+  readonly pass: {
+    readonly left: number;
+    readonly perMonth: number;
+    readonly hours: number;
+    readonly month: string;
+    /** Set when the policy's own pool is the one counted. */
+    readonly policy?: string;
+  } | null;
 }
 
 export type PassResult =
   | { readonly ok: true; readonly until?: number; readonly alreadyOpen?: true }
   | { readonly ok: false; readonly error: "none_left" | "not_a_time_block" };
 
-/** Browser blocks holding `host` in `fences`. */
-export function blockingFences(fences: Fences, host: string): Fence[] {
-  return fencesFor(fences, host).filter(
-    (f) => f.enforcement.kind === "block" && f.enforcement.standing && f.enforcement.enforcement === "browser"
-  );
-}
-
-async function passesUsed(now: number): Promise<number> {
+async function passesUsed(now: number, host: string, policy?: string): Promise<number> {
   const since = startOfLocalMonth(now);
-  const [host, outbox] = await Promise.all([queryEvents(since, [PASS_USED_KIND]), readEventsSince(since)]);
-  return passesUsedThisMonth(mergeById(host, outbox), now);
+  const [events, outbox] = await Promise.all([queryEvents(since, [PASS_USED_KIND]), readEventsSince(since)]);
+  return passesUsedThisMonth(mergeById(events, outbox), now, policy, host);
 }
 
 export async function blockInfo(host: string, now: number = Date.now()): Promise<BlockInfo> {
@@ -63,9 +64,12 @@ export async function blockInfo(host: string, now: number = Date.now()): Promise
   if (blocking.length === 0 || !blocking.every((f) => f.schedule !== undefined)) {
     return { host, open: blocking.length === 0, notes, pass: null };
   }
-  const { perMonth, hours } = (await passAllowance.getValue()) ?? DEFAULT_ALLOWANCE;
-  const left = Math.max(0, perMonth - (await passesUsed(now)));
-  return { host, open: false, notes, pass: { left, perMonth, hours, month: monthName(now) } };
+  // One policy's own pool when every blocker is that policy's; otherwise this domain's own count.
+  const pool = blocking[0].pool;
+  const own = pool && blocking.every((f) => f.pool?.policy === pool.policy) ? pool : undefined;
+  const { perMonth, hours } = own ?? (await passAllowance.getValue()) ?? DEFAULT_ALLOWANCE;
+  const left = Math.max(0, perMonth - (await passesUsed(now, host, own?.policy)));
+  return { host, open: false, notes, pass: { left, perMonth, hours, month: monthName(now), ...(own ? { policy: own.policy } : {}) } };
 }
 
 // One pass at a time, so a double click cannot spend two.
@@ -82,7 +86,7 @@ export function usePass(host: string, reason: string, write: Write): Promise<Pas
     const until = now + info.pass.hours * 3_600_000;
     const live = (await passLifts.getValue()).filter((l) => l.until > now);
     await passLifts.setValue([...live, { hosts: [host], from: now, until }]);
-    write(PASS_USED_KIND, passUsedPayload(host, reason, until));
+    write(PASS_USED_KIND, passUsedPayload(host, reason, until, info.pass.policy));
     // Awaited so the page's navigation lands after the rule is gone.
     await syncFenceRules();
     return { ok: true, until };

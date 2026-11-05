@@ -1,7 +1,12 @@
 // The phase pane: /phase [day] [phase] opens a phase's moments beside the
-// chat, grouped by area, with the drawing board below. One focused row carries
-// hotkeys that move it; a line at the bottom asks Haiku for changes, shown as
-// a preview that writes nothing until Apply. A tool opens it for a skill.
+// chat, grouped by area, with two rows of suggestions below: your rhythm and
+// your season. One focused row carries hotkeys (p, n, t, d, a) that move, delete
+// or activate it, or (i, z) plant or hide a suggestion. m grabs the focused
+// moment: while held, h l carry it to the previous or next phase (the view
+// follows) and j k swap it with its neighbouring row (the phase is
+// renumbered, only changed orders written), the cursor stays on it, and m drops
+// it, as do 0, reopening, or the moment leaving the shown view. A line at the bottom
+// asks Haiku for changes, shown as a preview that writes nothing until Apply.
 // Every write goes through zenborg's MCP tools.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -18,6 +23,7 @@ import {
   leavesView,
   neighbor,
   opCall,
+  orderOps,
   parseProposal,
   parseWhen,
   phaseEmoji,
@@ -26,20 +32,27 @@ import {
   stepView,
   viewTitle,
   walk,
-  type Group,
+  type Row,
 } from './board.ts'
 import { currentPhase, type Vault } from './garden.ts'
+import { MATCH_SYSTEM, matchPrompt, parseMatches, quietIntentions, rhythmRow, runningCycle, type Suggestion } from './suggest.ts'
 import { call, loadVault } from './vault-io.ts'
 
 const PANE = 'zenborg-phase'
-const HAIKU = 'claude-haiku-5-5'
+export const HAIKU = 'claude-haiku-5-5'
 
 const view = atom({ plugin: 'zenborg', key: 'view' } as const, null)
 const cursor = atom({ plugin: 'zenborg', key: 'cursor' } as const, null)
+const armed = atom({ plugin: 'zenborg', key: 'armed' } as const, null)
 const ask = atom({ plugin: 'zenborg', key: 'ask' } as const, '')
 const proposal = atom({ plugin: 'zenborg', key: 'proposal' } as const, null)
 const note = atom({ plugin: 'zenborg', key: 'note' } as const, '')
+const season = atom({ plugin: 'zenborg', key: 'season' } as const, {})
+const hidden = atom({ plugin: 'zenborg', key: 'hidden' } as const, { day: '', ids: [] })
 const rev = atom({ plugin: 'zenborg', key: 'rev' } as const, 0)
+// The grabbed moment (m), and whether a grab-mode write is in flight.
+const held = atom({ plugin: 'zenborg', key: 'held' } as const, null)
+const busy = atom({ plugin: 'zenborg', key: 'busy' } as const, false)
 
 // Today and the clock's (day, phase).
 async function clockView($: EngineInterface, v: Vault) {
@@ -63,22 +76,43 @@ async function openAt($: EngineInterface, args: string, focus: boolean) {
   const shown = when.view ?? current
   await update($, view, () => when.view)
   await update($, cursor, () => null)
+  await update($, held, () => null)
   await update($, note, () => when.note)
   const title = `${phaseEmoji(v, shown.phase)} ${phaseLabel(v, shown.phase)}`.trim()
   const opened = await $.ui.open({ id: PANE, title, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
+  // Not awaited: the fallback rows show at once, and the rev bump redraws when the mapping lands.
+  mapSeason($, v, today).catch(() => {})
   return { opened, title: viewTitle(v, shown) }
 }
 
-// Writes each op in order, then has the pane re-read the vault.
+// Haiku reads the running cycle's intentions into habit ids, once per cycle per
+// session: the cycle is marked first, so a failure or a second open never asks again.
+async function mapSeason($: EngineInterface, v: Vault, today: string) {
+  const cycle = runningCycle(v, today)
+  const prompt = cycle && matchPrompt(v, cycle)
+  if (!cycle || !prompt) return
+  let first = false
+  await update($, season, s => ((first = !(cycle.id in s)), first ? { ...s, [cycle.id]: {} } : s))
+  if (!first) return
+  const r = await $.model.complete({ model: HAIKU, system: MATCH_SYSTEM, prompt, effort: 'low', timeoutMs: 15_000 })
+  const matches = r.isAnswered ? parseMatches(v, cycle, r.text) : null
+  if (matches) await update($, season, s => ({ ...s, [cycle.id]: matches }))
+  await update($, rev, n => n + 1)
+}
+
+// Writes each op in order, then has the pane re-read the vault. True when every write landed.
 async function run($: EngineInterface, ops: BoardOp[]) {
   const v = await loadVault($)
-  const failed: string[] = []
+  const failed = new Map<string, string[]>() // reason -> the ops it stopped
   for (const op of ops) {
     const { name, input } = opCall(v, op)
-    if ((await call($, name, input)) === undefined) failed.push(describe(v, op))
+    const r = await call($, name, input)
+    if (!r.ok) failed.set(r.why, [...(failed.get(r.why) ?? []), describe(v, op)])
   }
-  await update($, note, () => (failed.length ? `not saved: ${failed.join('; ')}` : ''))
+  const line = [...failed].map(([why, ds]) => `not saved (${why}): ${ds.join('; ')}`).join(' | ')
+  await update($, note, () => line)
   await update($, rev, n => n + 1)
+  return failed.size === 0
 }
 
 async function askHaiku($: EngineInterface, instruction: string) {
@@ -113,19 +147,6 @@ async function apply($: EngineInterface) {
 // index.ts calls these from the session's start and each main-loop turn.
 export async function registerOpeners($: EngineInterface) {
   await $.command.register({ name: 'phase', description: "Open a phase's moments in a pane", argumentHint: '[day] [phase]' })
-  await $.tool.register({
-    name: 'open_phase_pane',
-    description:
-      "Open the gardener's phase pane beside the chat at a day and phase, so they can arrange moments there by keyboard. Use at a ritual's arranging moment (sunrise: today; sunset: tomorrow morning). Writes nothing.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        day: { type: 'string', description: 'YYYY-MM-DD, today, tomorrow, or a weekday. Default today.' },
-        phase: { type: 'string', enum: ['MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'], description: 'Default: the current phase today, else morning.' },
-      },
-    },
-    isDeferred: false,
-  })
 }
 // Claude may have tended the garden this turn: the pane re-reads the vault.
 export async function redraw($: EngineInterface) {
@@ -138,18 +159,6 @@ export const register: Register = on => {
     return {}
   })
 
-  // A model's call is no person's ask: the pane opens without the keyboard,
-  // and on a narrow terminal it waits undrawn until they type /phase.
-  on('tool.call', { tool: 'mcp__zenborg__open_phase_pane' }, async ($, e) => {
-    const input = e as unknown as { day?: unknown; phase?: unknown }
-    const args = [input.day, input.phase].filter(x => typeof x === 'string').join(' ')
-    const { opened, title } = await openAt($, args, false)
-    const text = opened.isPlaced
-      ? `Opened the phase pane at ${title}.`
-      : `The pane is open but not drawn (${opened.reason}). The gardener can type /phase ${args} to show it.`
-    return { result: { isPlaced: opened.isPlaced }, text }
-  }).catch(() => ({ result: {}, text: 'The phase pane could not open. The gardener can type /phase.', isError: true as const }))
-
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const t = $.ui.resolve(e)
     const { Box, Button, Text } = t
@@ -158,55 +167,131 @@ export const register: Register = on => {
     await read($, rev)
     const v = await loadVault($)
     const { today, shown, current } = await shownView($, v)
-    const { here, board } = boardOf(v, shown)
-    const ids = [...rowIds(here), ...rowIds(board)]
-    const sel = cursorAt(ids, await read($, cursor))
+    const { here } = boardOf(v, shown)
+    const hid = new Set((await read($, hidden)).day === today ? (await read($, hidden)).ids : [])
+    const cycle = runningCycle(v, today)
+    const matches = (cycle && (await read($, season))[cycle.id]) || {}
+    const opts = { skip: hid, view: shown }
+    const rhythm = rhythmRow(v, shown, today, opts)
+    // A habit already in your rhythm is not offered again under your season.
+    const quiet = quietIntentions(v, today, matches, { ...opts, skip: new Set([...hid, ...rhythm.map(s => s.habitId)]) })
+    const sugId = (kind: string, s: Suggestion) => `sug:${kind}:${s.habitId}`
+    const sugs = new Map([...rhythm.map(s => [sugId('rhythm', s), s] as const), ...quiet.map(s => [sugId('season', s), s] as const)])
+    // A grab holds while its moment is drawn here (or a write for it is landing), else it drops.
+    const heldRaw = await read($, held)
+    const inFlight = await read($, busy)
+    const heldId = heldRaw !== null && (inFlight || rowIds(here).includes(heldRaw)) ? heldRaw : null
+    if (heldRaw !== null && heldId === null) await update($, held, () => null)
+    const rowLabel = (id: string) => here.flatMap(g => g.rows).find(r => r.id === id)?.label ?? ''
+    const ids = [...rowIds(here), ...sugs.keys()]
+    const sel = heldId ?? cursorAt(ids, await read($, cursor))
     const p = await read($, proposal)
     const q = await read($, ask)
     const n = await read($, note)
+    const armedId = await read($, armed)
     const atNow = shown.day === current.day && shown.phase === current.phase
 
     // Shows `next` (null: now) and retitles the pane's tab to its phase.
     const goTo = async (next: BoardView | null) => {
+      await update($, armed, () => null)
       const phase = (next ?? current).phase
       await update($, view, () => next)
       await $.ui.open({ id: PANE, title: `${phaseEmoji(v, phase)} ${phaseLabel(v, phase)}`.trim(), closeOnEscape: true })
     }
-    const step = (delta: number) => goTo(stepView(shown, delta))
-    // A move off this view hands the cursor to the next row first.
+    const disarm = () => update($, armed, () => null)
+    // While held, a key acts on the moment; a second keypress during a write is ignored.
+    // ponytail: ignored, not queued; a fast typist loses the second press. Queue them if that bites.
+    const whileBusy = async (write: () => Promise<void>) => {
+      if (await read($, busy)) return
+      await update($, busy, () => true)
+      try {
+        await write()
+      } finally {
+        await update($, busy, () => false)
+      }
+    }
+    // h l: write the move, then follow the moment so the view keeps it under the cursor.
+    const carry = (id: string, delta: number) =>
+      whileBusy(async () => {
+        const to = stepView(shown, delta)
+        if (await run($, [{ op: 'move', id, ...to }])) await goTo(to)
+      })
+    // j k: swap with the neighbouring row, from a fresh read of the vault.
+    const shift = (id: string, delta: number) =>
+      whileBusy(async () => {
+        const fresh = await loadVault($)
+        const ops = orderOps(fresh, rowIds(boardOf(fresh, shown).here), id, delta)
+        if (ops.length) await run($, ops)
+      })
+    const step = (delta: number) => (heldId ? carry(heldId, delta) : goTo(stepView(shown, delta)))
+    const walkOrShift = (delta: number) => (heldId ? shift(heldId, delta) : focus(c => walk(ids, cursorAt(ids, c), delta)))
+    const grab = (id: string | null) => update($, held, () => id)
+    const focus = async (f: (c: string | null) => string | null) => {
+      await disarm()
+      await update($, cursor, f)
+    }
+    // A move off this view hands the cursor to the next row first. The first delete press only arms.
     const act = async (id: string, op: BoardOp) => {
+      if (op.op === 'delete' && (await read($, armed)) !== id) return update($, armed, () => id)
+      await disarm()
       if (leavesView(op, shown)) await update($, cursor, () => neighbor(ids, id))
       await run($, [op])
     }
 
-    const tree = (groups: Group[]) =>
-      groups.map(g => (
-        <Box key={`g-${g.key}`} flexDirection="column">
-          <Text bold>{g.header}</Text>
-          {g.rows.map((r, i) => {
-            const m = v.moments[r.id]
-            const focused = r.id === sel
-            const branch = i === g.rows.length - 1 ? '└' : '├'
-            return (
-              <Box key={`r-${r.id}`} flexDirection="column">
-                <Button
-                  key={`row-${r.id}`}
-                  plain
-                  label={`${focused ? '›' : ' '} ${branch} ${r.label}${r.isActive ? ' ●' : ''}`}
-                  onPress={() => update($, cursor, () => r.id)}
-                />
-                {focused && m && (
-                  <Box gap={2} paddingLeft={6}>
-                    {actionsFor(v, m, shown, today).map(a => (
-                      <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.label} onPress={() => act(r.id, a.op)} />
-                    ))}
-                  </Box>
-                )}
-              </Box>
-            )
-          })}
+    // One moment row with its hotkeys when focused.
+    const row = (r: Row) => {
+      const m = v.moments[r.id]
+      const focused = r.id === sel
+      const holding = r.id === heldId
+      const text = `${r.label}${r.isActive ? ' ●' : ''}`
+      return (
+        <Box key={`r-${r.id}`} flexDirection="column">
+          <Button key={`row-${r.id}`} plain label={holding ? `› [${text}]` : `${focused ? '›' : ' '} ${text}`} onPress={() => focus(() => r.id)} />
+          {focused && m && (
+            <Box gap={2} paddingLeft={4}>
+              {holding ? (
+                <Button key="act-move" plain hotkey="m" label="drop" onPress={() => grab(null)} />
+              ) : (
+                actionsFor(v, m, shown, today).map(a => (
+                  <Button
+                    key={`act-${a.key}`}
+                    plain
+                    hotkey={a.hotkey}
+                    label={a.key === 'delete' && armedId === r.id ? 'd again to delete' : a.label}
+                    onPress={() => (a.op ? act(r.id, a.op) : grab(r.id))}
+                  />
+                ))
+              )}
+            </Box>
+          )}
         </Box>
-      ))
+      )
+    }
+    // i plants the suggestion into the shown phase; z hides it for the waking day. Either hands the cursor on.
+    const plant = async (id: string, s: Suggestion) => {
+      await disarm()
+      await update($, cursor, () => neighbor(ids, id))
+      await run($, [{ op: 'add', habitId: s.habitId, day: shown.day, phase: shown.phase }])
+    }
+    const hide = async (id: string, s: Suggestion) => {
+      await disarm()
+      await update($, cursor, () => neighbor(ids, id))
+      await update($, hidden, h => ({ day: today, ids: [...(h.day === today ? h.ids : []), s.habitId] }))
+    }
+    const sugRow = (id: string, s: Suggestion) => {
+      const focused = id === sel
+      return (
+        <Box key={`s-${id}`} flexDirection="column">
+          <Button key={`row-${id}`} plain label={`${focused ? '›' : ' '} ${s.label}${s.note ? ` · ${s.note}` : ''}`} onPress={() => focus(() => id)} />
+          {focused && !heldId && (
+            <Box gap={2} paddingLeft={4}>
+              <Button key="sug-plant" plain hotkey="i" label={`into ${phaseLabel(v, shown.phase).toLowerCase()}`} onPress={() => plant(id, s)} />
+              <Button key="sug-hide" plain hotkey="z" label="not now" onPress={() => hide(id, s)} />
+            </Box>
+          )}
+        </Box>
+      )
+    }
 
     return (
       <Box flexDirection="column" width={e.props.bodyColumns} gap={1}>
@@ -218,19 +303,23 @@ export const register: Register = on => {
           <Box gap={2}>
             <Button key="view-prev" plain hotkey="h" label={`◂ ${phaseLabel(v, stepView(shown, -1).phase).toLowerCase()}`} onPress={() => step(-1)} />
             <Button key="view-next" plain hotkey="l" label={`${phaseLabel(v, stepView(shown, 1).phase).toLowerCase()} ▸`} onPress={() => step(1)} />
-            <Button key="down" plain hotkey="j" label="↓" onPress={() => update($, cursor, c => walk(ids, cursorAt(ids, c), 1))} />
-            <Button key="up" plain hotkey="k" label="↑" onPress={() => update($, cursor, c => walk(ids, cursorAt(ids, c), -1))} />
-            {!atNow && <Button key="view-now" plain hotkey="0" label="now" onPress={() => goTo(null)} />}
+            <Button key="down" plain hotkey="j" label="↓" onPress={() => walkOrShift(1)} />
+            <Button key="up" plain hotkey="k" label="↑" onPress={() => walkOrShift(-1)} />
+            {!atNow && <Button key="view-now" plain hotkey="0" label="now" onPress={async () => (await grab(null), goTo(null))} />}
           </Box>
+          {heldId && <Text dimColor>{`moving ${rowLabel(heldId)} · h l phase · j k order · m drop`}</Text>}
         </Box>
         <Box flexDirection="column">
           {here.length === 0 && <Text dimColor>nothing planted</Text>}
-          {tree(here)}
+          {here.flatMap(g => g.rows).map(r => row(r))}
         </Box>
-        {board.length > 0 && (
+        {sugs.size > 0 && (
           <Box flexDirection="column">
             <Text dimColor>── board ──</Text>
-            {tree(board)}
+            {rhythm.length > 0 && <Text bold>your rhythm</Text>}
+            {rhythm.map(s => sugRow(sugId('rhythm', s), s))}
+            {quiet.length > 0 && <Text bold>your season</Text>}
+            {quiet.map(s => sugRow(sugId('season', s), s))}
           </Box>
         )}
         {p && (

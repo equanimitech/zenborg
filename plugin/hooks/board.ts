@@ -74,8 +74,11 @@ export interface Group {
 
 const byOrder = (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0);
 
-/** Moments under their area's header: areas in their order, "no area" last, moments in board order. */
-export function groupByArea(v: Vault, moments: Moment[]): Group[] {
+/**
+ * Moments under their area's header: areas in their order, "no area" last, moments in board order.
+ * `areaEmoji` lets a label fall back to its area's emoji, for rows drawn without the header.
+ */
+export function groupByArea(v: Vault, moments: Moment[], opts: { areaEmoji?: boolean } = {}): Group[] {
   const label = momentLabel(v);
   const keyOfMoment = (m: Moment) => (m.areaId && v.areas[m.areaId] ? m.areaId : "none");
   const areas = Object.values(v.areas).sort(byOrder);
@@ -85,21 +88,37 @@ export function groupByArea(v: Vault, moments: Moment[]): Group[] {
     const rows = moments
       .filter((m) => keyOfMoment(m) === key)
       .sort(byOrder)
-      .map((m) => ({ id: m.id, label: label(m), isActive: v.active.momentId === m.id }));
+      .map((m) => {
+        const text = label(m);
+        return {
+          id: m.id,
+          label: opts.areaEmoji && area?.emoji && text === m.name ? `${area.emoji} ${m.name}` : text,
+          isActive: v.active.momentId === m.id,
+        };
+      });
     const header = area ? `${area.emoji ? `${area.emoji} ` : ""}${area.name}` : "no area";
     if (rows.length > 0) groups.push({ key, header, rows });
   }
   return groups;
 }
 
-/** The shown (day, phase)'s moments, then the drawing board's, each grouped by area. */
-export function boardOf(v: Vault, view: BoardView): { here: Group[]; board: Group[] } {
-  const all = Object.values(v.moments);
-  return {
-    here: groupByArea(v, all.filter((m) => m.day === view.day && m.phase === view.phase)),
-    board: groupByArea(v, all.filter((m) => !m.day)),
-  };
-}
+/**
+ * The shown (day, phase)'s moments as one list sorted by `order` alone (ties keep the vault's order),
+ * as the band sorts a phase; area order no longer sets row order. Rows fall back to their area's emoji.
+ * One headerless group, so `rowIds` and the pane draw it unchanged; `groupByArea` stays for grouped views.
+ */
+export const boardOf = (v: Vault, view: BoardView): { here: Group[] } => {
+  const label = momentLabel(v);
+  const rows = Object.values(v.moments)
+    .filter((m) => m.day === view.day && m.phase === view.phase)
+    .sort(byOrder)
+    .map((m) => {
+      const text = label(m);
+      const emoji = m.areaId ? v.areas[m.areaId]?.emoji : undefined;
+      return { id: m.id, label: emoji && text === m.name ? `${emoji} ${m.name}` : text, isActive: v.active.momentId === m.id };
+    });
+  return { here: rows.length > 0 ? [{ key: "all", header: "", rows }] : [] };
+};
 
 /** The moment rows the cursor walks, in drawn order; headers are not among them. */
 export const rowIds = (groups: Group[]) => groups.flatMap((g) => g.rows.map((r) => r.id));
@@ -116,7 +135,7 @@ export const neighbor = (ids: string[], id: string) => {
 
 /** True when the op takes its moment off the shown (day, phase) and its board. */
 export const leavesView = (op: BoardOp, view: BoardView) =>
-  op.op === "move" && (op.day !== view.day || op.phase !== view.phase);
+  op.op === "delete" || (op.op === "move" && (op.day !== view.day || op.phase !== view.phase));
 
 /** `delta` rows from the cursor, held at the ends. */
 export const walk = (ids: string[], at: string | null, delta: number) =>
@@ -161,10 +180,11 @@ export interface Action {
   key: string;
   hotkey: string;
   label: string;
-  op: BoardOp;
+  /** null: not a write, the pane handles the key itself (m grabs). */
+  op: BoardOp | null;
 }
 
-/** The focused row's hotkeys. A planted moment steps a phase, goes to tomorrow, back to the board, or becomes active (today only); a board moment is planted into the shown phase. */
+/** The focused row's hotkeys. A planted moment steps a phase, goes to tomorrow, is deleted (d, confirmed by the pane with a second press), or becomes active (today only); a board moment is planted into the shown phase. */
 export function actionsFor(v: Vault, m: Moment, view: BoardView, today: string): Action[] {
   if (!m.day || !m.phase) {
     return [{ key: "here", hotkey: "i", label: `into ${phaseLabel(v, view.phase).toLowerCase()}`, op: { op: "move", id: m.id, ...view } }];
@@ -176,9 +196,24 @@ export function actionsFor(v: Vault, m: Moment, view: BoardView, today: string):
     { key: "prev", hotkey: "p", label: `◂ ${phaseLabel(v, prev.phase).toLowerCase()}`, op: { op: "move", id: m.id, ...prev } },
     { key: "next", hotkey: "n", label: `${phaseLabel(v, next.phase).toLowerCase()} ▸`, op: { op: "move", id: m.id, ...next } },
     { key: "tomorrow", hotkey: "t", label: "tomorrow", op: { op: "move", id: m.id, day: addDays(m.day, 1), phase: m.phase } },
-    { key: "board", hotkey: "b", label: "board", op: { op: "unallocate", id: m.id } },
+    { key: "delete", hotkey: "d", label: "delete", op: { op: "delete", id: m.id } },
+    { key: "move", hotkey: "m", label: "move", op: null },
   ];
   return m.day === today ? [...acts, { key: "active", hotkey: "a", label: "active", op: { op: "active", id: m.id } }] : acts;
+}
+
+/**
+ * Swaps `id` with its neighbour `delta` places away in `ids` (the phase's rows, in drawn order), then
+ * renumbers the group 0..n-1 in the new sequence, writing only the rows whose order changes: orders
+ * are often tied or 0, so swapping two values alone could do nothing. At the group's edge: no ops.
+ */
+export function orderOps(v: Vault, ids: string[], id: string, delta: number): BoardOp[] {
+  const i = ids.indexOf(id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= ids.length) return [];
+  const next = [...ids];
+  [next[i], next[j]] = [next[j] as string, next[i] as string];
+  return next.flatMap((m, order): BoardOp[] => ((v.moments[m]?.order ?? 0) === order ? [] : [{ op: "order", id: m, order }]));
 }
 
 /** The MCP tool and input an op writes through. A plan-linked moment leaves the day by unallocate_moment (its deck card reappears); a spontaneous one by `day: null`. */
@@ -190,6 +225,8 @@ export function opCall(v: Vault, op: BoardOp): { name: string; input: Record<str
       return v.moments[op.id]?.cyclePlanId
         ? { name: "unallocate_moment", input: { id: op.id } }
         : { name: "update_moment", input: { id: op.id, day: null } };
+    case "order":
+      return { name: "update_moment", input: { id: op.id, order: op.order } };
     case "active":
       return { name: "set_active_moment", input: { momentIdOrName: op.id } };
     case "delete":
@@ -213,6 +250,8 @@ export function describe(v: Vault, op: BoardOp): string {
       return `${name(op.id)} → ${whereLabel(v, op.day, op.phase)}`;
     case "unallocate":
       return `${name(op.id)} → board`;
+    case "order":
+      return `${name(op.id)} → #${op.order + 1}`;
     case "active":
       return `≋ ${name(op.id)} as active`;
     case "delete":

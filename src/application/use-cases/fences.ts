@@ -311,6 +311,11 @@ export interface WateringHoursDeclaration {
    * first declaration, `all`.
    */
   readonly reach?: BlockReach;
+  /**
+   * The policy's own monthly passes, apart from the shared allowance. Stamped on
+   * its browser rules; omitted on a re-declaration, the stored one is kept.
+   */
+  readonly passes?: { readonly perMonth: number; readonly hours: number };
   /** `rationed` mode: attended minutes allowed per local day across the pool. */
   readonly budgetMinutes?: number;
 }
@@ -388,6 +393,16 @@ export async function declareWateringHours(
     else restrictedAreaIds.push(resolved.id);
   }
 
+  const pa = input.passes;
+  if (
+    pa &&
+    (!Number.isInteger(pa.perMonth) ||
+      pa.perMonth < 0 ||
+      !(pa.hours > 0 && pa.hours <= 24))
+  ) {
+    problems.push("passes needs an integer perMonth >= 0 and 0 < hours <= 24");
+  }
+
   const season = await servedSeason(deps);
   if ("problem" in season) problems.push(season.problem);
 
@@ -430,8 +445,10 @@ export async function declareWateringHours(
   const all = await deps.store.read();
   const prefix = `watering:${input.name.trim()}:`;
   const reach = input.reach ?? priorReach(all, `${prefix}browser:`);
+  const passAllowance =
+    input.passes ?? priorPasses(all, `${prefix}browser:`);
 
-  const rules = wateringHoursRules({
+  const generated = wateringHoursRules({
     policyName: input.name.trim(),
     mode: input.mode,
     window,
@@ -456,6 +473,12 @@ export async function declareWateringHours(
       : {}),
   });
 
+  const rules = passAllowance
+    ? generated.map((r) =>
+        r.id.startsWith(`${prefix}browser:`) ? { ...r, passAllowance } : r,
+      )
+    : generated;
+
   for (const rule of rules) {
     const bad = [...validateRuleSpec(rule), ...exitProblems(rule)];
     if (bad.length > 0) problems.push(...bad);
@@ -477,6 +500,16 @@ export async function declareWateringHours(
     standing: Object.keys(next).length,
     ...joinNotes(season.note, pausedNote(paused)),
   };
+}
+
+/** The own pass allowance a policy's browser rules already carry, if any. */
+function priorPasses(
+  all: Record<RuleId, RuleSpec>,
+  browserPrefix: string,
+): RuleSpec["passAllowance"] {
+  return Object.entries(all).find(
+    ([id, r]) => id.startsWith(browserPrefix) && r.passAllowance,
+  )?.[1].passAllowance;
 }
 
 /** The block reach a policy's browser rules already carry, if any says one. */

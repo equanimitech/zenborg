@@ -47,6 +47,19 @@ import {
   buildPassAllowance,
   DEFAULT_PASS_ALLOWANCE,
 } from "../src/domain/intervention/Opening.ts";
+import {
+  type Allocation,
+  COOL_DOWN_DAYS,
+  DEFAULT_CAPACITY_DAYS,
+} from "../src/domain/entities/Allocation.ts";
+import { setAllocations } from "../src/domain/entities/Cycle.ts";
+import { appetiteCheck } from "../src/domain/spend/AppetiteCheck.ts";
+import {
+  getCycleSpend,
+  refreshSpend,
+  today,
+  writeSpendCache,
+} from "./spend.js";
 import { buildRelatedHabits } from "./graph.js";
 import {
   computeHealth,
@@ -131,6 +144,23 @@ const vault = resolveVault();
 logVaultBanner(vault);
 const VAULT_ROOT = vault.root;
 
+// One-shot CLI, no MCP: `zenborg-mcp refresh-spend [--vault <dir>]`.
+// The plugin's SessionStart hook spawns it (the cached plugin has no repo).
+if (process.argv[2] === "refresh-spend") {
+  console.log(refreshSpend(VAULT_ROOT));
+  process.exit(0);
+}
+
+// One-shot CLI for the browser's intention gate (the native host runs these):
+// `zenborg-mcp switch-moment <id> <minutes>` / `reflect <id> <text>`.
+{
+  const gate = runGateCommand(VAULT_ROOT, process.argv.slice(2));
+  if (gate) {
+    console.log(JSON.stringify(gate));
+    process.exit(gate.ok ? 0 : 1);
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Phase auto-derive
 // ────────────────────────────────────────────────────────────────────────
@@ -146,7 +176,10 @@ function derivePhaseFromStartTime(startTime: string): Phase | null {
 // Result helpers + tool wrapper
 // ────────────────────────────────────────────────────────────────────────
 
-import { staleReason, wakingDayKey } from "../src/domain/attention/ActiveMoment.ts";
+import {
+  staleReason,
+  wakingDayKey,
+} from "../src/domain/attention/ActiveMoment.ts";
 import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
 import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
@@ -155,6 +188,7 @@ import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
 import { metricSeries } from "../src/domain/services/MetricTrendService.ts";
 import { logDir, readActivityLog } from "./activity-log.js";
+import { MAX_SWITCH_MIN, runGateCommand } from "./intention-gate.js";
 import {
   getAttention,
   getDayTrace,
@@ -2479,6 +2513,179 @@ defineTool(server, {
   },
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// BETTING TABLE: allocations on a cycle, and what the cycle spent on them
+// ────────────────────────────────────────────────────────────────────────
+
+function cycleOrActive(ref: string | undefined): Cycle | string {
+  const cycles = readCollection(VAULT_ROOT, "cycles");
+  if (ref) {
+    return (
+      findCycleByIdOrName(cycles, ref) ?? `Cycle not found or ambiguous: ${ref}`
+    );
+  }
+  const t = new Date();
+  t.setHours(0, 0, 0, 0);
+  const active = Object.values(cycles)
+    .filter((c) => isCycleActive(c, t.getTime()))
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+  return active ?? "No active cycle; pass `cycle`.";
+}
+
+const AllocationSchema = z.object({
+  id: z.string().min(1).optional().describe("Omit to mint one."),
+  kind: z
+    .enum(["bet", "lane"])
+    .describe(
+      "bet: a defined outcome, ends at cool-down. lane: standing work, renews each cycle, needs an `aim`.",
+    ),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      'A lane named "Bugs & ops" is capped at a quarter of capacity and receives Bug/Backfill/Run: issues.',
+    ),
+  area: z.string().min(1),
+  link: z
+    .string()
+    .min(1)
+    .describe(
+      "How the meter attributes: a Linear project URL, an absolute (or ~/) repo path, or a pitch path.",
+    ),
+  appetiteDays: z.number().positive(),
+  aim: z
+    .string()
+    .optional()
+    .describe("The one named aim for this cycle. Required on a lane."),
+});
+
+defineTool(server, {
+  name: "set_cycle_allocations",
+  description:
+    "Set a cycle's betting table: replaces ALL its allocations (bets and lanes) and optionally its capacity (default 12 days). " +
+    "Refused, with every reason, when appetites plus the half-day cool-down exceed capacity, the Bugs & ops lane exceeds a quarter of capacity, or a lane has no aim. " +
+    "Defaults to the active cycle.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    capacityDays: z.number().positive().optional(),
+    allocations: z.array(AllocationSchema),
+  },
+  handler: async (params) => {
+    const found = cycleOrActive(params.cycle);
+    if (typeof found === "string") return err(found);
+    const allocations: Allocation[] = params.allocations.map((a) => ({
+      ...a,
+      id: a.id ?? crypto.randomUUID(),
+      name: a.name.trim(),
+    }));
+    const next = setAllocations(found, allocations, params.capacityDays);
+    if ("error" in next) return err(next.error);
+    const cycles = readCollection(VAULT_ROOT, "cycles");
+    cycles[found.id] = next;
+    writeCollection(VAULT_ROOT, "cycles", cycles);
+    return ok({
+      cycle: found.name,
+      capacityDays: next.capacityDays,
+      allocations: next.allocations,
+    });
+  },
+});
+
+defineTool(server, {
+  name: "list_cycle_allocations",
+  description:
+    "A cycle's betting table: capacity, allocations, days planned and days left to bet (after the half-day cool-down). Defaults to the active cycle.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+  },
+  annotations: { readOnlyHint: true },
+  handler: async ({ cycle }) => {
+    const found = cycleOrActive(cycle);
+    if (typeof found === "string") return err(found);
+    const capacityDays = found.capacityDays ?? DEFAULT_CAPACITY_DAYS;
+    const allocations = found.allocations ?? [];
+    const planned = allocations.reduce((s, a) => s + a.appetiteDays, 0);
+    return ok({
+      cycle: found.name,
+      startDate: found.startDate,
+      endDate: found.endDate,
+      capacityDays,
+      plannedDays: planned,
+      daysLeftToBet: capacityDays - COOL_DOWN_DAYS - planned,
+      allocations,
+    });
+  },
+});
+
+defineTool(server, {
+  name: "get_cycle_spend",
+  description:
+    "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
+    "`check` (the weekly appetite check: per-allocation table with area, Bugs & ops vs 1/4 of capacity, days left to bet, and `themiaExtract`, the Themia-only subset safe to publish), the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
+    "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> an allocation whose aim names the issue id (wins over labels) -> Bug, Backfill and Run: issues -> Bugs & ops -> project -> allocation link; " +
+    "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
+    "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows and the session map.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive start day; overrides the cycle window."),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive end day; default today."),
+  },
+  annotations: { readOnlyHint: true },
+  concise: (p) => {
+    const {
+      days: _days,
+      sessions: _sessions,
+      method: _method,
+      ...rest
+    } = p as Record<string, unknown>;
+    return rest;
+  },
+  handler: async ({ cycle, from, to }) => {
+    const found = cycleOrActive(cycle);
+    const override = from !== undefined || to !== undefined;
+    if (typeof found === "string" && !(override && !cycle)) return err(found);
+    const c = typeof found === "string" ? null : found;
+    const window = {
+      from: from ?? c?.startDate ?? today(),
+      to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
+    };
+    if (window.from > window.to)
+      return err(`from (${window.from}) is after to (${window.to})`);
+    const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
+    if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
+    if (!c) return ok(result);
+    return ok({
+      ...result,
+      check: appetiteCheck(
+        c.allocations ?? [],
+        {
+          allocations: result.allocations,
+          unattributedPct: result.unattributed.pct,
+        },
+        c.capacityDays ?? DEFAULT_CAPACITY_DAYS,
+        readCollection(VAULT_ROOT, "areas"),
+      ),
+    });
+  },
+});
+
 defineTool(server, {
   name: "end_cycle",
   description:
@@ -3371,15 +3578,24 @@ function describeActiveMoment(
 defineTool(server, {
   name: "set_active_moment",
   description:
-    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention).",
+    "Point the intention at a moment — 'this is what I'm doing now'. Accepts a moment id or name matched against today's board. Pass null to clear (release the intention). Pass `minutes` for a timed switch: the pointer holds for that long, then returns to the moment that was active before (or clears).",
   schema: {
     momentIdOrName: z
       .string()
       .min(1)
       .nullable()
       .describe("Moment id or name on today's board. null to clear."),
+    minutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_SWITCH_MIN)
+      .optional()
+      .describe(
+        "Timed switch length. Omit for an untimed set. At the end the pointer returns to what was active before.",
+      ),
   },
-  handler: async ({ momentIdOrName }) => {
+  handler: async ({ momentIdOrName, minutes }) => {
     if (momentIdOrName === null) {
       const previous = readActiveMoment(VAULT_ROOT);
       clearActiveMoment(VAULT_ROOT);
@@ -3416,7 +3632,12 @@ defineTool(server, {
       );
     }
 
-    const pointer = writeActiveMoment(VAULT_ROOT, moment.id, nowIso());
+    const pointer = writeActiveMoment(
+      VAULT_ROOT,
+      moment.id,
+      nowIso(),
+      minutes,
+    );
     return ok({ set: describeActiveMoment(pointer, moment) });
   },
 });
@@ -4164,7 +4385,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` when omitted. When no season is running, `serves` points at the last one (see `note`).",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the per-domain pass allowance. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -4256,7 +4477,18 @@ defineTool(server, {
     unlockNote: z
       .string()
       .optional()
-      .describe("How the block is lifted (REQUIRED for dry and rationed modes)"),
+      .describe(
+        "How the block is lifted (REQUIRED for dry and rationed modes)",
+      ),
+    passes: z
+      .object({
+        perMonth: z.number().int().min(0),
+        hours: z.number().gt(0).max(24),
+      })
+      .optional()
+      .describe(
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the per-domain allowance. Omitted on a re-declaration, the stored one is kept.",
+      ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
     ),
@@ -4386,7 +4618,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_pass_allowance",
   description:
-    "Set the block page's pass allowance: passes per month (reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
+    "Set the block page's pass allowance: passes per month PER DOMAIN (each domain counts its own; www. and m. share the bare domain's count; reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
   schema: {
     perMonth: z.number().int().min(0).describe("Passes per month"),
     hours: z.number().positive().max(24).describe("Hours each pass lasts"),
@@ -4419,7 +4651,7 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month and hours each (`default: true` when no record is set).",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month (per domain) and hours each (`default: true` when no record is set).",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: conciseFenceReport,

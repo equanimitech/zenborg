@@ -27,6 +27,10 @@ Do NOT trigger for:
 
 ## Workflow
 
+### Start the sunset moment
+
+Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunset" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
+
 ### 0. Materialize bedtime routine
 
 Before reading the day, call `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` to plant any bedtime routine entries that haven't been planted yet today. Report what was created vs. already planted.
@@ -64,8 +68,8 @@ If the user names activities, hand off to the tend workflow to decompose, resolv
 
 ### 4. Clear the active moment
 
-If `get_active_moment` shows a stale intention, offer to clear it:
-- "Your intention is still set to [moment]. Clear it for the night?"
+The sunset moment is the intention now, so offer to clear it as the ritual ends:
+- "Your intention is still set to sunset. Clear it for the night?"
 
 On confirmation, call `mcp__zenborg__clear_active_moment`.
 
@@ -75,7 +79,11 @@ If sleep data is available, close the body loop that sunrise opened. Include las
 sleep as context for how the day went. The gardener already lived the day; the observation
 is for their own pattern recognition.
 
-### 6. Seed tomorrow (optional)
+### 6. Work triage
+
+Sunset does not triage work. The DONE · TOMORROW · THIS CYCLE · LATER triage lives in the morning stand-up (leadership-lab `/agenda` in Themia).
+
+### 7. Seed tomorrow (optional)
 
 
 If the user wants to look ahead:
@@ -84,9 +92,9 @@ If the user wants to look ahead:
 
 If the user names tomorrow's plans, use tend with `day = tomorrow`.
 
-To arrange tomorrow, call `mcp__zenborg__open_phase_pane` with `{ "day": "tomorrow", "phase": "MORNING" }`: the moving happens in the pane, the conversation stays the ritual. If it answers that the pane waits undrawn, mention `/phase tomorrow morning` once and go on.
+To arrange tomorrow, tell the gardener once to type `/phase tomorrow morning`: the moving happens in the pane, the conversation stays the ritual. Then go on.
 
-### 7. Write the day to journal oracle
+### 8. Write the day to journal oracle
 
 Read `~/.zenborg/oracles.json` → `routes.journal`. Walk the oracle chain
 (same protocol as close-up §3b): `check` → `read` (if present) → `write`.
@@ -96,7 +104,7 @@ Keep it brief — close-up entries already hold the session detail.
 
 If no oracle is reachable, skip silently — the day lives in the garden only.
 
-### 8. Close
+### 9. Close
 
 End with a natural close. No summary statistics, no scores, no "well done." The day is complete because the gardener says it is.
 

@@ -295,11 +295,38 @@ body {
 }
 
 .newtab-moment {
+  font: inherit;
   font-size: 13px;
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+  text-align: left;
   color: var(--ink);
+  cursor: pointer;
+}
+
+.newtab-moment:hover:not(:disabled) .newtab-moment-name {
+  text-decoration: underline;
+}
+
+.newtab-moment:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.newtab-moment:disabled {
+  cursor: default;
+}
+
+.newtab-moment-error {
+  font-size: 12px;
+  color: var(--quiet);
+  margin: 0;
 }
 
 .newtab-moment-done {

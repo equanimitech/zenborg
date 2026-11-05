@@ -102,6 +102,9 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `get_cycle_review` | `cycleId` | Descriptive review — no aggregate scores. |
 | `plan_cycle` | `name, template?, startDate?, endDate?, ...` | `template: "week"/"month"/"quarter"` computes endDate (7/28/90 days). Pass template OR endDate. Also `areaIntentions?`, `people?` (see `update_cycle`). |
 | `update_cycle` | `id, ...fields` | Set `endDate` to close a cycle. `reflection` stamps `reflectionSource: "machine"`. `areaIntentions: {areaId: text}` (1 to 12 words) and `people: {personKey: text}` (a record id is accepted and stored as its key) (0 to 12 words; `""` = on this season's roster) replace the stored map; `null` or `{}` clears. Unknown ids/keys and out-of-range text are rejected, naming the id. |
+| `set_cycle_allocations` | `cycle?, capacityDays?, allocations[]` | The betting table. Replaces all allocations `{id?, kind: bet\|lane, name, area, link, appetiteDays, aim?}`. Refuses: appetites + ½ d cool-down > capacity (default 12), "Bugs & ops" lane > ¼ capacity, lane without `aim`. |
+| `list_cycle_allocations` | `cycle?` | Capacity, allocations, planned days, days left to bet. |
+| `get_cycle_spend` | `cycle?, from?, to?` | Merged hours per allocation (union across sessions, 5 min gap cap, 6 h = 1 day), unattributed, agent hours, turns. Linear join read from `<vault>/cache/linear-join.json`. Caches to `<vault>/cache/cycle-spend.json` for the SessionStart line. |
 | `delete_cycle` | `id` | Cascades: deletes all moments + plans. `destructiveHint`. |
 
 ### People

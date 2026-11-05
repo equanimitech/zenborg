@@ -10,7 +10,13 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
+import {
+  resolvePointer,
+  staleReason,
+  wakingDayKey,
+} from "../domain/attention/ActiveMoment.ts";
+import { parisDay, spendLine } from "./spend-line.ts";
+import { refreshSpendInBackground } from "./spend-refresh.ts";
 
 const VAULT =
   process.env.ZENBORG_HOME ||
@@ -62,6 +68,26 @@ function currentPhase(configs: PhaseConfig[]): PhaseConfig | null {
   return null;
 }
 
+/** The cycle's spend line, from the cache; empty when there is none. */
+function cycleLine(): string {
+  refreshSpendInBackground(VAULT); // detached; this run prints the cache as it is
+  try {
+    const line = spendLine(
+      readJSON(join(VAULT, "cache", "cycle-spend.json")),
+      parisDay(Date.now()),
+    );
+    return line ? ` Cycle: ${line}.` : "";
+  } catch {
+    return "";
+  }
+}
+
+/** The one zenborg line: the intention, then the cycle. */
+function say(body: string): never {
+  process.stdout.write(`<zenborg-intention: ${body}${cycleLine()}>`);
+  process.exit(0);
+}
+
 function minutesAgo(iso: string): number {
   return Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
 }
@@ -78,11 +104,19 @@ function drainStdin(): Promise<void> {
 async function main(): Promise<void> {
   await drainStdin();
 
-  const activeMoment = readJSON(join(VAULT, "activeMoment.json")) as {
-    momentId?: string;
-    at?: string;
-  };
-  const momentsMap = readJSON(join(VAULT, "moments.json")) as Record<string, Moment>;
+  // The pointer in force: a timed switch past its `until` reads as its return.
+  const activeMoment: { momentId?: string; at?: string } =
+    resolvePointer(
+      readJSON(join(VAULT, "activeMoment.json")) as {
+        momentId: string;
+        at: string;
+      },
+      Date.now(),
+    ) ?? {};
+  const momentsMap = readJSON(join(VAULT, "moments.json")) as Record<
+    string,
+    Moment
+  >;
   const areasMap = readJSON(join(VAULT, "areas.json")) as Record<string, Area>;
   const phaseCfgsMap = readJSON(join(VAULT, "phaseConfigs.json")) as Record<
     string,
@@ -91,7 +125,11 @@ async function main(): Promise<void> {
 
   const phases = Object.values(phaseCfgsMap);
   const phase = currentPhase(phases);
-  if (!phase) silent();
+  if (!phase) {
+    const line = cycleLine();
+    if (line) process.stdout.write(`<zenborg-intention:${line}>`);
+    silent();
+  }
 
   const today = wakingDayKey();
   const phaseMoments = Object.values(momentsMap).filter(
@@ -109,7 +147,9 @@ async function main(): Promise<void> {
     } else if (active) {
       const area = active.areaId ? areasMap[active.areaId] : null;
       const ago = activeMoment.at ? minutesAgo(activeMoment.at) : 0;
-      const areaLabel = area ? ` (${area.emoji ?? ""} ${area.name})`.trim() : "";
+      const areaLabel = area
+        ? ` (${area.emoji ?? ""} ${area.name})`.trim()
+        : "";
       const phaseChanged = active.phase && active.phase !== phase!.phase;
       const stale = ago > 120;
 
@@ -117,17 +157,14 @@ async function main(): Promise<void> {
         const why = phaseChanged
           ? `phase changed (was ${active.phase}, now ${phase!.label})`
           : `set ${ago}m ago`;
-        process.stdout.write(
-          `<zenborg-intention: stale active "${active.name}"${areaLabel}: ${why}.>`,
-        );
+        say(`stale active "${active.name}"${areaLabel}: ${why}.`);
       } else {
-        process.stdout.write(
-          `<zenborg-intention: active "${active.name}"${areaLabel}, ` +
+        say(
+          `active "${active.name}"${areaLabel}, ` +
             `set ${ago}m ago. Phase: ${phase!.label}. ` +
-            `Clear on /close-up or when the gardener switches.>`,
+            `Clear on /close-up or when the gardener switches.`,
         );
       }
-      process.exit(0);
     }
   }
 
@@ -138,13 +175,13 @@ async function main(): Promise<void> {
       return `"${m.name}"${area ? ` (${area.name})` : ""}`;
     })
     .join(", ");
-  process.stdout.write(
-    `<zenborg-intention: ${released}No active intention. ` +
+  say(
+    `${released}No active intention. ` +
       `Phase: ${phase!.label} (${phase!.startHour}:00–${phase!.endHour}:00). ` +
-      (planted ? `Planted this phase: ${planted}.` : "Nothing planted this phase.") +
-      ">",
+      (planted
+        ? `Planted this phase: ${planted}.`
+        : "Nothing planted this phase."),
   );
-  process.exit(0);
 }
 
 main().catch(() => process.exit(0));
