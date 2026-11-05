@@ -27,11 +27,6 @@ import {
   setFencesEnabled,
 } from "../src/application/use-cases/fences.ts";
 import {
-  collectResolverHosts,
-  readResolverHealth,
-  syncResolverFences,
-} from "./adapters/adguard.js";
-import {
   crossingTally,
   expandHome,
   fenceStore,
@@ -182,7 +177,6 @@ import {
 } from "../src/domain/attention/ActiveMoment.ts";
 import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
-import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
 import type { Primitive } from "../src/domain/intervention/Primitive.ts";
 import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
@@ -229,6 +223,7 @@ import {
   midnight,
 } from "./site-minutes.js";
 import { defineTool, err, ok, type ToolResult } from "./tooling.js";
+import { readHabitMap } from "./garmin-map.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -4132,7 +4127,7 @@ const ReachSchema = z
 defineTool(server, {
   name: "set_host_block",
   description:
-    "Declare a standing block on a host, as a rule that says what it is for. Browser-enforced by default — the extension actuates it from the pushed fence record; pass `resolverProfile` for a resolver-level block instead, which is the only reach that covers a phone. `unlockNote` is required and is the exit: a block that names no way out is refused, never set.",
+    "Declare a standing block on a host, as a rule that says what it is for. Browser-enforced by default — the extension actuates it from the pushed fence record. `unlockNote` is required and is the exit: a block that names no way out is refused, never set.",
   schema: {
     host: z
       .string()
@@ -4152,18 +4147,11 @@ defineTool(server, {
       ),
     name: z.string().optional(),
     description: z.string().optional(),
-    resolverProfile: z
-      .string()
-      .optional()
-      .describe(
-        "Name the resolver profile carrying the block to enforce it there instead of in the browser",
-      ),
     reach: ReachSchema,
   },
   handler: async (input) => {
     const result = await declareHostBlock(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok(declaredPayload(result));
   },
 });
@@ -4361,15 +4349,10 @@ defineTool(server, {
       .describe(
         "The hosts to wall. Required: there is no default list, so a seed names its own hosts.",
       ),
-    resolverProfile: z
-      .string()
-      .optional()
-      .describe("Enforce at the resolver instead of in the browser"),
   },
   handler: async (input) => {
     const result = await seedHostBlocks(fenceDeps, input);
     if ("problems" in result) return err(result.problems.join("; "));
-    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok(
       declaredPayload({
         ...result,
@@ -4502,7 +4485,6 @@ defineTool(server, {
       },
     });
     if ("problems" in result) return err(result.problems.join("; "));
-    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok(
       declaredPayload({
         ...result,
@@ -4544,7 +4526,6 @@ defineTool(server, {
       localDay(Date.now()),
     );
     if ("problems" in result) return err(result.problems.join("; "));
-    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
       [enabled ? "resumed" : "paused"]: result.changed.map((c) => c.id),
       ...(result.unchanged.length > 0
@@ -4586,7 +4567,6 @@ defineTool(server, {
         : { id: id as string };
     const result = await clearFences(fenceDeps, target);
     if ("problems" in result) return err(result.problems.join("; "));
-    syncResolverFences(() => readFencesFile(VAULT_ROOT), VAULT_ROOT);
     return ok({
       cleared: result.cleared.map((f) => ({ id: f.id, label: f.name })),
     });
@@ -4658,27 +4638,11 @@ defineTool(server, {
   handler: async () => {
     const report = await fenceReport(fenceDeps);
     const allFences = readFencesFile(VAULT_ROOT);
-    const resolverHosts = collectResolverHosts(allFences);
-    const health = readResolverHealth(VAULT_ROOT);
 
     const fences = report.fences.map((f) => {
       const reach: Record<string, string> = {};
       if (f.fence.scope.surface === "browser") {
         reach.browser = "extension";
-        const domains = Array.isArray(f.fence.scope.domain)
-          ? f.fence.scope.domain
-          : [f.fence.scope.domain];
-        const inSyncSet = domains.some((d) => resolverHosts.has(d));
-        if (!inSyncSet) {
-          reach.resolver = "skipped";
-        } else if (health && !health.reachable) {
-          reach.resolver = "unreachable";
-        } else if (health && health.reachable) {
-          reach.resolver = "synced";
-        } else {
-          // No health record yet — never synced
-          reach.resolver = "skipped";
-        }
       }
       return { ...f, reach };
     });
@@ -4929,18 +4893,7 @@ defineTool(server, {
 // ────────────────────────────────────────────────────────────────────────
 
 function loadHabitMap() {
-  const mapPath = path.join(
-    VAULT_ROOT,
-    "integrations",
-    "garmin",
-    "habit-map.json",
-  );
-  if (!fs.existsSync(mapPath)) return parseHabitMap(null);
-  try {
-    return parseHabitMap(JSON.parse(fs.readFileSync(mapPath, "utf8")));
-  } catch {
-    return parseHabitMap(null);
-  }
+  return readHabitMap(VAULT_ROOT);
 }
 
 defineTool(server, {
