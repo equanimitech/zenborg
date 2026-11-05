@@ -27,6 +27,10 @@ Do NOT trigger for:
 
 ## Workflow
 
+### Start the sunset moment
+
+Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunset" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
+
 ### 0. Materialize bedtime routine
 
 Before reading the day, call `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` to plant any bedtime routine entries that haven't been planted yet today. Report what was created vs. already planted.
@@ -64,8 +68,8 @@ If the user names activities, hand off to the tend workflow to decompose, resolv
 
 ### 4. Clear the active moment
 
-If `get_active_moment` shows a stale intention, offer to clear it:
-- "Your intention is still set to [moment]. Clear it for the night?"
+The sunset moment is the intention now, so offer to clear it as the ritual ends:
+- "Your intention is still set to sunset. Clear it for the night?"
 
 On confirmation, call `mcp__zenborg__clear_active_moment`.
 
