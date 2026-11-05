@@ -12,6 +12,8 @@ export type BoardOp =
   | { op: 'add'; habitId?: string; name?: string; areaId?: string; day?: string; phase?: string }
   | { op: 'active'; id: string }
   | { op: 'delete'; id: string }
+  /** Pane-only (the grab mode's j/k): Haiku's proposals never carry it. */
+  | { op: 'order'; id: string; order: number }
 
 /** Haiku's ops after validation, each with its human line, waiting for Apply; `dropped` says what was refused. */
 export type BoardProposal = { ops: BoardOp[]; lines: string[]; dropped: string[] }
@@ -48,6 +50,10 @@ declare module 'claude-code' {
       hidden: { day: string; ids: string[] }
       /** Bumped after every write, so the pane re-reads the vault. */
       rev: number
+      /** The moment grabbed with m, or null. */
+      held: string | null
+      /** True while a grab-mode write is in flight. */
+      busy: boolean
     }
   }
 }

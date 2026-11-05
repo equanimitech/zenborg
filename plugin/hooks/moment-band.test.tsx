@@ -85,7 +85,10 @@ const staleWithThree = () => ({
 })
 
 test('a stale moment: status line, band with three taps; a tap tends it and the band leaves', async ($, on) => {
-  const { calls, statuses } = garden(on, staleWithThree())
+  const files = staleWithThree()
+  // tea carries its own length: it wins over the band's 120-minute horizon.
+  files['moments.json'].b = { ...files['moments.json'].b, durationMin: 45 } as never
+  const { calls, statuses } = garden(on, files)
   await $.turn.start({ text: 'hi', turnId: 't1' })
   expect(await tailOf($)).toBe('≋ 🍿 film · from the afternoon')
   expect(statuses).toEqual([])
@@ -99,9 +102,9 @@ test('a stale moment: status line, band with three taps; a tap tends it and the 
   }
 
   await ui.press({ key: 'tap-1' })
-  expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b' } }])
+  expect(calls).toEqual([{ tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'b', minutes: 45 } }])
   expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
-  expect(await tailOf($)).toBe('≋ 🥐 tea · 0m')
+  expect(await tailOf($)).toBe('≋ 🥐 tea · 45m left')
   await ui.unmount()
 })
 
@@ -116,7 +119,7 @@ test('nothing planted: a habit tap plants it today in this phase, then tends it'
   await ui.press({ key: 'tap-0' })
   expect(calls).toEqual([
     { tool: 'mcp__zenborg__add_moment', input: { habitId: 'h1', day: TODAY, phase: 'MORNING' } },
-    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1' } },
+    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1', minutes: 120 } },
   ])
   await ui.unmount()
 })
@@ -142,7 +145,7 @@ test('typing filters habits across phases; submit plants the first match', async
   await ui.input({ key: 'search', text: 'cafe' })
   expect(calls).toEqual([
     { tool: 'mcp__zenborg__add_moment', input: { habitId: 'h1', day: TODAY, phase: 'MORNING' } },
-    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1' } },
+    { tool: 'mcp__zenborg__set_active_moment', input: { momentIdOrName: 'new1', minutes: 120 } },
   ])
   await ui.unmount()
 })
