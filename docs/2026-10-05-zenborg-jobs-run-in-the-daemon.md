@@ -63,7 +63,9 @@ A drawing spring is a job that writes `<vault>/log/<day>.<surface>.jsonl`; the M
 server only reads those files and never calls a spring live. The git and Linear springs
 are subcommands of the bundled `zenborg-mcp` sidecar, so `program` is its path inside the
 app bundle. Both rewrite the last 7 days on every run (`--days N` to change it), so a
-rerun replaces a day and never duplicates it. Both ship disabled:
+rerun replaces a day and never duplicates it. A partial run never erases history: git
+writes nothing when it finds no repos or when any repo's log fails, and Linear writes
+nothing when the API errors. Both ship disabled:
 
 ```jsonc
 {
@@ -87,11 +89,13 @@ rerun replaces a day and never duplicates it. Both ship disabled:
 ```
 
 - **git** walks the repos under every area's `surfaces.paths`, two levels down, and
-  writes one line per repo per waking day: `{ repo, cwd, commits }`. It counts the
+  writes one line per repo per waking day: `{ repo, cwd, commits }` (`cwd` is the repo path: the area map matches by path
+  prefix, so a bare name cannot resolve). It counts the
   repo's own (`user.email`) non-merge commits on any ref, by author time. No messages,
   no diffs. The work surface resolves `cwd` to an area through the same area map.
 - **linear** writes one `issue_moved` line per state change on the viewer's assigned
-  issues: `{ issue, from, to }` at its `ts`. Identifiers and state names only: no
+  issues the viewer moved themselves (a teammate's or a bot's move is not counted):
+  `{ issue, from, to }` at its `ts`. Identifiers and state names only: no
   titles, bodies or descriptions are ever requested.
 - **The Linear key** comes from `LINEAR_API_KEY` in the job's environment and is never
   written anywhere. Don't put it in `jobs.json`: the vault is plain files. Give it to the
@@ -102,32 +106,6 @@ rerun replaces a day and never duplicates it. Both ship disabled:
 
 The readback (`get_footprints`) shows both on the **work** surface as counts, commits
 and issues moved, never minutes. A spring with no line in the week reads "not drawn".
-
-### Garmin
-
-Garmin was a launchd agent (`com.equanimitech.zenborg.garmin`) running keel's
-`garmin_sync.py` hourly. The equivalent job:
-
-```jsonc
-{
-  "garmin": {
-    "id": "garmin",
-    "enabled": true,
-    "program": "$HOME/Developer/equanimitech/_archive/keel/integrations/garmin/garmin_sync.py",
-    "args": [],
-    "env": {
-      "PATH": "$HOME/.pyenv/shims:$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin",
-      "KEEL_HOME": "$HOME/.zenborg"
-    },
-    "trigger": { "kind": "interval", "seconds": 3600, "runAtLoad": true }
-  }
-}
-```
-
-`$HOME` expands only in a leading position or as `$HOME`, never `~` after a colon, so the
-PATH spells it out. The script is a `uv run --script`, so `uv` must be on that PATH.
-`KEEL_HOME` points the script at the vault: it writes `$KEEL_HOME/log/*.garmin.jsonl`.
-The plist's `/tmp/zenborg-garmin.log` goes away: the daemon discards job output.
 
 ## Editing jobs
 

@@ -171,9 +171,67 @@ describe("git spring", () => {
       false,
     );
 
-    // A day that loses its commits (the repo left the plot) loses its file.
-    drawGit(vault, [], days);
+    // A day that loses its commits while another repo is still counted loses its line.
+    const gone = path.join(tmp("other-plot"), "gamma");
+    initRepo(gone);
+    drawGit(vault, [{ surfaces: { paths: [path.dirname(gone)] } }], days);
     expect(fs.existsSync(file)).toBe(false);
+  });
+
+  describe("never erases history on a partial run", () => {
+    const days = ["2026-10-05", "2026-10-06"];
+    const kept = (vault: string) => {
+      const file = path.join(vault, "log", "2026-10-05.git.jsonl");
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, '{"kept":true}\n');
+      return file;
+    };
+
+    it("when no repos are found", () => {
+      const vault = tmp("norepos");
+      const file = kept(vault);
+      const empty = tmp("empty-plot");
+      expect(drawGit(vault, [], days)).toBe(0);
+      expect(drawGit(vault, [{ surfaces: { paths: [empty] } }], days)).toBe(0);
+      expect(fs.readFileSync(file, "utf8")).toBe('{"kept":true}\n');
+    });
+
+    it("when areas.json is missing or unreadable", async () => {
+      const vault = tmp("novault");
+      const file = kept(vault);
+      const now = new Date(at("2026-10-06", 12));
+      expect(await runSpring(vault, ["git", "--days", "2"], {}, now)).toBe(1);
+      fs.mkdirSync(path.join(vault, "areas.json")); // a directory: read throws
+      expect(await runSpring(vault, ["git", "--days", "2"], {}, now)).toBe(1);
+      expect(fs.readFileSync(file, "utf8")).toBe('{"kept":true}\n');
+    });
+
+    it("when a git call fails", async () => {
+      const vault = tmp("gitfail");
+      const file = kept(vault);
+      const plot = tmp("gitfail-plot");
+      const good = initRepo(path.join(plot, "alpha"));
+      commit(good, at("2026-10-05", 10), "work");
+      const bad = initRepo(path.join(plot, "beta"));
+      commit(bad, at("2026-10-05", 11), "work");
+      fs.writeFileSync(path.join(bad, ".git", "HEAD"), "garbage\n"); // log fails
+      fs.writeFileSync(
+        path.join(vault, "areas.json"),
+        JSON.stringify({ a1: { id: "a1", surfaces: { paths: [plot] } } }),
+      );
+      expect(() => commitTimes(bad, 0, Date.now())).toThrow();
+      const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      const code = await runSpring(
+        vault,
+        ["git", "--days", "2"],
+        {},
+        new Date(at("2026-10-06", 12)),
+      );
+      stderr.mockRestore();
+      expect(code).toBe(1);
+      // Neither the old file nor the healthy repo's fresh line was touched.
+      expect(fs.readFileSync(file, "utf8")).toBe('{"kept":true}\n');
+    });
   });
 
   it("runs as `spring git` over the vault's areas", async () => {
@@ -239,7 +297,7 @@ describe("linear spring", () => {
 
   it("maps each state change to issue id, from → to, ts; nothing else rides along", () => {
     const issues = LINEAR_FIXTURE.data?.viewer?.assignedIssues?.nodes ?? [];
-    const events = linearEvents(issues);
+    const events = linearEvents(issues, "user-me");
     expect(events.map((e) => [e.payload, e.ts])).toEqual([
       [
         { issue: "ABC-101", from: "In Progress", to: "In Review" },
@@ -260,10 +318,21 @@ describe("linear spring", () => {
     expect(JSON.stringify(events)).not.toMatch(/title|never reach/i);
   });
 
+  it("counts only the viewer's own moves, not a teammate's or an unattributed one", () => {
+    const issues = LINEAR_FIXTURE.data?.viewer?.assignedIssues?.nodes ?? [];
+    const to = (id: string) =>
+      linearEvents(issues, id).map((e) => e.payload.to);
+    expect(to("user-me")).not.toContain("Done");
+    expect(to("user-me")).not.toContain("Archived");
+    expect(to("user-teammate")).toEqual(["Done"]);
+    expect(LINEAR_QUERY).toMatch(/actor\s*{\s*id\s*}/);
+  });
+
   it("follows pages and sends the key as the Authorization header", async () => {
     const page1: LinearPage = {
       data: {
         viewer: {
+          id: "user-me",
           assignedIssues: {
             pageInfo: { hasNextPage: true, endCursor: "c1" },
             nodes: [{ identifier: "ABC-1" }],
@@ -272,7 +341,12 @@ describe("linear spring", () => {
       },
     };
     const { impl, calls } = fakeFetch([page1, LINEAR_FIXTURE]);
-    const issues = await fetchLinearIssues("test-key", new Date(0), impl);
+    const { viewerId, issues } = await fetchLinearIssues(
+      "test-key",
+      new Date(0),
+      impl,
+    );
+    expect(viewerId).toBe("user-me");
     expect(issues).toHaveLength(4);
     expect(calls[0].headers.Authorization).toBe("test-key");
     expect(JSON.parse(calls[1].body).variables.after).toBe("c1");
@@ -305,6 +379,7 @@ describe("linear spring", () => {
     expect(new Set(lines.map((e) => e.payload.issue))).toEqual(
       new Set(["ABC-101", "ABC-102"]),
     );
+    expect(lines.map((e) => e.payload.to)).not.toContain("Done");
     expect(first).not.toMatch(/never reach|test-key/);
   });
 

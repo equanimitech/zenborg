@@ -1,6 +1,7 @@
 {
   "data": {
     "viewer": {
+      "id": "user-me",
       "assignedIssues": {
         "pageInfo": { "hasNextPage": false, "endCursor": "cursor-1" },
         "nodes": [
@@ -12,18 +13,33 @@
               "nodes": [
                 {
                   "createdAt": "2026-10-08T09:15:00.000Z",
+                  "actor": { "id": "user-me" },
                   "fromState": { "name": "In Progress" },
                   "toState": { "name": "In Review" }
                 },
                 {
                   "createdAt": "2026-10-07T16:40:00.000Z",
+                  "actor": { "id": "user-me" },
                   "fromState": { "name": "Todo" },
                   "toState": { "name": "In Progress" }
                 },
                 {
                   "createdAt": "2026-10-07T16:41:00.000Z",
+                  "actor": { "id": "user-me" },
                   "fromState": null,
                   "toState": null
+                },
+                {
+                  "createdAt": "2026-10-08T10:00:00.000Z",
+                  "actor": { "id": "user-teammate" },
+                  "fromState": { "name": "In Review" },
+                  "toState": { "name": "Done" }
+                },
+                {
+                  "createdAt": "2026-10-08T10:05:00.000Z",
+                  "actor": null,
+                  "fromState": { "name": "Done" },
+                  "toState": { "name": "Archived" }
                 }
               ]
             }
@@ -34,6 +50,7 @@
               "nodes": [
                 {
                   "createdAt": "2026-10-08T11:00:00.000Z",
+                  "actor": { "id": "user-me" },
                   "fromState": null,
                   "toState": { "name": "Backlog" }
                 }
@@ -46,6 +63,7 @@
               "nodes": [
                 {
                   "createdAt": "2026-10-08T11:00:00.000Z",
+                  "actor": { "id": "user-me" },
                   "fromState": { "name": "Todo" },
                   "toState": { "name": "Done" }
                 }

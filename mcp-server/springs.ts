@@ -41,7 +41,8 @@ export function recentDays(now: Date, n: number): string[] {
 /**
  * Rewrite `log/<day>.<surface>.jsonl` for every day in `days` from `events`.
  * A day with no events loses its file, so a rerun is a replacement, not an
- * append. Events outside `days` are ignored.
+ * append. Events outside `days` are ignored. Pass it only the result of a
+ * complete run: after a partial one, "no events" means "unknown".
  */
 export function writeDays(
   dir: string,
@@ -119,25 +120,27 @@ export function gitFreeEnv(env: NodeJS.ProcessEnv = process.env) {
   );
 }
 
+/** Throws when git fails, so a failed count is never mistaken for "no commits". */
 function git(repo: string, args: readonly string[]): string {
-  try {
-    return execFileSync("git", ["-C", repo, ...args], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      env: gitFreeEnv(),
-    });
-  } catch {
-    return "";
-  }
+  return execFileSync("git", ["-C", repo, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    env: gitFreeEnv(),
+  });
 }
 
 /**
  * Author times (epoch-ms) of the repo's own non-merge commits on any ref,
- * authored in `[from, to)`. "Own" is the repo's `user.email`; a repo without
+ * authored in `[from, to)`. Throws if the log fails. "Own" is the repo's `user.email`; a repo without
  * one counts every author. Only `%at` is asked for: no message, no diff.
  */
 export function commitTimes(repo: string, from: number, to: number): number[] {
-  const email = git(repo, ["config", "user.email"]).trim();
+  let email = "";
+  try {
+    email = git(repo, ["config", "user.email"]).trim();
+  } catch {
+    // config exits 1 when the key is unset: count every author.
+  }
   const out = git(repo, [
     "log",
     "--all",
@@ -173,24 +176,32 @@ export function gitDayEvents(
     kind: "commits_counted",
     ts: wakingDayWindow(day).from,
     sessionId: "",
+    // cwd stays: the area map resolves by path prefix, a bare name cannot.
     payload: { repo: path.basename(repo), cwd: repo, commits },
   }));
 }
 
-/** Count commits per repo per day over the areas' paths and rewrite the days. */
+/**
+ * Count commits per repo per day over the areas' paths and rewrite the days.
+ * Writes nothing, and so deletes nothing, unless every repo was counted: no
+ * repos found (areas missing, paths gone) or any log failing is a partial
+ * run, and a partial run must not erase history. Returns the repos counted;
+ * throws on a failed repo.
+ */
 export function drawGit(
   vaultRoot: string,
   areas: readonly { surfaces?: { paths?: readonly string[] } }[],
   days: readonly string[],
 ): number {
   const repos = discoverRepos(areas.flatMap((a) => a.surfaces?.paths ?? []));
+  if (repos.length === 0) return 0;
   const from = wakingDayWindow(days[0]).from;
   const to = wakingDayWindow(days[days.length - 1]).to;
   const events = repos.flatMap((repo) =>
     gitDayEvents(repo, commitTimes(repo, from, to)),
   );
   writeDays(logDir(vaultRoot), "git", days, events);
-  return events.length;
+  return repos.length;
 }
 
 // ── Linear ─────────────────────────────────────────────────────────────────
@@ -199,17 +210,18 @@ const LINEAR_URL = "https://api.linear.app/graphql";
 
 /**
  * The viewer's assigned issues touched since `$since`, with their state
- * history. Asks for the identifier and state names only: never a title, a
- * description, a comment or a body.
+ * history and who made each move. Asks for the identifier, state names and
+ * actor id only: never a title, a description, a comment or a body.
  */
 export const LINEAR_QUERY = `query Moves($since: DateTimeOrDuration!, $after: String) {
   viewer {
+    id
     assignedIssues(first: 50, after: $after, filter: { updatedAt: { gte: $since } }) {
       pageInfo { hasNextPage endCursor }
       nodes {
         identifier
         history(first: 100) {
-          nodes { createdAt fromState { name } toState { name } }
+          nodes { createdAt actor { id } fromState { name } toState { name } }
         }
       }
     }
@@ -221,6 +233,7 @@ interface LinearIssueNode {
   readonly history?: {
     readonly nodes?: readonly {
       readonly createdAt?: unknown;
+      readonly actor?: { readonly id?: unknown } | null;
       readonly fromState?: { readonly name?: unknown } | null;
       readonly toState?: { readonly name?: unknown } | null;
     }[];
@@ -230,6 +243,7 @@ interface LinearIssueNode {
 export interface LinearPage {
   readonly data?: {
     readonly viewer?: {
+      readonly id?: unknown;
       readonly assignedIssues?: {
         readonly pageInfo?: {
           readonly hasNextPage?: boolean;
@@ -245,17 +259,21 @@ export interface LinearPage {
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
 /**
- * Map Linear issues to `issue_moved` events: one per state change. Fields are
- * picked one by one, never spread, so nothing the API adds can ride along.
+ * Map Linear issues to `issue_moved` events: one per state change the viewer
+ * made. A teammate's or a bot's move, or one with no actor, is not theirs.
+ * Fields are picked one by one, never spread, so nothing the API adds can
+ * ride along.
  */
 export function linearEvents(
   issues: readonly LinearIssueNode[],
+  viewerId: string,
 ): ActivityEvent[] {
   const events: ActivityEvent[] = [];
   for (const issue of issues) {
     const id = str(issue.identifier);
     if (!id) continue;
     for (const h of issue.history?.nodes ?? []) {
+      if (str(h.actor?.id) !== viewerId) continue;
       const to = str(h.toState?.name);
       const at = str(h.createdAt);
       const ts = at ? Date.parse(at) : Number.NaN;
@@ -273,13 +291,14 @@ export function linearEvents(
   return events;
 }
 
-/** Every page of the viewer's issues touched since `since`. Throws on any API error. */
+/** The viewer's id and every page of their issues touched since `since`. Throws on any API error. */
 export async function fetchLinearIssues(
   key: string,
   since: Date,
   fetchImpl: typeof fetch = fetch,
-): Promise<LinearIssueNode[]> {
+): Promise<{ viewerId: string; issues: LinearIssueNode[] }> {
   const issues: LinearIssueNode[] = [];
+  let viewerId: string | undefined;
   let after: string | null = null;
   do {
     const res = await fetchImpl(LINEAR_URL, {
@@ -293,13 +312,15 @@ export async function fetchLinearIssues(
     if (!res.ok) throw new Error(`linear: HTTP ${res.status}`);
     const page = (await res.json()) as LinearPage;
     if (page.errors?.length) throw new Error("linear: GraphQL error");
+    viewerId ??= str(page.data?.viewer?.id);
     const conn = page.data?.viewer?.assignedIssues;
     issues.push(...(conn?.nodes ?? []));
     after = conn?.pageInfo?.hasNextPage
       ? (conn.pageInfo.endCursor ?? null)
       : null;
   } while (after);
-  return issues;
+  if (!viewerId) throw new Error("linear: no viewer id");
+  return { viewerId, issues };
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────
@@ -329,22 +350,31 @@ export async function runSpring(
       try {
         areas = Object.values(readCollection(vaultRoot, "areas"));
       } catch {
-        return 1; // half-written areas.json: keep yesterday's files, try next run
+        return 1; // unreadable areas.json: keep yesterday's files, try next run
       }
-      drawGit(vaultRoot, areas, days);
-      return 0;
+      try {
+        return drawGit(vaultRoot, areas, days) > 0 ? 0 : 1;
+      } catch (error) {
+        process.stderr.write(`[spring git] ${(error as Error).message}\n`);
+        return 1; // a repo's log failed: keep the files, try next run
+      }
     }
     case "linear": {
       const key = env.LINEAR_API_KEY;
       if (!key) return 1;
       const [y, m, d] = days[0].split("-").map(Number);
       try {
-        const issues = await fetchLinearIssues(
+        const { viewerId, issues } = await fetchLinearIssues(
           key,
           new Date(y, m - 1, d),
           fetchImpl,
         );
-        writeDays(logDir(vaultRoot), "linear", days, linearEvents(issues));
+        writeDays(
+          logDir(vaultRoot),
+          "linear",
+          days,
+          linearEvents(issues, viewerId),
+        );
         return 0;
       } catch (error) {
         process.stderr.write(`[spring linear] ${(error as Error).message}\n`);
