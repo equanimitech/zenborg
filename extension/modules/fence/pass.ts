@@ -52,10 +52,10 @@ export type PassResult =
   | { readonly ok: true; readonly until?: number; readonly alreadyOpen?: true }
   | { readonly ok: false; readonly error: "none_left" | "not_a_time_block" };
 
-async function passesUsed(now: number, policy?: string): Promise<number> {
+async function passesUsed(now: number, host: string, policy?: string): Promise<number> {
   const since = startOfLocalMonth(now);
-  const [host, outbox] = await Promise.all([queryEvents(since, [PASS_USED_KIND]), readEventsSince(since)]);
-  return passesUsedThisMonth(mergeById(host, outbox), now, policy);
+  const [events, outbox] = await Promise.all([queryEvents(since, [PASS_USED_KIND]), readEventsSince(since)]);
+  return passesUsedThisMonth(mergeById(events, outbox), now, policy, host);
 }
 
 export async function blockInfo(host: string, now: number = Date.now()): Promise<BlockInfo> {
@@ -64,11 +64,11 @@ export async function blockInfo(host: string, now: number = Date.now()): Promise
   if (blocking.length === 0 || !blocking.every((f) => f.schedule !== undefined)) {
     return { host, open: blocking.length === 0, notes, pass: null };
   }
-  // One policy's own pool when every blocker is that policy's; otherwise the shared one.
+  // One policy's own pool when every blocker is that policy's; otherwise this domain's own count.
   const pool = blocking[0].pool;
   const own = pool && blocking.every((f) => f.pool?.policy === pool.policy) ? pool : undefined;
   const { perMonth, hours } = own ?? (await passAllowance.getValue()) ?? DEFAULT_ALLOWANCE;
-  const left = Math.max(0, perMonth - (await passesUsed(now, own?.policy)));
+  const left = Math.max(0, perMonth - (await passesUsed(now, host, own?.policy)));
   return { host, open: false, notes, pass: { left, perMonth, hours, month: monthName(now), ...(own ? { policy: own.policy } : {}) } };
 }
 

@@ -4385,7 +4385,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_watering_hours",
   description:
-    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the shared allowance. When no season is running, `serves` points at the last one (see `note`).",
+    "Declare a standing temporal attention policy — which plots get watered when, with friction for watering the wrong plot at the wrong time. Four modes: 'regular' (gentle gate friction), 'dry' (standing block, no water at all), 'by_hand' (tool-level friction, manual work passes through), 'rationed' (hosts open inside the window until `budgetMinutes` of attended time today, then walled). `window` is the RESTRICTED hours: the friction/block applies inside it. One declaration generates per-surface rules with derived ids (`watering:<name>:<surface>[:<host>]`); re-declaring replaces, keeping a previously set `reach` and `passes` when omitted. `passes` gives the policy its own monthly pass pool (browser rules), apart from the per-domain pass allowance. When no season is running, `serves` points at the last one (see `note`).",
   schema: {
     name: z
       .string()
@@ -4487,7 +4487,7 @@ defineTool(server, {
       })
       .optional()
       .describe(
-        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the shared pool. Omitted on a re-declaration, the stored one is kept.",
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the per-domain allowance. Omitted on a re-declaration, the stored one is kept.",
       ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',
@@ -4618,7 +4618,7 @@ defineTool(server, {
 defineTool(server, {
   name: "set_pass_allowance",
   description:
-    "Set the block page's pass allowance: passes per month (reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
+    "Set the block page's pass allowance: passes per month PER DOMAIN (each domain counts its own; www. and m. share the bare domain's count; reset on the 1st, local time) and hours each pass opens a host for. Absent, the extension uses 4 passes of 3 hours. No rollover, no banking.",
   schema: {
     perMonth: z.number().int().min(0).describe("Passes per month"),
     hours: z.number().positive().max(24).describe("Hours each pass lasts"),
@@ -4651,7 +4651,7 @@ defineTool(server, {
 defineTool(server, {
   name: "get_fence",
   description:
-    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month and hours each (`default: true` when no record is set).",
+    "Report what is currently fenced. `fences`: session/garden fences with the plugin's crossing tally (fences-state.json, zero when never crossed) and the rung the NEXT crossing lands on. `browser`: every browser rule with state (enabled/paused), kind (block/gate/ladder/transform), hosts, rungs (trigger → friction), schedule window (restricted hours, from→to), block reach, and today's counts from the browser log: decision points delivered/withheld, gates clicked through, gates dismissed. Concise groups a watering policy's hosts into one line and drops zero counts; full returns every record. `openings`: planned openings, active or upcoming. `passAllowance`: passes per month (per domain) and hours each (`default: true` when no record is set).",
   schema: {},
   annotations: { readOnlyHint: true },
   concise: conciseFenceReport,
