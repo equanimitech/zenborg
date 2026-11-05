@@ -31,11 +31,32 @@ Do NOT trigger for:
 
 Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunset" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
 
-### 0. Materialize bedtime routine
+### 0. Fleet close-up
 
-Before reading the day, call `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` to plant any bedtime routine entries that haven't been planted yet today. Report what was created vs. already planted.
+Before reading the day, close the sessions still running.
 
-### 1. Read the day's record
+```
+ToolSearch  query: "select:SendMessage"
+ListAgents
+```
+
+Show peers as a table (name, state, age). Skip self. Then send **every** peer one
+message, all in one turn (parallel SendMessage calls). Sunset is the only journal
+writer in this step, so word it as:
+
+> Rafa is closing the day: once your current turn is done, run /close-up in
+> reply-only mode. Do not write the journal; reply to me with your entry text.
+
+Wait for the replies, up to 3 minutes; then go on with whatever arrived and name
+the peers that stayed silent. Report which sends failed. A failed send usually
+means that session already exited; say so plainly, it is not an error. Keep the
+reply texts for §3 and §10.
+
+### 1. Materialize bedtime routine
+
+Then, call `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` to plant any bedtime routine entries that haven't been planted yet today. Report what was created vs. already planted.
+
+### 2. Read the day's record
 
 Fetch today's state in parallel:
 - `mcp__zenborg__list_moments` with `{ "day": "YYYY-MM-DD", "allocation": "allocated" }` for today
@@ -43,7 +64,7 @@ Fetch today's state in parallel:
 - `mcp__zenborg__get_active_moment` to check if an intention is still set
 - `mcp__garmin__get_sleep_summary` with today's date for last night's sleep (the night that opened this day)
 
-### 2. Render the day summary
+### 3. Render the day summary
 
 Present a compact reflection:
 
@@ -58,7 +79,23 @@ Night:     (empty)
 4 areas touched: Fitness, Social, Themia, Mindfulness
 ```
 
-### 3. Ask about unrecorded moments
+#### Tomorrow starts with
+
+Build it from the peers' replies (§0) plus any close-up entries already in today's
+journal (read through the oracle chain, `routes.journal` read). From each, take the
+« what's left » content and the Carry-over line, de-duplicate, and render a short list:
+
+```
+Tomorrow starts with
+- <item>
+- <item>
+```
+
+It is a list, not a triage: never rank, bucket or file issues (§8). It goes into the
+Sunset journal section (§10) so `/agenda` can pick it up tomorrow. No close-ups, skip
+silently.
+
+### 4. Ask about unrecorded moments
 
 Prompt gently:
 - "Anything that happened today that isn't on the board?"
@@ -66,25 +103,31 @@ Prompt gently:
 
 If the user names activities, hand off to the tend workflow to decompose, resolve, and plant them.
 
-### 4. Clear the active moment
+### 5. One reflection
+
+Ask exactly one question about the day, rotating between « What surprised you today? »
+and « What would you do differently? » (or pick one). If there is an answer, keep it
+verbatim for the Sunset section. If the user skips it or just says good night, skip it.
+No follow-up.
+
+### 6. Clear the active moment
 
 The sunset moment is the intention now, so offer to clear it as the ritual ends:
 - "Your intention is still set to sunset. Clear it for the night?"
 
 On confirmation, call `mcp__zenborg__clear_active_moment`.
 
-### 5. Sleep bookend
+### 7. Sleep bookend
 
 If sleep data is available, close the body loop that sunrise opened. Include last night's
 sleep as context for how the day went. The gardener already lived the day; the observation
 is for their own pattern recognition.
 
-### 6. Work triage
+### 8. Work triage
 
 Sunset does not triage work. The DONE · TOMORROW · THIS CYCLE · LATER triage lives in the morning stand-up (leadership-lab `/agenda` in Themia).
 
-### 7. Seed tomorrow (optional)
-
+### 9. Seed tomorrow (optional)
 
 If the user wants to look ahead:
 - "Want to plant anything for tomorrow?"
@@ -94,17 +137,37 @@ If the user names tomorrow's plans, use tend with `day = tomorrow`.
 
 To arrange tomorrow, tell the gardener once to type `/phase tomorrow morning`: the moving happens in the pane, the conversation stays the ritual. Then go on.
 
-### 8. Write the day to journal oracle
+If today is a Friday, add one line: `/appetite-check` closes the week. Sunset never plans the week itself (appetite-check and season own that).
+
+### 10. Write the day to journal oracle
 
 Read `~/.zenborg/oracles.json` → `routes.journal`. Walk the oracle chain
 (same protocol as close-up §3b): `check` → `read` (if present) → `write`.
 
-Append a `## Sunset` section with §2's summary and areas touched.
-Keep it brief — close-up entries already hold the session detail.
+Append a `## Sunset` section with §3's summary and areas touched, the « Tomorrow
+starts with » list, and the reflection answer if any. Keep it brief — close-up
+entries already hold the session detail.
+
+**`hey` replaces, it does not append.** `hey journal write` overwrites the whole day's
+entry, and it has no file or stdin flag, so:
+
+1. `hey journal read --markdown --quiet` returns JSON; `content` is the entry's HTML
+   (`<div class="trix-content">…</div>`).
+2. Insert the Sunset section as HTML just before that wrapper's closing `</div>`,
+   plus the peers' entries from §0 (one `## HH:MM` block each). Save the result to a
+   temp file in the scratchpad.
+3. Write it back once, passing the file through a quoted expansion so quotes and
+   newlines survive: `hey journal write --content-html "$(cat "$FILE")"`.
+4. Read it back and check the earlier entries are still there.
+
+Writing empty content deletes the entry: abort if the read failed, or came back empty
+when an entry was expected. `--html` can't be combined with `--quiet`.
+
+For the penceive oracle, keep its append-only write as is.
 
 If no oracle is reachable, skip silently — the day lives in the garden only.
 
-### 9. Close
+### 11. Close
 
 End with a natural close. No summary statistics, no scores, no "well done." The day is complete because the gardener says it is.
 

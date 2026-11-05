@@ -20,8 +20,8 @@ future session can read the shape without re-probing.
 
 ## Surfaces vs oracles
 
-**Surfaces** are what the gardener sees — body, browser, agent, journal, comms,
-tasks. **Oracles** are infrastructure that feed surfaces — garmin feeds body,
+**Surfaces** are what the gardener sees — body, screen, work, journal, comms.
+**Oracles** are infrastructure that feed surfaces — garmin feeds body,
 hey feeds journal + comms, etc.
 
 Surface profiles live in `plugin/surfaces/<surface>.md`. Each profile declares:
@@ -45,11 +45,13 @@ extract and what to skip.
 | Surface | Sources | Profile |
 |---------|---------|---------|
 | body | garmin | `plugin/surfaces/body.md` |
-| browser | zenborg browser gate | `plugin/surfaces/browser.md` |
-| agent | git, keel, claude sessions | `plugin/surfaces/agent.md` |
+| screen | desktop sensor, browser extension | `plugin/surfaces/screen.md` (browser half: `browser.md`) |
+| work | agent sessions; git, linear, things (no spring yet) | `plugin/surfaces/work.md` |
 | journal | hey, penceive, supernote | `plugin/surfaces/journal.md` |
 | comms | hey, gmail, slack | `plugin/surfaces/comms.md` |
-| tasks | linear, things | `plugin/surfaces/tasks.md` |
+
+These are the reading surfaces `mcp__zenborg__get_footprints` returns. "browser",
+"agent" and "tasks" resolve to screen, work and work.
 
 The user may say either "probe garmin" (oracle) or "probe body" (surface).
 Resolve to the right profile either way.
@@ -83,7 +85,7 @@ cat ~/.zenborg/oracles.json
 Cross-reference with the surface profile to identify the interface type:
 - **CLI oracle** — has protocol objects with `check`, `read`, `write` commands
 - **MCP oracle** — entry is `{}`, tools are `mcp__<oracle>__*`
-- **Local source** — not in oracles.json (git, keel, browser gate); probe with
+- **Local source** — not in oracles.json (git, the activity log, browser fences); probe with
   the commands listed in the surface profile
 
 ### 4. Probe
@@ -103,7 +105,7 @@ surface profile with sensible defaults:
 Call the tools listed in the surface profile's **Probe tools** column.
 Use today's date for date-scoped tools. Minimal limits for list tools.
 
-#### Local sources (agent, browser)
+#### Local sources (screen, work)
 
 Run the commands from the surface profile directly. These aren't oracles —
 they're filesystem reads or zenborg MCP calls.
@@ -142,7 +144,7 @@ field the profile expects but the oracle didn't return (schema drift).
 Examples:
 - `~/.zenborg/oracles/traces/body/garmin.sample.md`
 - `~/.zenborg/oracles/traces/comms/hey.sample.md`
-- `~/.zenborg/oracles/traces/agent/git.sample.md`
+- `~/.zenborg/oracles/traces/work/git.sample.md`
 
 Structure:
 

@@ -10,7 +10,7 @@ The garden's Claude Code surface. Three concerns, each its own file:
 | `hooks/spend-warnings.mts` | UserPromptSubmit | Warns once per session at 70 % and 100 % of the allocation's appetite |
 | `hooks/moment-awareness.mts` | SessionStart | Names the active moment, with the cycle spend line (`hooks/spend-line.ts`) |
 
-Plus 9 skills that drive the garden from any session (sunrise, sunset, tend, weather, season, recap, close-up, onboarding, weekly-moments-review).
+Plus 12 skills that drive the garden from any session (sunrise, sunset, tend, weather, season, close-up, midday, appetite-check, fence-selector, onboarding, oracle-probe, oracle-wizard). `weather` reads a day or, in week mode, a whole week back through `get_footprints`.
 
 ## Privacy
 
