@@ -4774,15 +4774,18 @@ defineTool(server, {
     "One call returns the board (per day and phase), planted moments per area (this week and last, two counts), " +
     "footprints per surface (body, screen, work, journal, comms) by area in minutes with the largest unmapped locators, " +
     "and the habits wilting at the week's close. " +
+    "`trace` reads each day that has begun, phase by phase: per planted moment, minutes traced in its cell (same area) and elsewhere (other areas), with evidence traced or untraced, " +
+    "and `unplanted`, attention by phase and area in phases that planted nothing for that area. " +
+    "Trace minutes are spans of activity, footprint minutes are dwell, so the two need not add up. " +
     'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
     "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
     "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {
     day: DaySchema.optional().describe(
-      "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week.",
+      "Any day in the week to read; the week runs Monday → Sunday, days roll at 04:00. Omit for this week. To read one day alone, pass `from` instead.",
     ),
     from: DaySchema.optional().describe(
-      "Inclusive start day of an explicit range (at most 31 days), instead of a week. Last week becomes the same-length range before it.",
+      "Inclusive start day of an explicit range (at most 31 days), instead of a week; alone, it reads that one day. Last week becomes the same-length range before it.",
     ),
     to: DaySchema.optional().describe(
       "Inclusive end day of the range; needs `from`. Defaults to `from`.",
