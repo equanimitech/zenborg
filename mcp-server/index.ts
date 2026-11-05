@@ -177,7 +177,6 @@ import {
 } from "../src/domain/attention/ActiveMoment.ts";
 import { localDay } from "../src/domain/attention/siteMinutes.ts";
 import { nightsOf, workoutsOf } from "../src/domain/garmin/BodyLog.ts";
-import { parseHabitMap } from "../src/domain/garmin/GarminHabitMap.ts";
 import type { Primitive } from "../src/domain/intervention/Primitive.ts";
 import type { RuleSpec } from "../src/domain/intervention/RuleSpec.ts";
 import { isInScheduleWindow } from "../src/domain/intervention/scheduleWindow.ts";
@@ -224,6 +223,7 @@ import {
   midnight,
 } from "./site-minutes.js";
 import { defineTool, err, ok, type ToolResult } from "./tooling.js";
+import { readHabitMap } from "./garmin-map.js";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -4893,18 +4893,7 @@ defineTool(server, {
 // ────────────────────────────────────────────────────────────────────────
 
 function loadHabitMap() {
-  const mapPath = path.join(
-    VAULT_ROOT,
-    "integrations",
-    "garmin",
-    "habit-map.json",
-  );
-  if (!fs.existsSync(mapPath)) return parseHabitMap(null);
-  try {
-    return parseHabitMap(JSON.parse(fs.readFileSync(mapPath, "utf8")));
-  } catch {
-    return parseHabitMap(null);
-  }
+  return readHabitMap(VAULT_ROOT);
 }
 
 defineTool(server, {
