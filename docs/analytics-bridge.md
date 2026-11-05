@@ -1,5 +1,7 @@
 # The analytics bridge — plan ↔ trace
 
+> **Superseded in part (2026-10-09).** `get_attention` and `get_day_trace` described below are retired. One reader, `get_footprints`, over `weekReadback` in `src/domain/readback/`, replaced both. See `docs/pitches/2026-10-09-the-week-reads-back.md`.
+
 **Date:** 2026-09-01
 **Status:** architecture, not implementation. Grounded in the code as of `e9bf5b0` (0.32.0).
 **Feeds:** GitHub #151 (derived attention). Supersedes nothing; wires what exists.

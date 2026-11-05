@@ -25,7 +25,25 @@ export interface MomentRef {
   readonly durationMin?: number;
 }
 
-function localDate(ts: number): string {
+/** Waking days roll at 04:00 local, so a late night belongs to the day before. */
+export const DAY_START_HOUR = 4;
+
+/** Epoch-ms `[from, to)` of one waking day, `YYYY-MM-DD`. */
+export function wakingDayWindow(day: string): { from: number; to: number } {
+  const [y, m, d] = day.split("-").map(Number);
+  const from = new Date(y, m - 1, d, DAY_START_HOUR, 0, 0, 0).getTime();
+  const to = new Date(y, m - 1, d + 1, DAY_START_HOUR, 0, 0, 0).getTime();
+  return { from, to };
+}
+
+/** The waking day `now` falls in. */
+export function wakingDay(now: Date = new Date()): string {
+  const d = new Date(now);
+  if (d.getHours() < DAY_START_HOUR) d.setDate(d.getDate() - 1);
+  return localDate(d.getTime());
+}
+
+export function localDate(ts: number): string {
   const d = new Date(ts);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;

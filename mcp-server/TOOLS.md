@@ -175,6 +175,15 @@ Every writer works between seasons: with none running, `serves` points at the la
 | `get_fence` | — | Plugin crossing tallies, plus every browser rule: kind, state, rungs, schedule, reach, today's decision points and answers. Openings (active or upcoming) and the pass allowance. |
 | `declare_drift` | `distance, reason` | Name a departure from the session fence; the fence hook reads it. Ack only. |
 
+### Footprints (read-only, from the activity log)
+
+| Tool | Key params | Notes |
+|---|---|---|
+| `get_footprints` | `day?` or `from?, to?` | The week read back (Monday → Sunday, days roll at 04:00): board per day/phase, planted per area (this week + last), footprints per surface by area in minutes with coverage `{ seenHours, idleCreditedMin, unmappedMin }`, wilting habits, and `trace`: each begun day phase by phase, per planted moment `traced` and `elsewhere` minutes plus `unplanted` attention by phase and area. `from` alone reads one day. Journal and comms read `"not drawn"`. No ratios. Replaced `get_attention` and `get_day_trace`. |
+| `get_body` | `day?` or `from?, to?` | Garmin nights and workouts. |
+| `get_area_map` | — | Path, host and app rules that resolve footprints to areas. |
+| `map_area` | `kind, key, area` | Add or remove one rule. `area: null` removes. |
+
 ---
 
 ## Migration from 0.3.0

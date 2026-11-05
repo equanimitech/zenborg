@@ -1,24 +1,18 @@
 /**
  * Read adapter for zenborg's activity log.
  *
- * One reader, shared by MCP tools and `scripts/shadow.mts`. Lifted from
- * `shadow.mts::readLog` — which now imports this — so the normalisation
- * rules live in one place.
- *
- * Normalisations:
- * - `app_switched`: drop `durationMs`. The field describes the span being
- *   closed (previous app's dwell), not the span being opened. Dwell is
- *   derived from consecutive timestamps anyway; leaving it would cause
- *   `reachOf` in `SpanDerivation` to extend the new app's span by the
- *   previous app's dwell.
- * - Lines missing `surface` (older files): inferred from the filename.
+ * One reader, shared by MCP tools and `scripts/shadow.mts`. Line parsing and
+ * its normalisations live in the domain (`parseActivityLines`), so the app
+ * and the MCP server read a line the same way.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type {
-  ActivityEvent,
-  ActivitySurface,
+import {
+  type ActivityEvent,
+  type ActivitySurface,
+  parseActivityLines,
 } from "../src/domain/attention/ActivityEvent.ts";
+import { localDate } from "../src/domain/attention/GardenClock.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
 
@@ -28,24 +22,6 @@ const SURFACES: readonly ActivitySurface[] = [
   "browser",
   "garmin",
 ];
-
-function localDate(ts: number): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-function normalise(
-  raw: ActivityEvent,
-  surface: ActivitySurface,
-): ActivityEvent {
-  const event = raw.surface ? raw : { ...raw, surface };
-  if (event.kind === "app_switched" && event.durationMs !== undefined) {
-    const { durationMs: _, ...rest } = event;
-    return rest;
-  }
-  return event;
-}
 
 /**
  * Read activity events for the given window and surfaces.
@@ -68,14 +44,9 @@ export function readActivityLog(
     for (const surface of surfaces) {
       const file = join(logDir, `${dateStr}.${surface}.jsonl`);
       if (!existsSync(file)) continue;
-      for (const line of readFileSync(file, "utf8").split("\n")) {
-        if (line.trim() === "") continue;
-        try {
-          events.push(normalise(JSON.parse(line) as ActivityEvent, surface));
-        } catch {
-          // torn line — one lost observation, not a reason to stop
-        }
-      }
+      // A loop, not push(...spread): a busy agent day runs to tens of thousands of lines.
+      for (const e of parseActivityLines(readFileSync(file, "utf8"), surface))
+        events.push(e);
     }
   }
 

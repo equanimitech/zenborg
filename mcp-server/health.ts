@@ -1,14 +1,12 @@
-import type { CyclePlan, Habit, Moment, Rhythm } from "./vault.js";
-import { PERIOD_DAYS, rhythmSilenceThresholdDays } from "./vault.js";
+import {
+  type HealthSubject,
+  habitHealthService,
+} from "../src/domain/services/HabitHealthService.ts";
+import { Attitude as DomainAttitude } from "../src/domain/value-objects/Attitude.ts";
+import type { Health } from "../src/domain/value-objects/Health.ts";
+import type { Attitude, CyclePlan, Habit, Moment, Rhythm } from "./vault.js";
 
-export type Health =
-  | "seedling"
-  | "budding"
-  | "blooming"
-  | "wilting"
-  | "dormant"
-  | "evergreen"
-  | "unstated";
+export type { Health };
 
 /**
  * Mirrors src/domain/entities/Moment.ts countsAsAllocation (spec D5).
@@ -20,14 +18,6 @@ export function countsAsAllocation(moment: Moment): boolean {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const BUDDING_PERIOD_COUNT = 3;
-/**
- * RETURNING extends the KEEPING silence threshold to acknowledge re-engagement
- * friction. Mirrors src/domain/services/HabitHealthService.ts.
- */
-const RETURNING_THRESHOLD_MULTIPLIER = 1.5;
-const RETURNING_REENTRY_PERIODS = 3;
-const RETURNING_REENTRY_COUNT = 3;
 
 /**
  * Parse a YYYY-MM-DD vault date string as local midnight.
@@ -46,119 +36,56 @@ export function resolveRhythm(
   return plan?.rhythmOverride ?? habit.rhythm ?? null;
 }
 
+/**
+ * The vault spells attitudes as literals, the domain as an enum. A total map,
+ * so an attitude added on either side without the other fails to compile.
+ */
+const ATTITUDE: Record<Attitude, DomainAttitude> = {
+  BEGINNING: DomainAttitude.BEGINNING,
+  RETURNING: DomainAttitude.RETURNING,
+  KEEPING: DomainAttitude.KEEPING,
+  BUILDING: DomainAttitude.BUILDING,
+  PUSHING: DomainAttitude.PUSHING,
+  PRUNING: DomainAttitude.PRUNING,
+  BEING: DomainAttitude.BEING,
+};
+
+/** A vault habit as the domain's health reads it. Every other field passes structurally. */
+export function toHealthSubject<H extends Habit>(
+  habit: H,
+): Omit<H, "attitude"> & HealthSubject {
+  return {
+    ...habit,
+    attitude: habit.attitude === null ? null : ATTITUDE[habit.attitude],
+  };
+}
+
+/**
+ * Health is the domain's (`HabitHealthService`), so the app, the MCP server
+ * and the week readback cannot disagree.
+ */
 export function computeHealth(
   habit: Habit,
   plan: CyclePlan | null,
   moments: Moment[],
   now: Date,
 ): Health {
-  if (habit.attitude === null) return "unstated";
-  if (habit.attitude === "BEING") return "evergreen";
-
-  const rhythm = resolveRhythm(habit, plan);
-  // A moment belongs to this habit when it was planted against it OR when it
-  // names it among the people present. People ARE habit records, so one dinner
-  // with three friends is ONE moment carrying three `personIds` — without the
-  // second clause that dinner would be invisible here while list_people_to_reach
-  // counts it, and the two read-paths would disagree about the same person.
-  // For an ordinary habit `personIds` can never hold its own id, so this is
-  // provably inert there. Mirrors src/domain/services/HabitHealthService.ts.
-  const habitMoments = moments.filter(
-    (m) =>
-      countsAsAllocation(m) &&
-      (m.habitId === habit.id || (m.personIds?.includes(habit.id) ?? false)),
+  return habitHealthService.computeHealth(
+    toHealthSubject(habit),
+    plan,
+    moments,
+    now,
   );
-
-  if (habit.attitude === "BEGINNING") {
-    return habitMoments.length >= 5 ? "budding" : "seedling";
-  }
-
-  if (habit.attitude === "RETURNING") {
-    if (!rhythm) return "unstated";
-    const baseThreshold = rhythmSilenceThresholdDays(rhythm);
-    const extendedThreshold =
-      baseThreshold * RETURNING_THRESHOLD_MULTIPLIER;
-    const last = latestAllocationDate(habitMoments);
-    if (last === null) return "wilting";
-    const daysSince = (now.getTime() - last.getTime()) / MS_PER_DAY;
-    if (daysSince > extendedThreshold) return "wilting";
-
-    const reEntryWindowDays =
-      extendedThreshold * RETURNING_REENTRY_PERIODS;
-    const reEntryWindowStart = new Date(
-      now.getTime() - reEntryWindowDays * MS_PER_DAY,
-    );
-    const recentCount = habitMoments.filter((m) => {
-      if (m.day === null) return false;
-      return parseVaultDay(m.day).getTime() >= reEntryWindowStart.getTime()
-        && parseVaultDay(m.day).getTime() <= now.getTime();
-    }).length;
-    if (recentCount < RETURNING_REENTRY_COUNT) return "budding";
-    return "blooming";
-  }
-
-  if (habit.attitude === "KEEPING") {
-    if (!rhythm) return "unstated";
-    const threshold = rhythmSilenceThresholdDays(rhythm);
-    const last = latestAllocationDate(habitMoments);
-    if (last === null) return "wilting";
-    const daysSince = (now.getTime() - last.getTime()) / MS_PER_DAY;
-    return daysSince <= threshold ? "blooming" : "wilting";
-  }
-
-  if (habit.attitude === "PRUNING") {
-    if (!rhythm) return "unstated";
-    return "dormant";
-  }
-
-  if (habit.attitude === "BUILDING") {
-    if (!rhythm) return "unstated";
-    const periodDays = PERIOD_DAYS[rhythm.period];
-    const buddingWindow = periodDays * BUDDING_PERIOD_COUNT;
-    const habitUpdated = new Date(habit.updatedAt);
-    const daysSinceUpdate =
-      (now.getTime() - habitUpdated.getTime()) / MS_PER_DAY;
-    if (daysSinceUpdate < buddingWindow) return "budding";
-
-    const periodStart = new Date(now.getTime() - periodDays * MS_PER_DAY);
-    const countInPeriod = habitMoments.filter((m) => {
-      if (m.day === null) return false;
-      return parseVaultDay(m.day).getTime() >= periodStart.getTime();
-    }).length;
-    const daysElapsed = Math.min(periodDays, daysSinceUpdate);
-    const expected = rhythm.count * (daysElapsed / periodDays);
-    const tolerance = Math.max(1, Math.floor(rhythm.count * 0.2));
-    return countInPeriod + tolerance >= expected ? "blooming" : "wilting";
-  }
-
-  if (habit.attitude === "PUSHING") {
-    if (!rhythm) return "unstated";
-    const periodDays = PERIOD_DAYS[rhythm.period];
-    const buddingWindow = periodDays * BUDDING_PERIOD_COUNT;
-    const habitUpdated = new Date(habit.updatedAt);
-    const daysSinceUpdate =
-      (now.getTime() - habitUpdated.getTime()) / MS_PER_DAY;
-    if (daysSinceUpdate < buddingWindow) return "budding";
-
-    const periodStart = new Date(now.getTime() - periodDays * MS_PER_DAY);
-    const countInPeriod = habitMoments.filter((m) => {
-      if (m.day === null) return false;
-      return parseVaultDay(m.day).getTime() >= periodStart.getTime();
-    }).length;
-    const daysElapsed = Math.min(periodDays, daysSinceUpdate);
-    const expected = rhythm.count * (daysElapsed / periodDays);
-    return countInPeriod >= expected ? "blooming" : "wilting";
-  }
-
-  return "unstated";
 }
 
-function latestAllocationDate(moments: Moment[]): Date | null {
+/** Like the domain's: a moment planted after `now` has not happened yet. */
+function latestAllocationDate(moments: Moment[], now: Date): Date | null {
   let latest: Date | null = null;
   for (const m of moments) {
     if (!countsAsAllocation(m)) continue;
     if (m.day === null) continue;
     const d = parseVaultDay(m.day);
+    if (d > now) continue;
     if (latest === null || d > latest) latest = d;
   }
   return latest;
@@ -177,7 +104,7 @@ export function daysSinceLast(
       countsAsAllocation(m) &&
       (m.habitId === habitId || (m.personIds?.includes(habitId) ?? false)),
   );
-  const last = latestAllocationDate(habitMoments);
+  const last = latestAllocationDate(habitMoments, now);
   if (last === null) return null;
   return Math.floor((now.getTime() - last.getTime()) / MS_PER_DAY);
 }

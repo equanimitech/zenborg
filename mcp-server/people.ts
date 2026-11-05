@@ -1,9 +1,9 @@
 /**
  * People derivations for the MCP server.
  *
- * Mirrors src/domain/services/PersonService.ts. Kept separate because
- * mcp-server ships standalone and does not import from src/domain — the same
- * arrangement health.ts already has with HabitHealthService.ts. The two must
+ * Mirrors src/domain/services/PersonService.ts. Still a copy, though the
+ * server now imports the domain directly (health.ts delegates to
+ * HabitHealthService), so folding it in is open. Until then the two must
  * stay in lockstep; they are small and fully covered by tests on both sides.
  *
  * A person is a registry entity (spec D1), not a habit. Zenborg holds only

@@ -1,10 +1,10 @@
 /**
  * Cadence — a declared contact rhythm for a person, in four buckets.
  *
- * Mirrors src/domain/value-objects/Cadence.ts. Kept separate because
- * mcp-server ships standalone and does not import from src/domain — the same
- * arrangement people.ts has with PersonService.ts. The two must stay in
- * lockstep, in particular the rounding: it is the ROUNDED value that sorts
+ * Mirrors src/domain/value-objects/Cadence.ts. Still a copy, though the
+ * server now imports the domain directly (health, footprints; see the `@/`
+ * path in tsconfig.json), so folding it in is open. Until then the two must
+ * stay in lockstep, in particular the rounding: it is the ROUNDED value that sorts
  * the outreach queue, so the order an agent reads aloud is the order it was
  * handed.
  *
