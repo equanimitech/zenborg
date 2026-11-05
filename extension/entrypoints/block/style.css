@@ -37,7 +37,7 @@ body {
 .mark { display: block; width: 2.5rem; height: 2.5rem; margin: 0 auto 1.618rem; color: var(--muted); }
 .mark svg { display: block; width: 100%; height: 100%; }
 
-.host, .why-label, .back, .foot {
+.host, .back, .foot {
   font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.08em;
   text-transform: uppercase; font-variant-numeric: tabular-nums;
 }
@@ -54,7 +54,7 @@ body {
 
 .pass { display: grid; gap: 0.75rem; margin: 0 auto 2rem; max-width: 22rem; text-align: left; }
 .pass[hidden], .none[hidden] { display: none; }
-.why-label { color: var(--muted); text-transform: none; letter-spacing: 0; }
+.why-label { color: var(--muted); }
 .why {
   font: inherit; font-size: 0.9375rem; color: var(--ink);
   background: transparent; border: 1px solid var(--rule); border-radius: 2px;
