@@ -1,4 +1,5 @@
 {
+  "modules": ["./index.ts"],
   "hooks": {
     "SessionStart": [
       {
@@ -35,6 +36,15 @@
           {
             "type": "command",
             "command": "node --experimental-transform-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON ${CLAUDE_PLUGIN_ROOT}/hooks/gap-practice.mts",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-transform-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON ${CLAUDE_PLUGIN_ROOT}/hooks/spend-warnings.mts",
             "timeout": 10
           }
         ]

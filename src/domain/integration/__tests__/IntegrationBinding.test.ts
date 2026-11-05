@@ -62,7 +62,7 @@ describe("findBinding", () => {
       {
         source: "garmin.activity.yoga",
         areaId: "area-mind",
-        habitId: "habit-vipassana",
+        habitId: "habit-yoga",
       },
     ],
   });

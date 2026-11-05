@@ -1,19 +1,29 @@
-//! Self-write suppression — ported from penceive.
+//! Self-write suppression, ported from penceive.
 //!
-//! When we write a file, the OS notify watcher will fire for our own write.
+//! When we write a file, the OS notify watcher fires for our own write.
 //! Without suppression we'd bounce: write → event → reload → write.
-//! We stamp every self-write with an Instant; the watcher checks and skips
-//! if the event arrived within the suppression window.
+//!
+//! We remember a hash of the bytes we last wrote to each collection. An
+//! event is our own echo only while the file still holds exactly those
+//! bytes. This used to be a 3 s window per path, which also swallowed any
+//! other writer (the MCP server) landing within 3 s of an app write: the
+//! UI stayed stale and the next app write clobbered the external change
+//! (#208). Comparing content suppresses every duplicate FSEvent of our own
+//! write (#76) without hiding anyone else's.
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
-use std::time::Instant;
 
-/// macOS FSEvents can batch/delay events by 2-3 seconds.
-const SELF_WRITE_WINDOW_SECS: u64 = 3;
+fn digest(bytes: &[u8]) -> u64 {
+    let mut h = DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
+}
 
 pub struct SelfWriteTracker {
-    writes: Mutex<HashMap<String, Instant>>,
+    writes: Mutex<HashMap<String, u64>>,
 }
 
 impl SelfWriteTracker {
@@ -23,28 +33,28 @@ impl SelfWriteTracker {
         }
     }
 
-    /// Called before writing a file. Stamps the path with the current Instant.
-    pub fn register_write(&self, path: &str) {
+    /// Called before writing a collection. Remembers the bytes being written.
+    pub fn register_write(&self, collection: &str, bytes: &[u8]) {
         let mut writes = self.writes.lock().unwrap();
-        writes.insert(path.to_string(), Instant::now());
+        writes.insert(collection.to_string(), digest(bytes));
     }
 
-    /// Called by the watcher on each filesystem event. Returns true if the
-    /// event was triggered by our own write (and should be suppressed).
+    /// Called by the watcher with the file's current bytes. True when they
+    /// are exactly what we last wrote, so the event is our own echo.
     ///
-    /// Keeps the record alive for the full suppression window so that
-    /// duplicate FSEvents (macOS commonly delivers more than one event
-    /// per rename) are all suppressed rather than just the first.
-    /// Expired records are cleaned up lazily on the next check.
-    pub fn is_self_write(&self, path: &str) -> bool {
+    /// On a mismatch someone else owns the file now, so the record is
+    /// dropped: a later external write that happens to restore our old
+    /// bytes is still reported.
+    pub fn is_self_write(&self, collection: &str, current: &[u8]) -> bool {
         let mut writes = self.writes.lock().unwrap();
-        if let Some(written_at) = writes.get(path) {
-            if written_at.elapsed().as_secs() < SELF_WRITE_WINDOW_SECS {
-                return true;
+        match writes.get(collection) {
+            Some(&ours) if ours == digest(current) => true,
+            Some(_) => {
+                writes.remove(collection);
+                false
             }
-            writes.remove(path);
+            None => false,
         }
-        false
     }
 }
 
@@ -57,52 +67,51 @@ impl Default for SelfWriteTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::time::Duration;
 
     #[test]
-    fn suppresses_duplicate_events_within_window() {
+    fn suppresses_duplicate_events_of_our_own_write() {
         let tracker = SelfWriteTracker::new();
-        tracker.register_write("/vault/habits.json");
+        tracker.register_write("habits", b"{\"a\":1}");
 
-        assert!(tracker.is_self_write("/vault/habits.json"));
-        // Second event for the same write — must still be suppressed
-        assert!(tracker.is_self_write("/vault/habits.json"));
+        assert!(tracker.is_self_write("habits", b"{\"a\":1}"));
+        // macOS delivers more than one event per rename: all are ours.
+        assert!(tracker.is_self_write("habits", b"{\"a\":1}"));
     }
 
     #[test]
-    fn expires_after_window() {
+    fn reports_an_external_write_right_after_ours() {
+        // #208: the MCP server writes moments.json a moment after the app did.
         let tracker = SelfWriteTracker::new();
-        tracker.register_write("/vault/habits.json");
+        tracker.register_write("moments", b"{\"m1\":\"accepted\"}");
 
-        // Sleep past the suppression window
-        thread::sleep(Duration::from_secs(SELF_WRITE_WINDOW_SECS + 1));
-
-        assert!(!tracker.is_self_write("/vault/habits.json"));
+        assert!(!tracker.is_self_write("moments", b"{\"m1\":\"tentative\"}"));
     }
 
     #[test]
-    fn new_write_refreshes_timestamp() {
+    fn reports_an_external_revert_to_our_old_bytes() {
         let tracker = SelfWriteTracker::new();
-        tracker.register_write("/vault/habits.json");
+        tracker.register_write("moments", b"A");
 
-        thread::sleep(Duration::from_secs(1));
-
-        // A second write refreshes the window
-        tracker.register_write("/vault/habits.json");
-
-        thread::sleep(Duration::from_secs(SELF_WRITE_WINDOW_SECS - 1));
-
-        // Still within window of the second write
-        assert!(tracker.is_self_write("/vault/habits.json"));
+        assert!(!tracker.is_self_write("moments", b"B"));
+        assert!(!tracker.is_self_write("moments", b"A"));
     }
 
     #[test]
-    fn unrelated_paths_are_independent() {
+    fn a_newer_write_of_ours_replaces_the_older_one() {
         let tracker = SelfWriteTracker::new();
-        tracker.register_write("/vault/habits.json");
+        tracker.register_write("habits", b"A1");
+        tracker.register_write("habits", b"A2");
 
-        assert!(!tracker.is_self_write("/vault/moments.json"));
-        assert!(tracker.is_self_write("/vault/habits.json"));
+        // A late event for A1's rename reads the file as A2: still ours.
+        assert!(tracker.is_self_write("habits", b"A2"));
+    }
+
+    #[test]
+    fn unrelated_collections_are_independent() {
+        let tracker = SelfWriteTracker::new();
+        tracker.register_write("habits", b"A");
+
+        assert!(!tracker.is_self_write("moments", b"A"));
+        assert!(tracker.is_self_write("habits", b"A"));
     }
 }

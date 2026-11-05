@@ -333,8 +333,8 @@ describe("weekReadback", () => {
     const screen = read().footprints.find((f) => f.surface === "screen");
     if (screen?.status !== "drawn") throw new Error("screen not drawn");
     expect(screen.thisWeek.byArea).toEqual([
-      { areaId: "ent", areaName: "Entertainment", minutes: 60 }, // 40 youtube + Sunday-night 20 Stremio
       { areaId: "themia", areaName: "Themia", minutes: 25 },
+      { areaId: "ent", areaName: "Entertainment", minutes: 60 }, // 40 youtube + Sunday-night 20 Stremio
     ]);
     expect(screen.thisWeek.unmapped).toEqual([
       { locator: "Voice Memos", minutes: 10 },
@@ -492,11 +492,34 @@ describe("weekReadback", () => {
     expect(r.planted.reduce((n, p) => n + p.thisWeek, 0)).toBe(onBoard);
   });
 
+  it("lists byArea in the gardener's area order, not by minutes", () => {
+    const day = "2026-10-06";
+    const r = weekReadback(
+      {
+        ...fixture(),
+        events: [
+          ev("desktop", "app_switched", at(day, 9), { app_name: "Slack" }),
+          ev("desktop", "app_switched", at(day, 9, 5), { app_name: "Stremio" }),
+          ev("desktop", "idle_start", at(day, 9, 35), {}),
+        ],
+      },
+      day,
+      day,
+    );
+    const screen = r.footprints.find((f) => f.surface === "screen");
+    if (screen?.status !== "drawn") throw new Error("screen not drawn");
+    expect(screen.thisWeek.byArea.map((a) => [a.areaName, a.minutes])).toEqual([
+      ["Themia", 5],
+      ["Entertainment", 30],
+    ]);
+  });
+
   it("carries no ratio, share, percentage or direction anywhere", () => {
     const keys: string[] = [];
     const walk = (v: unknown) => {
-      if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === "object")
+      if (Array.isArray(v)) {
+        for (const item of v) walk(item);
+      } else if (v && typeof v === "object")
         for (const [k, inner] of Object.entries(v)) {
           keys.push(k);
           walk(inner);
@@ -508,5 +531,136 @@ describe("weekReadback", () => {
         /ratio|share|percent|pct|rate|delta|trend|change|score/i.test(k),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("trace", () => {
+  const DAY = "2026-10-06";
+  const slack = (h: number, m = 0) =>
+    ev("desktop", "app_switched", at(DAY, h, m), { app_name: "Slack" });
+  const tube = (h: number, m = 0) =>
+    ev("browser", "tab_activated", at(DAY, h, m), { domain: "youtube.com" });
+  const day = (over: Partial<ReadbackInput> = {}) =>
+    weekReadback(
+      {
+        ...fixture(),
+        events: [
+          slack(9),
+          slack(9, 10),
+          slack(9, 20),
+          tube(10),
+          tube(10, 10),
+          slack(14),
+          slack(14, 15),
+          slack(14, 30),
+        ],
+        moments: [
+          moment("standup", "themia", DAY, Phase.MORNING, {
+            startTime: "09:00",
+            durationMin: 30,
+          }),
+          moment("walk", "wellness", DAY, Phase.AFTERNOON),
+          moment("proposal", "ent", DAY, Phase.EVENING, {
+            status: "tentative",
+          }),
+        ],
+        ...over,
+      },
+      DAY,
+      DAY,
+    ).trace;
+
+  it("reads one day: each planted moment against its cell, and what nothing planted", () => {
+    expect(day()).toEqual([
+      {
+        day: DAY,
+        moments: [
+          {
+            momentId: "standup",
+            name: "standup",
+            areaId: "themia",
+            areaName: "Themia",
+            phase: "MORNING",
+            window: { start: "09:00", end: "09:30" },
+            traced: [{ surface: "desktop", minutes: 20 }],
+            elsewhere: [
+              { surface: "browser", areaName: "Entertainment", minutes: 10 },
+            ],
+            evidence: "traced",
+          },
+          {
+            momentId: "walk",
+            name: "walk",
+            areaId: "wellness",
+            areaName: "Wellness",
+            phase: "AFTERNOON",
+            traced: [],
+            elsewhere: [
+              { surface: "desktop", areaName: "Themia", minutes: 30 },
+            ],
+            evidence: "untraced",
+          },
+        ],
+        unplanted: [
+          {
+            phase: "MORNING",
+            areaName: "Entertainment",
+            surface: "browser",
+            minutes: 10,
+          },
+          {
+            phase: "AFTERNOON",
+            areaName: "Themia",
+            surface: "desktop",
+            minutes: 30,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("orders unplanted by phase, then area, never by minutes", () => {
+    const [{ unplanted }] = day({
+      events: [
+        slack(10),
+        slack(10, 5),
+        slack(13),
+        slack(13, 5),
+        tube(14),
+        tube(14, 15),
+        tube(14, 30),
+        tube(14, 40),
+      ],
+      moments: [],
+    });
+    expect(unplanted.map((u) => [u.phase, u.areaName, u.minutes])).toEqual([
+      ["MORNING", "Themia", 5],
+      ["AFTERNOON", "Themia", 5],
+      ["AFTERNOON", "Entertainment", 40],
+    ]);
+  });
+
+  it("stops at a phase boundary, so no cell claims the next one's time", () => {
+    const [{ unplanted }] = day({
+      events: [slack(11, 40), slack(11, 50), slack(12, 5), slack(12, 15)],
+      moments: [],
+    });
+    expect(unplanted.map((u) => [u.phase, u.minutes])).toEqual([
+      ["MORNING", 10],
+      ["AFTERNOON", 10],
+    ]);
+  });
+
+  it("gives every day that has begun, and none still ahead", () => {
+    const r = weekReadback(
+      { ...fixture(), now: new Date(at("2026-10-07", 12)) },
+      WEEK.from,
+      WEEK.to,
+    );
+    expect(r.trace.map((d) => d.day)).toEqual([
+      "2026-10-05",
+      "2026-10-06",
+      "2026-10-07",
+    ]);
   });
 });

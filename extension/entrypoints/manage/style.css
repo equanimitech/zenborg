@@ -132,13 +132,6 @@ body {
   color: var(--quiet);
 }
 
-.manage-cooldown-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-
 .manage-area-table select {
   font: inherit;
   font-size: 12px;
