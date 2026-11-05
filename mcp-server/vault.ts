@@ -21,6 +21,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { z } from "zod";
+import {
+  resolvePointer,
+  switchPointer,
+} from "../src/domain/attention/ActiveMoment.ts";
+import type { Allocation } from "../src/domain/entities/Allocation.ts";
 import type { Cadence } from "./cadence.js";
 
 // ────────────────────────────────────────────────────────────────────────
@@ -216,8 +221,16 @@ export interface Cycle {
   intention?: string;
   /** Where this season is lived. Mirrors src/domain/entities/Cycle.ts. */
   placeIds?: string[];
+  /** A few words per area for this season. Mirrors src/domain/entities/Cycle.ts. */
+  areaIntentions?: Record<string, string>;
+  /** Per-person words for this season, keyed by person key; "" = on the roster. Mirrors src/domain/entities/Cycle.ts. */
+  people?: Record<string, string>;
   reflection?: string;
   reflectionSource?: ReflectionSource | null;
+  /** Days this cycle can spend; absent = 12. Mirrors src/domain/entities/Cycle.ts. */
+  capacityDays?: number;
+  /** The betting table. Mirrors src/domain/entities/Cycle.ts. */
+  allocations?: Allocation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -560,6 +573,9 @@ export const ACTIVE_MOMENT_FILE = "activeMoment.json";
 export const ActiveMomentPointerSchema = z.object({
   momentId: z.string().min(1),
   at: z.string().min(1),
+  /** Timed switch: in force until this instant, then `returnTo` (or none). */
+  until: z.string().optional(),
+  returnTo: z.object({ momentId: z.string(), at: z.string() }).optional(),
 });
 export type ActiveMomentPointer = z.infer<typeof ActiveMomentPointerSchema>;
 
@@ -567,12 +583,8 @@ export function activeMomentPath(root: string): string {
   return path.join(root, ACTIVE_MOMENT_FILE);
 }
 
-/**
- * Read the pointer. Fails soft to `null` — a missing or malformed file means
- * "no intention", never an error, matching the vault's fail-soft rule.
- * Unknown fields are preserved so an older build cannot delete a newer one's.
- */
-export function readActiveMoment(
+/** The file as written, unknown fields kept. Fails soft to `null`. */
+function readPointerFile(
   root: string,
 ): (ActiveMomentPointer & Record<string, unknown>) | null {
   const file = activeMomentPath(root);
@@ -587,22 +599,49 @@ export function readActiveMoment(
   }
 }
 
-/** Point the intention at a moment. Atomic, and preserves unknown fields. */
+/**
+ * Read the pointer in force at `now`. Fails soft to `null` — a missing or
+ * malformed file means "no intention", never an error. A timed switch past its
+ * `until` reads as the moment it returns to (`resolvePointer`, shared with
+ * every other reader).
+ */
+export function readActiveMoment(
+  root: string,
+  now: number = Date.now(),
+): (ActiveMomentPointer & Record<string, unknown>) | null {
+  return resolvePointer(readPointerFile(root), now) as
+    | (ActiveMomentPointer & Record<string, unknown>)
+    | null;
+}
+
+/**
+ * Point the intention at a moment. With `minutes`, a timed switch that returns
+ * to what was in force (`switchPointer`). Atomic, and preserves unknown fields;
+ * a plain set drops a previous timer.
+ */
 export function writeActiveMoment(
   root: string,
   momentId: string,
   at: string,
+  minutes?: number,
 ): ActiveMomentPointer {
   if (!fs.existsSync(root)) {
     fs.mkdirSync(root, { recursive: true });
   }
-  const existing = readActiveMoment(root) ?? {};
-  const next = { ...existing, momentId, at };
+  const raw = readPointerFile(root);
+  const { until: _u, returnTo: _r, ...kept } = raw ?? {};
+  const pointer = switchPointer(
+    resolvePointer(raw, Date.parse(at)),
+    momentId,
+    at,
+    minutes,
+  );
+  const next = { ...kept, ...pointer };
   const file = activeMomentPath(root);
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
   fs.renameSync(tmp, file);
-  return { momentId, at };
+  return pointer;
 }
 
 /** Release the intention. Removing the file IS the empty state — an absent

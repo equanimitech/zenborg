@@ -41,8 +41,8 @@ is the one reader; Harvest's week in the app runs the same function.
 ## Blind spots
 
 Name these whenever screen minutes are read back. A number without what it
-could not see is the 2026-10-09 failure: Entertainment read "doubled" when
-viewing had only moved from Stremio to YouTube.
+could not see is the failure: an area reads "doubled" when viewing had only
+moved from one app to another.
 
 - **Off-screen moments leave no screen footprint.** A dinner, a book: no
   screen sensor sees them. The readback's `traceable: false` is narrower: no
@@ -62,7 +62,7 @@ viewing had only moved from Stremio to YouTube.
   in `unmapped`, not in any area. The next unmapped site will be a different
   one, so always read `unmappedMin`. Fix with `mcp__zenborg__map_area`
   (`kind: "app" | "host"`), e.g. a streaming site at `example.tv` →
-  `{ kind: "host", key: "example.tv", area: "Entertainment" }`.
+  `{ kind: "host", key: "example.tv", area: "Area A" }`.
 - **Sites off the observe tier sense nothing deep.** Tab dwell is written for
   every domain, but video events only for domains on the extension
   watchlist's observe tier.

@@ -21,7 +21,13 @@ import {
   type Interval,
   unionMs,
 } from "../attention/AttentionSummary.ts";
-import { localDate, wakingDayWindow } from "../attention/GardenClock.ts";
+import {
+  boundariesIn,
+  cellWindow,
+  localDate,
+  wakingDayWindow,
+} from "../attention/GardenClock.ts";
+import { deriveSpans } from "../attention/SpanDerivation.ts";
 import { indexSurfaces, resolveArea } from "../attention/SurfaceIndex.ts";
 import type { Area } from "../entities/Area.ts";
 import type { Cycle } from "../entities/Cycle.ts";
@@ -133,6 +139,46 @@ export interface BoardDay {
   }[];
 }
 
+/** One planted moment against its cell: what the surfaces saw there. */
+export interface TracedMoment {
+  readonly momentId: string;
+  readonly name: string;
+  readonly areaId: string;
+  readonly areaName: string;
+  readonly phase: string;
+  /** The moment's own clock time, when it was planted with one. */
+  readonly window?: { readonly start: string; readonly end: string };
+  /** Minutes in the cell on the moment's area, per sensor surface. */
+  readonly traced: readonly { surface: string; minutes: number }[];
+  /** Minutes in the same cell on other areas. */
+  readonly elsewhere: readonly {
+    surface: string;
+    areaName: string;
+    minutes: number;
+  }[];
+  readonly evidence: "traced" | "untraced";
+}
+
+/**
+ * One day, phase by phase: what `get_day_trace` returned. `unplanted` is
+ * attention in a phase that planted nothing for that area.
+ *
+ * Minutes here are spans (`deriveSpans`: one run of a person's events, cut at
+ * the plan's boundaries), so a day's trace need not add up to the dwell minutes
+ * in `footprints`. A span ends at its last event: a film that starts and then
+ * produces no input is dwell minutes and no trace.
+ */
+export interface DayTrace {
+  readonly day: string;
+  readonly moments: readonly TracedMoment[];
+  readonly unplanted: readonly {
+    phase: string;
+    areaName: string;
+    surface: string;
+    minutes: number;
+  }[];
+}
+
 export interface WeekReadback {
   readonly window: { readonly from: string; readonly to: string };
   readonly lastWindow: { readonly from: string; readonly to: string };
@@ -145,6 +191,8 @@ export interface WeekReadback {
     lastWeek: number;
   }[];
   readonly footprints: readonly SurfaceReading[];
+  /** Every day of the window that has started, in order. */
+  readonly trace: readonly DayTrace[];
   /** Habits wilting at the window's close (or now, if the window is still open). */
   readonly wilting: readonly {
     habitId: string;
@@ -159,7 +207,10 @@ export interface WeekReadback {
  * records (MCP) and the store's (app) both fit without a cast, and a field
  * renamed in either fails to compile here.
  */
-export type ReadbackMoment = Pick<Moment, "id" | "name" | "areaId" | "order"> &
+export type ReadbackMoment = Pick<
+  Moment,
+  "id" | "name" | "areaId" | "order" | "startTime" | "durationMin"
+> &
   HealthMoment & { readonly phase: string | null };
 export type ReadbackHabit = Pick<Habit, "name" | "areaId" | "isArchived"> &
   HealthSubject;
@@ -167,6 +218,8 @@ export type ReadbackArea = Pick<Area, "id" | "name" | "order" | "surfaces">;
 export type ReadbackPhaseConfig = {
   readonly phase: string;
   readonly order: number;
+  readonly startHour: number;
+  readonly endHour: number;
 };
 export type ReadbackCycle = Pick<Cycle, "id" | "startDate" | "endDate">;
 export type ReadbackCyclePlan = Pick<
@@ -262,6 +315,7 @@ interface Reading {
 function footprintOf(
   { rows, observed }: Reading,
   areaName: (id: string) => string,
+  areaOrder: (id: string) => number,
 ): Footprint {
   const byArea = new Map<string, number>();
   const unmapped = new Map<string, number>();
@@ -278,7 +332,8 @@ function footprintOf(
         minutes: toMin(ms),
       }))
       .filter((a) => a.minutes > 0)
-      .sort((a, b) => b.minutes - a.minutes),
+      // The gardener's own area order. Sorting by minutes would read as a ranking.
+      .sort((a, b) => areaOrder(a.areaId) - areaOrder(b.areaId)),
     unmapped: [...unmapped.entries()]
       .map(([locator, ms]) => ({ locator, minutes: toMin(ms) }))
       .filter((r) => r.minutes > 0)
@@ -409,6 +464,125 @@ const READERS: Readonly<Record<ReadingSurface, (ctx: ReadContext) => Reading>> =
     comms: () => NOTHING,
   };
 
+// ── Day trace ──────────────────────────────────────────────────────────────
+
+const TRACE_SURFACES: readonly ActivitySurface[] = [
+  ...READING_SOURCES.screen,
+  ...READING_SOURCES.work,
+];
+
+/** Silence that ends a span. */
+const TRACE_IDLE_GAP_MS = 15 * MINUTE;
+
+interface TracePiece {
+  readonly areaId: string;
+  readonly surface: string;
+  readonly ms: number;
+}
+
+/** Pieces summed per (surface, area), in the order they were first seen. */
+function tally(pieces: readonly TracePiece[]): TracePiece[] {
+  const acc = new Map<string, TracePiece>();
+  for (const p of pieces) {
+    const key = `${p.surface}:${p.areaId}`;
+    acc.set(key, { ...p, ms: p.ms + (acc.get(key)?.ms ?? 0) });
+  }
+  return [...acc.values()];
+}
+
+function clockWindow(startTime: string, durationMin = 0) {
+  const [h, m] = startTime.split(":").map(Number);
+  const end = h * 60 + m + durationMin;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return {
+    start: startTime,
+    end: `${p(Math.floor(end / 60) % 24)}:${p(end % 60)}`,
+  };
+}
+
+interface TraceContext {
+  readonly input: ReadbackInput;
+  readonly phases: readonly ReadbackPhaseConfig[];
+  readonly resolve: Resolver;
+  readonly areaName: (id: string) => string;
+  readonly areaOrder: (id: string) => number;
+  readonly plantedIn: (day: string, phase: string) => ReadbackMoment[];
+}
+
+/*
+ * ponytail: spans here, dwell in `footprints`, as `get_day_trace` and
+ * `get_attention` did before them, so the two can disagree on one day. Move
+ * this onto dwell spans when the dwell methods are reconciled; the minutes will
+ * change, and sunrise reads them.
+ */
+function traceDay(day: string, ctx: TraceContext): DayTrace {
+  const { input, phases, resolve, areaName, areaOrder, plantedIn } = ctx;
+  const { from, to } = wakingDayWindow(day);
+  const events = input.events.filter(
+    (e) => e.ts >= from && e.ts < to && TRACE_SURFACES.includes(e.surface),
+  );
+  const surfaceOf = new Map(events.map((e) => [e.id, e.surface]));
+  const spans = deriveSpans(events, resolve, {
+    idleGapMs: TRACE_IDLE_GAP_MS,
+    boundaries: boundariesIn(from, to, input.moments, phases),
+  });
+
+  const cells = phases.flatMap(({ phase }) => {
+    const cell = cellWindow(day, phase, phases);
+    if (cell === null) return [];
+    const pieces = spans.flatMap((span): TracePiece[] => {
+      const ms = Math.min(span.end, cell.to) - Math.max(span.start, cell.from);
+      if (ms <= 0) return [];
+      // A span can cross surfaces; it is credited to the one that opened it.
+      const surface = surfaceOf.get(span.sourceEventIds[0]) ?? "agent";
+      return [{ areaId: span.areaId, surface, ms }];
+    });
+    return [{ phase, pieces, planted: plantedIn(day, phase) }];
+  });
+
+  const moments = cells.flatMap(({ phase, pieces, planted }) =>
+    planted.map((m): TracedMoment => {
+      const traced = tally(pieces.filter((p) => p.areaId === m.areaId));
+      return {
+        momentId: m.id,
+        name: m.name,
+        areaId: m.areaId,
+        areaName: areaName(m.areaId),
+        phase,
+        ...(m.startTime
+          ? { window: clockWindow(m.startTime, m.durationMin) }
+          : {}),
+        traced: traced
+          .map(({ surface, ms }) => ({ surface, minutes: toMin(ms) }))
+          .filter((t) => t.minutes > 0),
+        elsewhere: tally(pieces.filter((p) => p.areaId !== m.areaId))
+          .map(({ surface, areaId, ms }) => ({
+            surface,
+            areaName: areaName(areaId),
+            minutes: toMin(ms),
+          }))
+          .filter((e) => e.minutes > 0),
+        evidence: traced.length > 0 ? "traced" : "untraced",
+      };
+    }),
+  );
+
+  const unplanted = cells.flatMap(({ phase, pieces, planted }) => {
+    const plantedAreas = new Set(planted.map((m) => m.areaId));
+    return tally(pieces.filter((p) => !plantedAreas.has(p.areaId)))
+      .sort((a, b) => areaOrder(a.areaId) - areaOrder(b.areaId))
+      .map(({ surface, areaId, ms }) => ({
+        phase,
+        areaName: areaName(areaId),
+        surface,
+        minutes: toMin(ms),
+      }))
+      .filter((u) => u.minutes > 0);
+  });
+
+  return { day, moments, unplanted };
+}
+
 // ── The readback ───────────────────────────────────────────────────────────
 
 function hasSurfaces(area: ReadbackArea | undefined): boolean {
@@ -428,6 +602,7 @@ export function weekReadback(
   const areasById = new Map(input.areas.map((a) => [a.id, a]));
   const habitsById = new Map(input.habits.map((h) => [h.id, h]));
   const areaName = (id: string) => areasById.get(id)?.name ?? id;
+  const areaOrder = (id: string) => areasById.get(id)?.order ?? 0;
   const index = indexSurfaces(Object.fromEntries(areasById));
   const resolve: Resolver = (e) => resolveArea(index, e);
 
@@ -446,29 +621,27 @@ export function weekReadback(
     (m) => countsAsAllocation(m) && m.day !== null && m.phase !== null,
   );
   const phaseOrder = [...input.phaseConfigs].sort((a, b) => a.order - b.order);
-  const board: BoardDay[] = days.map((day) => {
-    const dayMoments = allocated.filter((m) => m.day === day);
-    return {
-      day,
-      phases: phaseOrder
-        .map((pc) => ({
-          phase: pc.phase,
-          moments: dayMoments
-            .filter((m) => m.phase === pc.phase)
-            .sort((a, b) => a.order - b.order)
-            .map((m) => ({
-              id: m.id,
-              name: m.name,
-              areaId: m.areaId,
-              ...(m.habitId ? { habitId: m.habitId } : {}),
-              traceable:
-                hasSurfaces(areasById.get(m.areaId)) ||
-                (m.habitId !== null && garminHabits.has(m.habitId)),
-            })),
-        }))
-        .filter((p) => p.moments.length > 0),
-    };
-  });
+  const plantedIn = (day: string, phase: string) =>
+    allocated
+      .filter((m) => m.day === day && m.phase === phase)
+      .sort((a, b) => a.order - b.order);
+  const board: BoardDay[] = days.map((day) => ({
+    day,
+    phases: phaseOrder
+      .map((pc) => ({
+        phase: pc.phase,
+        moments: plantedIn(day, pc.phase).map((m) => ({
+          id: m.id,
+          name: m.name,
+          areaId: m.areaId,
+          ...(m.habitId ? { habitId: m.habitId } : {}),
+          traceable:
+            hasSurfaces(areasById.get(m.areaId)) ||
+            (m.habitId !== null && garminHabits.has(m.habitId)),
+        })),
+      }))
+      .filter((p) => p.moments.length > 0),
+  }));
 
   // Planted, two plain counts
   const planted = new Map<string, { thisWeek: number; lastWeek: number }>();
@@ -502,6 +675,7 @@ export function weekReadback(
             : {}),
         }),
         areaName,
+        areaOrder,
       );
   };
   const thisRead = read({ from, to });
@@ -516,6 +690,20 @@ export function weekReadback(
           lastWeek: lastRead(surface),
         },
   );
+
+  // Trace, for the days that have begun: a day still ahead has seen nothing
+  const trace = days
+    .filter((day) => wakingDayWindow(day).from <= input.now.getTime())
+    .map((day) =>
+      traceDay(day, {
+        input,
+        phases: phaseOrder,
+        resolve,
+        areaName,
+        areaOrder,
+        plantedIn,
+      }),
+    );
 
   // Wilting, as of the window's close (the last waking day's end) or now,
   // whichever is earlier. Moments planted after the window cannot rescue it.
@@ -563,12 +751,9 @@ export function weekReadback(
         ...counts,
       }))
       // The gardener's own area order. Sorting by count would read as a ranking.
-      .sort(
-        (a, b) =>
-          (areasById.get(a.areaId)?.order ?? 0) -
-          (areasById.get(b.areaId)?.order ?? 0),
-      ),
+      .sort((a, b) => areaOrder(a.areaId) - areaOrder(b.areaId)),
     footprints,
+    trace,
     wilting,
   };
 }

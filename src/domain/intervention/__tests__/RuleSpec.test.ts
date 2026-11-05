@@ -56,6 +56,24 @@ describe("validateRuleSpec", () => {
     expect(validateRuleSpec(rule)).toEqual([]);
   });
 
+  it("accepts a click-trigger gate and rejects one with an empty primary selector", () => {
+    const click = (primary: string): RuleSpec => ({
+      ...rule,
+      primitives: [
+        {
+          kind: "gate",
+          trigger: { type: "click", selectors: { primary, fallbacks: [".row button"] } },
+          frictionType: { type: "confirmation" },
+          proceedAffordance: { label: "One more", action: { type: "continue" } },
+        },
+      ],
+    });
+    expect(validateRuleSpec(click("button.play"))).toEqual([]);
+    expect(validateRuleSpec(click("  "))).toEqual([
+      "gate.trigger.selectors.primary must name a selector",
+    ]);
+  });
+
   it("rejects a rule with no primitives", () => {
     expect(validateRuleSpec({ ...rule, primitives: [] })).toContain(
       "a rule must carry at least one primitive",

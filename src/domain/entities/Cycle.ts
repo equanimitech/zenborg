@@ -1,3 +1,9 @@
+import {
+  type Allocation,
+  allocationErrors,
+  DEFAULT_CAPACITY_DAYS,
+} from "./Allocation";
+
 /**
  * Cycle - Time container for moments
  *
@@ -26,6 +32,21 @@ export interface Cycle {
    * nothing is filtered out by a constraint that cannot be checked.
    */
   placeIds?: string[];
+  /**
+   * What each area means this season, in the gardener's words (1 to 12 each).
+   * Declared at /season, expires with the cycle. Absent = none declared.
+   */
+  areaIntentions?: Record<string, string>;
+  /**
+   * People on this season's roster, keyed by person key
+   * (the key moments carry in `personIds`). Text is 1 to 12 words,
+   * or "" for "on the roster, nothing to say yet".
+   */
+  people?: Record<string, string>;
+  /** Days this cycle can spend. Absent = DEFAULT_CAPACITY_DAYS (12). */
+  capacityDays?: number;
+  /** The betting table: bets and lanes drawing on `capacityDays`. */
+  allocations?: Allocation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -287,4 +308,29 @@ export function calculateCycleBandwidth(
       (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
     ) + 1;
   return days * 3 * momentsPerDay; // 3 phases per day
+}
+
+// ============================================================================
+// Betting table
+// ============================================================================
+
+/**
+ * Sets a cycle's capacity and allocations, refusing a table that breaks an
+ * invariant (see `allocationErrors`). Replaces the whole table.
+ */
+export function setAllocations<
+  C extends Pick<Cycle, "capacityDays" | "allocations" | "updatedAt">,
+>(
+  cycle: C,
+  allocations: readonly Allocation[],
+  capacityDays: number = cycle.capacityDays ?? DEFAULT_CAPACITY_DAYS,
+): C | { error: string } {
+  const errors = allocationErrors(allocations, capacityDays);
+  if (errors.length > 0) return { error: errors.join("; ") };
+  return {
+    ...cycle,
+    capacityDays,
+    allocations: [...allocations],
+    updatedAt: new Date().toISOString(),
+  };
 }

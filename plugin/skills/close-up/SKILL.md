@@ -1,6 +1,6 @@
 ---
 name: close-up
-description: Close out a session - land the progress where that work is tracked, release the intention, name the carry-over. Routes by context - Themia repos → a Linear comment on the issue(s) touched; equanimitech and everything else → a journal entry. Use when Rafa says "/close-up", "close up", "let's close up", "closing up here", "wrap this up", "wrap the session", "wrap the block", "I'm moving on", "done with this one", "let's close this session", "shipping this and switching". Repeatable - several times a day is normal. Do NOT trigger for the day-close - "good night", "I'm done for the day", "calling it", "end of day", "wind down" belong to `sunset`, which closes the day in the garden.
+description: Close out a session - land the progress where that work is tracked, pin it to the active moment, name the carry-over. Routes by context - Themia repos → a Linear comment on the issue(s) touched; equanimitech and everything else → a journal entry. Use when Rafa says "/close-up", "close up", "let's close up", "closing up here", "wrap this up", "wrap the session", "wrap the block", "I'm moving on", "done with this one", "let's close this session", "shipping this and switching". Repeatable - several times a day is normal. Do NOT trigger for the day-close - "good night", "I'm done for the day", "calling it", "end of day", "wind down" belong to `sunset`, which closes the day in the garden.
 user-invocable: true
 allowed-tools: [Read, Write, Bash, Skill]
 ---
@@ -8,11 +8,10 @@ allowed-tools: [Read, Write, Bash, Skill]
 # Close-up
 
 The **session close**. A session ends, its progress lands where that work is
-tracked, the intention is released, and he moves on. Several times a day is
+tracked, its pointer pinned to the active moment, and he moves on. Several times a day is
 normal.
 
-Not a catch-up (`weather` reads a day or a week back, and plants or corrects
-moments only when asked), not a compaction for another agent
+Not a read (that writes nothing), not a compaction for another agent
 (`handoff` — that's one of the exits here, not the point).
 
 **This is not the day-close.** `sunset` owns that — the garden's day summary,
@@ -26,8 +25,8 @@ closing up surfaces work, that's `/idea` or `/pain`, not this session.
 
 ## 1. Read the session
 
-The conversation is the session — you already hold it. Don't sweep the
-activity log for it.
+The conversation is the session — you already hold it. Don't rebuild a
+sweep.
 
 Supplement with the diff only:
 
@@ -66,7 +65,8 @@ Find the issue before writing anything:
 Then draft a comment from §1's synthesis and show it. Propose a state change
 only when the session actually earned one.
 
-**Draft before write. Nothing reaches Linear before he approves.** Post with `mcp__plugin_linear_linear__save_comment`
+**Draft before write. Nothing reaches Linear before he approves** — the same
+rule `week-review` runs on. Post with `mcp__plugin_linear_linear__save_comment`
 / `save_issue` (fall back to `mcp__claude_ai_Linear__*` if that server is
 unauthenticated).
 
@@ -87,23 +87,23 @@ is how a dead beat survives for months.
 One entry per session. Don't stack a second one on the same session because he
 added a thought.
 
-## 4. Release the intention
+## 4. Pin the pointer, leave the intention
 
-The active moment (zenborg) names the stream. Closing up releases it — that is
-the whole beat.
+The active moment (zenborg) is one pointer for the whole gardener, shared by
+every session, the app and the panes. A session closing up does not own it:
+**never clear it here.** Parallel sessions closing up would drop the moment he
+just activated elsewhere. Switching is `/now`, the band or the pane; the day
+releases it (`sunset`, or the pointer going stale at the 04:00 rollover).
 
 ```
 mcp__zenborg__get_active_moment
 ```
 
-- Produced a durable pointer (PR, issue, doc)? **Pin it first** —
+- Produced a durable pointer (PR, issue, doc)? **Pin it** —
   `mcp__zenborg__update_moment` with `refs`. The moment is the only place this
-  session stays findable months later; the pointer is about to be
-  released and takes the association with it.
-- Then `mcp__zenborg__clear_active_moment`.
+  session stays findable months later.
 
-Moments have no done-flag — they're planted, not checked off. Releasing the
-pointer *is* the close.
+Moments have no done-flag — they're planted, not checked off.
 
 If nothing was active, skip the beat silently.
 
@@ -138,7 +138,7 @@ quiet.
   `mcp__claude_ai_Slack__slack_send_message_draft`. **No `|` characters, so no
   markdown tables** — he pastes these.
 - **Linear status update** — the session moved a whole *project*, not one issue.
-  `save_status_update`, draft-then-approve, like the comment in §3a.
+  `save_status_update`, draft-then-approve, same as `week-review`.
 - **`/handoff`** — he's stopping *mid-thread*, not at a clean edge. Invoke the
   skill; it writes to the OS temp dir, not the workspace.
 
@@ -161,22 +161,19 @@ couldn't run. Then stop.
 - **The journal is never a repo.** The journal oracle (`routes.journal` in
   `~/.zenborg/oracles.json`) picks the sink; skills never hardcode one.
 - **Release the moment, don't fake a completion.** No done-flag exists.
-- **Don't sweep the log.** The conversation plus a `git log` is the whole read.
+- **Don't rebuild a sweep.** The conversation plus a `git log` is the whole read.
 - **No new work.** Findings become `/idea` · `/pain` · `/question`, or they wait.
 - **Exits are earned, not offered.** Silence is the common case.
 
 ## Composition
 
 - **Session scope.** `close-up` closes a session, repeatedly through the day.
-  The day belongs to `sunrise` · `sunset`; the week to `weather` (week mode).
-  Hand off rather than absorb.
-- Sibling of `weather`, which reads a day or a week back and plants on
-  request; this one lands a session.
+  The day belongs to `sunrise` · `sunset`; the week to `week-planning` ·
+  `week-review`. Hand off rather than absorb.
 - Delegates the journal write to the journal oracle chain (`oracles.json`),
   the message to `smart-brevity`, the mid-thread stop to `handoff`.
 - **zenborg is the only thing this skill writes.** The moment
-  (`get_active_moment` · `update_moment` · `clear_active_moment`) and nothing
-  else. Moments are planted, not completed — there is no done-flag to set, so
-  releasing the pointer is the entire close.
-- Linear via `mcp__plugin_linear_linear__*`, falling back to
-  `mcp__claude_ai_Linear__*` when that server is unauthenticated.
+  (`get_active_moment` · `update_moment`) and nothing
+  else. Moments are planted, not completed — there is no done-flag to set, and
+  the pointer stays where he set it.
+- Linear via `mcp__plugin_linear_linear__*`, matching `week-review`.

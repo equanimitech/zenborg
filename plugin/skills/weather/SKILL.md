@@ -184,6 +184,10 @@ Honor a named week ("last week", "the week of Sep 28").
 mcp__zenborg__get_footprints { "day": "<any YYYY-MM-DD in the week>" }
 ```
 
+`day` reads the whole Monday → Sunday week. `from` alone reads one single
+day, so never use it here. The response also carries `trace` (per-moment,
+per-day detail); week mode does not use it, so skip it.
+
 That one call carries everything: the board, planted per area (this week and
 last), footprints per surface by area with coverage, wilting habits, and area
 names. Do not call `list_moments`, `list_areas` or `list_habits` on top of it.
@@ -196,16 +200,16 @@ Call it again only when the gardener asks for another week.
 
 | Area          | Planted | last week | Screen  | last week | Work      | last week | Body | last week |
 |---------------|---------|-----------|---------|-----------|-----------|-----------|------|-----------|
-| Studio        | 7       | 11        | 14 m    | 4 m       | 18 h 30 m | 19 h 24 m | —    | —         |
-| Entertainment | 2       | 4         | 7 h 3 m | 4 h 43 m  | —         | —         | —    | —         |
-| Movement      | 3       | 2         | —       | —         | —         | —         | 30 m | 1 h 10 m  |
+| Area A        | 7       | 9         | 20 m    | 10 m      | 15 h      | 14 h      | —    | —         |
+| Area B        | 2       | 3         | 5 h     | 4 h       | —         | —         | —    | —         |
+| Area C        | 3       | 2         | —       | —         | —         | —         | 40 m | 1 h       |
 
-Screen   this week  seen 31.9 h · 0 m through idle · 24 h 34 m unmapped (Terminal 11 h, Browser 8 h)
-         last week  seen 33 h · 0 m through idle · 28 h 10 m unmapped
-Work     this week  seen 18.5 h · 0 m through idle · 0 m unmapped
-         last week  seen 19.4 h · 0 m through idle · 0 m unmapped
-Body     this week  seen 4.7 h · 0 m through idle · 4 h 12 m unmapped (cycling 2 h 31 m, soccer 1 h 41 m)
-         last week  seen 1.2 h · 0 m through idle · 0 m unmapped
+Screen   this week  seen 30.0 h · 0 m through idle · 10 h unmapped (App X 6 h, App Y 3 h)
+         last week  seen 28.0 h · 0 m through idle · 12 h unmapped
+Work     this week  seen 15.0 h · 0 m through idle · 0 m unmapped
+         last week  seen 14.0 h · 0 m through idle · 0 m unmapped
+Body     this week  seen 3.0 h · 0 m through idle · 2 h unmapped (activity X 1 h, activity Y 1 h)
+         last week  seen 1.0 h · 0 m through idle · 0 m unmapped
 Journal  not drawn · Comms not drawn
 
 Blind spots: 18 moments are untraceable, not missed: their areas declare no
@@ -213,7 +217,7 @@ paths, hosts or apps and their habits have no Garmin mapping. Idle after
 120 s ends a screen span, so a film watched without input counts its first
 two minutes; embedded and DRM players emit no video events.
 
-Wilting: Sit · Mobility
+Wilting: Habit P · Habit Q
 ```
 
 - Two numbers side by side, every time. Never a ratio, a percentage, an arrow,
@@ -244,9 +248,9 @@ Wilting: Sit · Mobility
 
 One open question, then follow the gardener. Likely turns:
 
-- "Map Terminal to Studio" → `mcp__zenborg__map_area { kind: "app", key: "Terminal", area: "Studio" }`
+- "Map App X to Area A" → `mcp__zenborg__map_area { kind: "app", key: "App X", area: "Area A" }`
 - "Plant two runs next week" → hand off to tend.
-- "Why is Entertainment so high?" → read the per-surface rows and the blind
+- "Why is Area B so high?" → read the per-surface rows and the blind
   spots back. Do not speculate past what coverage saw.
 
 Do not offer a verdict, a lesson, or a plan for next week unless asked.

@@ -13,7 +13,7 @@
  * pushed fence record, and the questions those three answered are asked of it
  * instead — `standingBlockHosts`, `fenceableHosts`, `gatesFrom`.
  *
- * What remains is genuinely other: transforms and the break target still come
+ * What remains is genuinely other: transforms still come
  * off rules the host projects, and areas, the area map and the moment's
  * allow/deny pair are kernel collections rather than rules at all.
  *
@@ -61,22 +61,6 @@ export const momentFriction = storage.defineItem<MomentFriction | null>(
   { fallback: null }
 );
 
-/** What "take a break" means right now: the areas it pauses, and their domains. */
-export interface BreakTarget {
-  readonly areas: readonly {
-    readonly name: string;
-    readonly emoji: string;
-    /** Hex, from the kernel. The one sanctioned accent (see areas.md). */
-    readonly color?: string;
-  }[];
-  readonly domains: readonly string[];
-  readonly durationMs: number;
-}
-
-export const breakTarget = storage.defineItem<BreakTarget | null>("local:policy:break", {
-  fallback: null,
-});
-
 export interface AreaInfo {
   readonly id: string;
   readonly name: string;
@@ -110,7 +94,6 @@ export const areaMap = storage.defineItem<Record<string, string>>("local:policy:
  */
 export async function replacePolicy(policy: {
   readonly transforms?: readonly PageTransform[];
-  readonly break?: BreakTarget | null;
   readonly areas?: readonly AreaInfo[];
   readonly areaMap?: Readonly<Record<string, string>>;
   readonly momentFriction?: MomentFriction | null;
@@ -120,9 +103,6 @@ export async function replacePolicy(policy: {
   // invisible is indistinguishable from the site being broken.
   if (policy.transforms !== undefined) {
     await pageTransforms.setValue([...policy.transforms]);
-  }
-  if (policy.break !== undefined) {
-    await breakTarget.setValue(policy.break);
   }
   // Areas and their domain map. Replaced wholesale including the empty case:
   // an area archived in the editor must stop being offered, and a domain

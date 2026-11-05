@@ -82,7 +82,11 @@ export async function setArea(domain: string, areaId: string): Promise<boolean> 
  *
  * Nothing is persisted. The page computes, renders, and discards.
  */
-export async function queryEvents(since: number): Promise<readonly ActivityEvent[]> {
+export async function queryEvents(
+  since: number,
+  /** Only these kinds. An older host ignores the filter, so it is applied here too. */
+  kinds?: readonly string[]
+): Promise<readonly ActivityEvent[]> {
   let port: ReturnType<typeof browser.runtime.connectNative>;
   try {
     port = browser.runtime.connectNative(HOST_NAME);
@@ -120,7 +124,7 @@ export async function queryEvents(since: number): Promise<readonly ActivityEvent
         return;
       }
       if (Array.isArray(msg.events)) {
-        collected.push(...msg.events);
+        collected.push(...(kinds ? msg.events.filter((e) => kinds.includes(e.kind)) : msg.events));
       }
       if (msg.done === true) {
         clearTimeout(timer);
@@ -129,7 +133,7 @@ export async function queryEvents(since: number): Promise<readonly ActivityEvent
     });
 
     try {
-      port.postMessage({ type: "request_events", since });
+      port.postMessage({ type: "request_events", since, ...(kinds ? { kinds } : {}) });
     } catch {
       clearTimeout(timer);
       finish();
@@ -207,6 +211,10 @@ export interface TodayMoment {
   readonly startTime: string | null;
   readonly durationMin: number | null;
   readonly status: string;
+  /** Hostnames from the moment's refs; absent from an older host. */
+  readonly hosts?: readonly string[];
+  /** Name of the habit the moment waters, when it waters one. */
+  readonly habitName?: string | null;
 }
 
 export interface TodayBoard {
@@ -256,6 +264,59 @@ export async function queryTodayMoments(): Promise<TodayBoard> {
       finish(empty);
     }
   });
+}
+
+/**
+ * One message, one reply of `replyType`: whether the host said `ok`. False on
+ * a timeout, an unreachable host, or a refusal — the caller fails open.
+ */
+function ask(msg: Record<string, unknown>, replyType: string, timeoutMs: number): Promise<boolean> {
+  let port: ReturnType<typeof browser.runtime.connectNative>;
+  try {
+    port = browser.runtime.connectNative(HOST_NAME);
+  } catch {
+    return Promise.resolve(false);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean): void => {
+      if (settled) { return; }
+      settled = true;
+      try { port.disconnect(); } catch { /* already gone */ }
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    port.onDisconnect.addListener(() => {
+      clearTimeout(timer);
+      finish(false);
+    });
+    port.onMessage.addListener((raw: unknown) => {
+      const reply = raw as { type?: string; ok?: boolean; error?: string };
+      if (reply.type !== replyType) { return; }
+      if (reply.ok !== true) { console.warn(`[zenborg relay] ${replyType} refused:`, reply.error); }
+      clearTimeout(timer);
+      finish(reply.ok === true);
+    });
+    try {
+      port.postMessage(msg);
+    } catch {
+      clearTimeout(timer);
+      finish(false);
+    }
+  });
+}
+
+/**
+ * Switch the active moment for `minutes`, then back. The host runs the writer
+ * (`zenborg-mcp switch-moment`); the extension never writes the pointer.
+ */
+export function switchMoment(momentId: string, minutes: number): Promise<boolean> {
+  return ask({ type: "switch_moment", momentId, minutes }, "moment_switched", 10_000);
+}
+
+/** What the session gave, appended to today's day note by the writer. */
+export function reflectOnMoment(momentId: string, text: string, intention: string): Promise<boolean> {
+  return ask({ type: "reflect", momentId, text, intention }, "reflected", 10_000);
 }
 
 /** Connect once, ship the outbox (ack-prune), pull observe + policy. */
@@ -313,6 +374,7 @@ export async function flushToHost(): Promise<void> {
           }
         });
       } else if (msg.type === "area_set") void flushToHost(); // re-pull so every surface agrees
+      else if (msg.type === "error") console.error("[zenborg relay] host refused:", msg);
     });
     const events = await readAllEvents();
     console.debug("[zenborg relay] flushing", events.length, "buffered events to", HOST_NAME);
