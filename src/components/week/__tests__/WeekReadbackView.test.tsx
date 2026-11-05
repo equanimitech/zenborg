@@ -58,6 +58,36 @@ const READBACK: WeekReadback = {
     { surface: "journal", status: "not drawn" },
     { surface: "comms", status: "not drawn" },
   ],
+  trace: [
+    {
+      day: "2026-10-06",
+      moments: [
+        {
+          momentId: "m1",
+          name: "review",
+          areaId: "themia",
+          areaName: "Themia",
+          phase: "MORNING",
+          traced: [
+            { surface: "work", minutes: 65 },
+            { surface: "screen", minutes: 20 },
+          ],
+          elsewhere: [
+            { surface: "screen", areaName: "Entertainment", minutes: 25 },
+          ],
+          evidence: "traced",
+        },
+      ],
+      unplanted: [
+        {
+          phase: "EVENING",
+          areaName: "Entertainment",
+          surface: "screen",
+          minutes: 90,
+        },
+      ],
+    },
+  ],
   wilting: [
     { habitId: "h", name: "Sit", areaId: "wellness", areaName: "Wellness" },
   ],
@@ -89,29 +119,10 @@ describe("formatMinutes", () => {
 });
 
 describe("areaRows", () => {
-  it("puts planted counts beside footprint minutes summed across surfaces", () => {
+  it("carries planted counts only; footprint minutes are never summed across surfaces", () => {
     expect(areaRows(READBACK)).toEqual([
-      {
-        areaId: "themia",
-        planted: 7,
-        plantedLast: 11,
-        minutes: 1110,
-        minutesLast: 1164,
-      },
-      {
-        areaId: "wellness",
-        planted: 1,
-        plantedLast: 0,
-        minutes: 0,
-        minutesLast: 0,
-      },
-      {
-        areaId: "ent",
-        planted: 0,
-        plantedLast: 0,
-        minutes: 423,
-        minutesLast: 283,
-      },
+      { areaId: "themia", planted: 7, plantedLast: 11 },
+      { areaId: "wellness", planted: 1, plantedLast: 0 },
     ]);
   });
 });
@@ -134,6 +145,24 @@ describe("WeekReadbackView", () => {
     renderView();
     expect(screen.getByText("untraceable")).toBeInTheDocument();
     expect(screen.queryByText(/missed/i)).toBeNull();
+  });
+
+  it("reads each moment against its cell, per surface, plus unplanted attention", () => {
+    renderView();
+    expect(
+      screen.getByText(/traced here: Work 1 h 5 m · Screen 20 m/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/elsewhere: Entertainment Screen 25 m/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/unplanted · Screen 1 h 30 m/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no trace in the web build", () => {
+    renderView(false);
+    expect(screen.queryByText(/traced here|unplanted ·/)).toBeNull();
   });
 
   it("carries no percentage, ratio or arrow", () => {

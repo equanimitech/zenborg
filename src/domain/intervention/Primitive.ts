@@ -83,10 +83,17 @@ export interface TransformSpec {
  * session-surface rules in `rules/` would each have had to declare one falsely.
  * `entry` is the same shape of thing said at the surface-neutral altitude.
  *
- * `element_click` and `session_end` are deliberately absent rather than
- * overlooked. Nothing here arms them, keel wires neither, and vocabulary no
- * consumer agrees on is the optional escape hatch this field exists not to be.
- * They are one variant away the day a rule needs one.
+ * `click` is keel's `element_click`, arrived the day a rule needed it: a dwell
+ * gate on a chess site fired mid-game with the clock running. The decision
+ * point there is the control that STARTS the next game, so the gate stands in
+ * front of that click and nowhere else: a move, a resignation, a chat line
+ * never match. `selectors` is a chain like `TransformSpec.targets`, every
+ * selector matched together, and a click on the target or any ancestor of it
+ * counts. The browser surface is the only one that arms it.
+ *
+ * `session_end` is deliberately absent rather than overlooked. Nothing here
+ * arms it, and vocabulary no consumer agrees on is the optional escape hatch
+ * this field exists not to be. It is one variant away the day a rule needs one.
  *
  * `everyMinutes` counts *attended* dwell, not wall-clock: a backgrounded tab or
  * an idle person does not accrue it. That is keel's contract for the same
@@ -94,7 +101,14 @@ export interface TransformSpec {
  */
 export type GateTrigger =
   | { readonly type: "entry" }
-  | { readonly type: "dwell"; readonly everyMinutes: number };
+  | { readonly type: "dwell"; readonly everyMinutes: number }
+  | {
+      readonly type: "click";
+      readonly selectors: {
+        readonly primary: string;
+        readonly fallbacks?: readonly string[];
+      };
+    };
 
 /**
  * Interrupt an action with a surface the user must engage with to proceed.
@@ -135,6 +149,19 @@ export interface GateSpec {
  * without a way out, whoever set them.
  */
 /**
+ * What a browser block stops. Absent means `all`, which is what a block has
+ * always been.
+ *
+ * `navigation` stops page loads only (top-level and framed). A page already
+ * open keeps its sockets and requests, so a schedule that switches on at 16:00
+ * does not cut a live game and lose it on time, while loading or reloading the
+ * site is still refused. It lives on the `browser` variant because only the
+ * browser can tell a page load from a websocket; a resolver or a device sees a
+ * hostname and nothing else, so `reach` there would be a promise it cannot keep.
+ */
+export type BlockReach = "all" | "navigation";
+
+/**
  * Where the lockout is applied.
  *
  * `resolver` is the one that reaches a phone, which is the reason host blocking
@@ -142,7 +169,7 @@ export interface GateSpec {
  * app does not run on.
  */
 export type CooldownEnforcement =
-  | { readonly at: "browser" }
+  | { readonly at: "browser"; readonly reach?: BlockReach }
   | { readonly at: "resolver"; readonly profile: string }
   | { readonly at: "device" };
 
@@ -192,6 +219,17 @@ export interface ScheduleSpec {
   };
   readonly wraps: Primitive;
   readonly outsideWindow: "inactive" | "passthrough";
+  /**
+   * Rationed watering: the wrapped block holds only once the pool's attended
+   * minutes for the local day reach `minutes`. `pool` is the policy name, shared
+   * by every rule the policy emits; `exclude` names subdomains that neither
+   * count nor are walled.
+   */
+  readonly budget?: {
+    readonly minutes: number;
+    readonly pool: string;
+    readonly exclude: readonly string[];
+  };
 }
 
 /**

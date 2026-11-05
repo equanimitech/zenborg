@@ -58,6 +58,17 @@ export interface RuleSpec {
    */
   readonly deliveryProbability: number;
   readonly primitives: readonly Primitive[];
+  /**
+   * False means paused: the record stays, nothing enforces it. Absent reads as
+   * true. Every reader (extension, plugin hook, garden advisory) skips a paused
+   * rule; `set_fence_enabled` is the writer that flips it, never deleting.
+   */
+  readonly defaultEnabled?: boolean;
+  /**
+   * A watering policy's own monthly pass allowance, stamped on its browser
+   * rules. Absent: passes draw from the shared `pass-allowance`.
+   */
+  readonly passAllowance?: { readonly perMonth: number; readonly hours: number };
 }
 
 /**
@@ -80,6 +91,24 @@ function triggerProblems(primitives: readonly Primitive[]): readonly string[] {
       continue;
     }
     if (primitive.kind !== "gate") continue;
+    const friction = primitive.frictionType;
+    if (friction.type === "intention" && friction.prompt.trim() === "") {
+      problems.push("gate.frictionType.prompt must ask something");
+    }
+    if (
+      (friction.type === "delay" && !(friction.seconds > 0)) ||
+      (friction.type === "breath" && !(friction.cycles > 0))
+    ) {
+      problems.push(`gate.frictionType ${friction.type} must be positive`);
+    }
+    if (primitive.trigger.type === "click") {
+      // A click gate with no selector stands in front of nothing: a rule that
+      // validates and never fires, which is the silently-dead failure.
+      if (primitive.trigger.selectors.primary.trim() === "") {
+        problems.push("gate.trigger.selectors.primary must name a selector");
+      }
+      continue;
+    }
     if (primitive.trigger.type !== "dwell") continue;
     const every = primitive.trigger.everyMinutes;
     if (!Number.isFinite(every) || every <= 0) {

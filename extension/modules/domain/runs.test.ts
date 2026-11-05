@@ -189,3 +189,57 @@ describe("runs — noise floor", () => {
     expect(runs([])).toEqual([]);
   });
 });
+
+describe("runs — idle while playing", () => {
+  it("counts an idle span when focused and the domain is audible", () => {
+    const [r] = runs([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "audible_start", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(10 * MIN, "idle_end"),
+    ]);
+    expect(toMinutes(r.dwellMs)).toBe(10);
+  });
+
+  it("does not count an idle span when the domain is silent", () => {
+    expect(
+      runs([
+        ev(0, "navigation_committed", "youtube.com"),
+        ev(0, "idle_start"),
+        ev(10 * MIN, "idle_end"),
+      ])
+    ).toEqual([]);
+  });
+
+  it("sends audible time to audibleDwellMs when focus is lost", () => {
+    const [r] = runs([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "audible_start", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(0, "focus_end"),
+      ev(10 * MIN, "focus_start"),
+    ]);
+    expect(toMinutes(r.dwellMs)).toBe(0);
+    expect(toMinutes(r.audibleDwellMs)).toBe(10);
+  });
+
+  it("counts an idle span while a muted video plays", () => {
+    const [r] = runs([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "video_started", "youtube.com"),
+      ev(0, "idle_start"),
+      ev(10 * MIN, "idle_end"),
+    ]);
+    expect(toMinutes(r.dwellMs)).toBe(10);
+  });
+
+  it("does not let a video event for another domain move current", () => {
+    const [r] = runs([
+      ev(0, "navigation_committed", "youtube.com"),
+      ev(0, "video_started", "vimeo.com"),
+      ev(10 * MIN, "tab_closed", "youtube.com"),
+    ]);
+    expect(r.domain).toBe(createDomain("youtube.com"));
+    expect(toMinutes(r.dwellMs)).toBe(10);
+  });
+});

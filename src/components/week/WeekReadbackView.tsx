@@ -2,8 +2,10 @@
 
 import type {
   Coverage,
+  DayTrace,
   Footprint,
   ReadingSurface,
+  TracedMoment,
   WeekReadback,
 } from "@/domain/readback/WeekReadback";
 import type { Phase } from "@/domain/value-objects/Phase";
@@ -52,43 +54,19 @@ interface AreaRow {
   readonly areaId: string;
   readonly planted: number;
   readonly plantedLast: number;
-  readonly minutes: number;
-  readonly minutesLast: number;
 }
 
 /**
- * Per area, planted counts beside footprint minutes summed over the drawn
- * surfaces. Surfaces can overlap (an agent run while its terminal is in
- * front), which is why each one is also read back on its own below.
+ * Per area, planted counts for this week and last. Footprint minutes are
+ * never summed across surfaces: they overlap (an agent run while its terminal
+ * is in front), so each surface is read back on its own below.
  */
 export function areaRows(readback: WeekReadback): AreaRow[] {
-  const rows = new Map<
-    string,
-    {
-      planted: number;
-      plantedLast: number;
-      minutes: number;
-      minutesLast: number;
-    }
-  >();
-  const row = (id: string) => {
-    const existing = rows.get(id);
-    if (existing) return existing;
-    const created = { planted: 0, plantedLast: 0, minutes: 0, minutesLast: 0 };
-    rows.set(id, created);
-    return created;
-  };
-  for (const p of readback.planted) {
-    const r = row(p.areaId);
-    r.planted = p.thisWeek;
-    r.plantedLast = p.lastWeek;
-  }
-  for (const f of readback.footprints) {
-    if (f.status !== "drawn") continue;
-    for (const a of f.thisWeek.byArea) row(a.areaId).minutes += a.minutes;
-    for (const a of f.lastWeek.byArea) row(a.areaId).minutesLast += a.minutes;
-  }
-  return [...rows.entries()].map(([areaId, r]) => ({ areaId, ...r }));
+  return readback.planted.map((p) => ({
+    areaId: p.areaId,
+    planted: p.thisWeek,
+    plantedLast: p.lastWeek,
+  }));
 }
 
 /** "seen 62 h · 0 m through idle · 24 h 34 m unmapped". Coverage rides with every surface. */
@@ -157,7 +135,11 @@ export function WeekReadbackView({
     (n, d) => n + d.phases.reduce((m, p) => m + p.moments.length, 0),
     0,
   );
-  const navButton = `${label} hover:text-stone-900 dark:hover:text-stone-100`;
+  const traceByDay = new Map(readback.trace.map((t) => [t.day, t]));
+  const traceById = new Map(
+    readback.trace.flatMap((t) => t.moments.map((m) => [m.momentId, m])),
+  );
+  const navButton =`${label} hover:text-stone-900 dark:hover:text-stone-100`;
 
   return (
     <article className="mx-auto max-w-3xl px-6 py-12">
@@ -197,10 +179,10 @@ export function WeekReadbackView({
       )}
 
       <section className="pt-10">
-        <h2 className={label}>Planted and walked</h2>
+        <h2 className={label}>Planted</h2>
         {rows.length === 0 ? (
           <p className={`mt-4 text-sm ${muted}`}>
-            Nothing planted and no footprints this week or last.
+            Nothing planted this week or last.
           </p>
         ) : (
           <table className="mt-4 w-full text-sm">
@@ -213,17 +195,6 @@ export function WeekReadbackView({
                 <th className={`pb-2 text-right font-normal ${label}`}>
                   Last week
                 </th>
-                {/* Unseen is not zero: without the log, no footprint column at all. */}
-                {logReadable && (
-                  <>
-                    <th className={`pb-2 pl-6 text-right font-normal ${label}`}>
-                      Footprints
-                    </th>
-                    <th className={`pb-2 text-right font-normal ${label}`}>
-                      Last week
-                    </th>
-                  </>
-                )}
               </tr>
             </thead>
             <tbody>
@@ -237,16 +208,6 @@ export function WeekReadbackView({
                   </td>
                   <td className={`py-2 ${number} ${ink}`}>{r.planted}</td>
                   <td className={`py-2 ${number} ${faint}`}>{r.plantedLast}</td>
-                  {logReadable && (
-                    <>
-                      <td className={`py-2 pl-6 ${number} ${ink}`}>
-                        {formatMinutes(r.minutes)}
-                      </td>
-                      <td className={`py-2 ${number} ${faint}`}>
-                        {formatMinutes(r.minutesLast)}
-                      </td>
-                    </>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -317,7 +278,7 @@ export function WeekReadbackView({
       </section>
 
       <section className="pt-10">
-        <details className={`group border-y ${rule}`}>
+        <details className={`group border-y ${rule}`} open>
           <summary className={summary}>
             <Marker />
             <span className={label}>The board</span>
@@ -336,7 +297,7 @@ export function WeekReadbackView({
                     {day.phases.flatMap((p) =>
                       p.moments.map((m) => (
                         <li
-                          className="flex items-baseline gap-2 text-sm"
+                          className="flex flex-wrap items-baseline gap-x-2 text-sm"
                           key={m.id}
                         >
                           <span className={`w-4 shrink-0 ${faint}`}>
@@ -347,18 +308,28 @@ export function WeekReadbackView({
                           </span>
                           <Swatch area={areas[m.areaId]} />
                           <span className={ink}>{m.name}</span>
-                          {!m.traceable && (
+                          {!m.traceable ? (
                             <span
                               className={`font-mono text-xs ${faint}`}
                               title="No surface can see this area or habit"
                             >
                               untraceable
                             </span>
+                          ) : (
+                            logReadable && (
+                              <TraceNote traced={traceById.get(m.id)} />
+                            )
                           )}
                         </li>
                       )),
                     )}
                   </ul>
+                )}
+                {logReadable && (
+                  <Unplanted
+                    areas={areas}
+                    rows={traceByDay.get(day.day)?.unplanted ?? []}
+                  />
                 )}
               </div>
             ))}
@@ -366,6 +337,64 @@ export function WeekReadbackView({
         </details>
       </section>
     </article>
+  );
+}
+
+const surfaceName = (s: string) =>
+  SURFACE_LABEL[s as ReadingSurface] ?? s;
+
+/**
+ * What the surfaces saw in a moment's own cell: minutes per surface, never
+ * summed (surfaces overlap), and what else held the same cell. A day that
+ * has not started has no trace and says nothing.
+ */
+function TraceNote({ traced }: { traced?: TracedMoment }) {
+  if (!traced) return null;
+  const here = traced.traced
+    .map((t) => `${surfaceName(t.surface)} ${formatMinutes(t.minutes)}`)
+    .join(" · ");
+  const elsewhere = traced.elsewhere
+    .map(
+      (e) =>
+        `${e.areaName} ${surfaceName(e.surface)} ${formatMinutes(e.minutes)}`,
+    )
+    .join(" · ");
+  return (
+    <span className={`font-mono text-xs ${muted}`}>
+      {here ? `traced here: ${here}` : "nothing traced here"}
+      {elsewhere && <span className={faint}> · elsewhere: {elsewhere}</span>}
+    </span>
+  );
+}
+
+/** Attention in a phase that planted nothing for that area. */
+function Unplanted({
+  rows,
+  areas,
+}: {
+  rows: DayTrace["unplanted"];
+  areas: Readonly<Record<string, AreaStyle>>;
+}) {
+  if (rows.length === 0) return null;
+  const byName = new Map(Object.values(areas).map((a) => [a.name, a]));
+  return (
+    <ul className="mt-1.5 space-y-1">
+      {rows.map((u) => (
+        <li
+          className="flex flex-wrap items-baseline gap-x-2 text-sm"
+          key={`${u.phase}-${u.areaName}-${u.surface}`}
+        >
+          <span className={`w-4 shrink-0 ${faint}`}>
+            <PhaseIcon className="h-3 w-3" phase={u.phase as Phase} />
+          </span>
+          <Swatch area={byName.get(u.areaName)} />
+          <span className={muted}>{u.areaName}</span>
+          <span className={`font-mono text-xs ${faint}`}>
+            unplanted · {surfaceName(u.surface)} {formatMinutes(u.minutes)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

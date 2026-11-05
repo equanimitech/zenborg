@@ -35,9 +35,6 @@
   --quiet: var(--stone-500);
   --rule: var(--stone-200);
 
-  /* Area accent, set at runtime from the kernel's `color`. Stone until then. */
-  --area: var(--stone-800);
-
   --ease-phi: cubic-bezier(0.618, 0, 0.382, 1);
 }
 
@@ -77,75 +74,6 @@ body {
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: lowercase;
-  color: var(--quiet);
-}
-
-/* ── The one gesture ─────────────────────────────────────────── */
-.popup-break {
-  height: 68px;
-  width: 100%;
-  border: none;
-  border-radius: 3px;
-  background: var(--area);
-  color: var(--stone-50);
-  font-family: var(--font-sans);
-  font-size: 17px;
-  font-weight: 500;
-  letter-spacing: 0.005em;
-  cursor: pointer;
-  transition: filter 240ms var(--ease-phi);
-}
-
-.popup-break:hover {
-  filter: brightness(1.08);
-}
-
-.popup-break:disabled {
-  background: var(--stone-200);
-  color: var(--quiet);
-  cursor: default;
-}
-
-@media (prefers-color-scheme: dark) {
-  .popup-break:disabled {
-    background: #1f1d1b;
-  }
-}
-
-.popup-break-sub {
-  margin: -10px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: center;
-  color: var(--quiet);
-}
-
-/* ── Resting ─────────────────────────────────────────────────── */
-/* Factual. No countdown ticking — a timer makes waiting the activity. */
-.popup-resting {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  align-items: center;
-  padding: 22px 8px 16px;
-}
-
-.popup-resting-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 500;
-}
-
-.popup-resting-until {
-  margin: 0;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  color: var(--quiet);
-}
-
-.popup-resting-areas {
-  margin: 10px 0 0;
-  font-size: 12px;
   color: var(--quiet);
 }
 

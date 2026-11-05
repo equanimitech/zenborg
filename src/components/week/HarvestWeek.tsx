@@ -52,7 +52,15 @@ export function HarvestWeek() {
   const [week, setWeek] = useState(thisWeek);
   const logReadable = canReadActivity();
 
-  const [events, setEvents] = useState<readonly ActivityEvent[]>([]);
+  // Events are kept with the week they were read for, so a new week never
+  // renders against the old one's events while its own read is in flight.
+  const [loaded, setLoaded] = useState<{
+    from: string;
+    to: string;
+    events: readonly ActivityEvent[];
+  }>({ from: week.from, to: week.to, events: [] });
+  const events =
+    loaded.from === week.from && loaded.to === week.to ? loaded.events : [];
   const [habitMap, setHabitMap] = useState<GarminHabitMap | undefined>();
 
   useEffect(() => {
@@ -73,11 +81,11 @@ export function HarvestWeek() {
     tauriActivityLog
       .read(span.from, span.to)
       .then((read) => {
-        if (live) setEvents(read);
+        if (live) setLoaded({ from: week.from, to: week.to, events: read });
       })
       .catch((error) => {
         console.error("[harvest] activity log unreadable:", error);
-        if (live) setEvents([]);
+        if (live) setLoaded({ from: week.from, to: week.to, events: [] });
       });
     return () => {
       live = false;

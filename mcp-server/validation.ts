@@ -49,15 +49,16 @@ export function validateOneToThreeWords(
 // Tag normalization (mirrors src/domain/services/TagService)
 // ────────────────────────────────────────────────────────────────────────
 
-const TAG_VALID = /^[a-z0-9-]{1,20}$/;
+const TAG_VALID = /^[\p{L}\p{N}-]{1,20}$/u;
 
 function normalizeSingleTag(tag: string): string | null {
   if (!tag || typeof tag !== "string") return null;
   const normalized = tag
+    .normalize("NFC")
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
+    .replace(/[^\p{L}\p{N}-]/gu, "")
     .substring(0, 20);
   return TAG_VALID.test(normalized) ? normalized : null;
 }
@@ -117,6 +118,27 @@ export function slugify(label: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/**
+ * Maps raw `personIds` entries to person keys, which is what the app resolves
+ * badges by. A key stays; a person's UUID becomes that person's key; anything
+ * else is slugified (an unknown key is still allowed through). Deduped, empties
+ * dropped.
+ */
+export function resolvePersonKeys(
+  raw: readonly string[],
+  people: Record<string, { id: string; key: string }>,
+): string[] {
+  const all = Object.values(people);
+  const keys: string[] = [];
+  for (const entry of raw) {
+    const hit =
+      all.find((p) => p.key === entry) ?? all.find((p) => p.id === entry);
+    const key = hit ? hit.key : slugify(entry);
+    if (key.length > 0 && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
 }
 
 /** The pasted place link, named when it does not parse. Null when absent. */

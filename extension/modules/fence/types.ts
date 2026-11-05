@@ -18,6 +18,7 @@
  */
 
 import type { GateFriction } from "../friction/gate/decide";
+import type { Opening, PassAllowance } from "./lifts";
 
 /**
  * The desugared primitive, narrowed to what a browser can actuate.
@@ -33,11 +34,21 @@ export type FenceEnforcement =
       readonly standing: boolean;
       /** Where a lockout is applied. Only `browser` is this surface's to enforce. */
       readonly enforcement: "browser" | "resolver" | "device";
+      /**
+       * Browser only. `navigation` blocks page loads (main_frame, sub_frame) and
+       * spares an open page's sockets; absent means every resource type.
+       */
+      readonly reach?: "navigation";
     }
   | {
       readonly kind: "gate";
       readonly everyMinutes: number;
       readonly friction: GateFriction;
+      /** A click trigger's selectors, primary first. Present means the gate fires
+       * on a click on a match, never on dwell. */
+      readonly click?: readonly string[];
+      /** An entry trigger: the gate asks once on arrival at the host, never on dwell. */
+      readonly entry?: true;
     };
 
 /**
@@ -68,6 +79,15 @@ export interface ScheduleWindow {
   readonly outsideWindow: "inactive" | "passthrough";
 }
 
+export interface GateRungSpec {
+  readonly everyMinutes: number;
+  readonly friction: GateFriction;
+  readonly click?: readonly string[];
+  readonly entry?: true;
+  readonly proceed: ProceedAffordance;
+  readonly abort?: { readonly label: string };
+}
+
 export interface Fence {
   readonly id: string;
   /** What the person called it. Shown wherever the exit is shown. */
@@ -77,13 +97,23 @@ export interface Fence {
   readonly enforcement: FenceEnforcement;
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
-  /** When set, the fence is active only outside this window. */
+  /** Ladder rungs (two or more gates), rung 0 first; top-level fields mirror rung 0. */
+  readonly rungs?: readonly GateRungSpec[];
+  /** When set, the fence holds inside this window (and outside it only on `passthrough`). */
   readonly schedule?: ScheduleWindow;
+  /** The watering policy's own pass pool, when its rule carries one. */
+  readonly pool?: { readonly policy: string; readonly perMonth: number; readonly hours: number };
+  /** Rationed watering: holds only once the pool's minutes today reach `minutes`. */
+  readonly budget?: { readonly minutes: number; readonly pool: string; readonly exclude: readonly string[] };
   /**
    * From `RuleSpec.deliveryProbability`. `1` means the rule never withholds;
    * anything below it buys the comparison condition a proximal outcome needs.
    */
   readonly deliveryProbability: number;
+  /** From the vault record's `outcome.windowMs`, carried to `decision_point`. */
+  readonly windowMs?: number;
+  /** From the vault record's `serves.areaId`. */
+  readonly servesAreaId?: string;
 }
 
 /** The cache, keyed by fence id — the shape of the pushed record. */
@@ -100,4 +130,8 @@ export interface ParsedFences {
   readonly fences: Fences;
   /** Entries the door turned away. Reported, never silently dropped. */
   readonly refused: readonly Refusal[];
+  /** Planned openings, active or upcoming. Expired ones are dropped here. */
+  readonly openings: readonly Opening[];
+  /** The `pass-allowance` record; absent means the defaults. */
+  readonly allowance?: PassAllowance;
 }

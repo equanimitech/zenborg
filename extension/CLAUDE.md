@@ -11,8 +11,8 @@ Part of zenborg. Run locally with `pnpm dev` from `extension/`.
 ```
 extension/
 ├── entrypoints/
-│   ├── background.ts                # SW — activity writer + DNR sync + cooldown lapse alarm
-│   ├── popup/                       # Status (event count, fences) + cooldown button
+│   ├── background.ts                # SW — activity writer + DNR sync + schedule-edge alarm
+│   ├── popup/                       # Status (event count, fences)
 │   ├── manage/                      # Fence dashboard + area map + log export
 │   ├── newtab/                      # New-tab override
 │   ├── block/                       # Drogue block page
@@ -28,8 +28,7 @@ extension/
 │   ├── watchlist/                   # DERIVED observe tier (fence domains ∪ area-map domains, not manual)
 │   ├── fence/                       # Fence parsing, projection, cache — the standing state
 │   ├── friction/
-│   │   ├── cooldown/                # state.ts (pure) + store.ts (chrome) + arm.ts (the one gesture)
-│   │   ├── gate/                    # dwell gate: state.ts + decide.ts (pure) + overlay.ts + arm.ts
+│   │   ├── gate/                    # dwell + click gates: state.ts, ladder.ts, click.ts (pure) + decide.ts + overlay.ts + arm.ts
 │   │   ├── policy/                  # store.ts — areas, area map, transforms from the host
 │   │   ├── transform/               # CSS hiding rules applied per-page
 │   │   └── areas/                   # scope.ts + days.ts — which areas a rule applies to, when
@@ -48,14 +47,10 @@ reads `fenceCache ∪ areaMap` fresh on every call.
 shopping, game) self-select by DOM shape on any observed domain. Site adapters in
 `adapters.ts` exist only where generic detection fails, and they are data.
 
-**Friction primitives: fences, gates, cooldowns, transforms.** zenborg (via MCP)
+**Friction primitives: fences, gates, transforms.** zenborg (via MCP)
 declares what is fenced; the extension decides when it fires. The fence state is
 pushed over native messaging and cached in `chrome.storage.local`, so actuation
 never waits on a round trip and a dead host never lifts a fence.
-
-`friction/cooldown/state.ts` holds the behavioural rule: **setting is
-write-forward-only.** Re-setting may push the stamp out, never pull it in, and
-there is deliberately no way to lift early — the unlock path is `wait`.
 
 ## The hostile-page boundary
 
