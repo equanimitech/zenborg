@@ -1,7 +1,11 @@
 // The phase pane: /phase [day] [phase] opens a phase's moments beside the
 // chat, grouped by area, with two rows of suggestions below: your rhythm and
 // your season. One focused row carries hotkeys (p, n, t, d, a) that move, delete
-// or activate it, or (i, z) plant or hide a suggestion; a line at the bottom
+// or activate it, or (i, z) plant or hide a suggestion. m grabs the focused
+// moment: while held, h l carry it to the previous or next phase (the view
+// follows) and j k swap it with its neighbouring row (the phase is
+// renumbered, only changed orders written), the cursor stays on it, and m drops
+// it, as do 0, reopening, or the moment leaving the shown view. A line at the bottom
 // asks Haiku for changes, shown as a preview that writes nothing until Apply.
 // Every write goes through zenborg's MCP tools.
 import { atom, read, update } from 'claude-code'
@@ -19,6 +23,7 @@ import {
   leavesView,
   neighbor,
   opCall,
+  orderOps,
   parseProposal,
   parseWhen,
   phaseEmoji,
@@ -45,6 +50,9 @@ const note = atom({ plugin: 'zenborg', key: 'note' } as const, '')
 const season = atom({ plugin: 'zenborg', key: 'season' } as const, {})
 const hidden = atom({ plugin: 'zenborg', key: 'hidden' } as const, { day: '', ids: [] })
 const rev = atom({ plugin: 'zenborg', key: 'rev' } as const, 0)
+// The grabbed moment (m), and whether a grab-mode write is in flight.
+const held = atom({ plugin: 'zenborg', key: 'held' } as const, null)
+const busy = atom({ plugin: 'zenborg', key: 'busy' } as const, false)
 
 // Today and the clock's (day, phase).
 async function clockView($: EngineInterface, v: Vault) {
@@ -68,6 +76,7 @@ async function openAt($: EngineInterface, args: string, focus: boolean) {
   const shown = when.view ?? current
   await update($, view, () => when.view)
   await update($, cursor, () => null)
+  await update($, held, () => null)
   await update($, note, () => when.note)
   const title = `${phaseEmoji(v, shown.phase)} ${phaseLabel(v, shown.phase)}`.trim()
   const opened = await $.ui.open({ id: PANE, title, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
@@ -91,7 +100,7 @@ async function mapSeason($: EngineInterface, v: Vault, today: string) {
   await update($, rev, n => n + 1)
 }
 
-// Writes each op in order, then has the pane re-read the vault.
+// Writes each op in order, then has the pane re-read the vault. True when every write landed.
 async function run($: EngineInterface, ops: BoardOp[]) {
   const v = await loadVault($)
   const failed = new Map<string, string[]>() // reason -> the ops it stopped
@@ -103,6 +112,7 @@ async function run($: EngineInterface, ops: BoardOp[]) {
   const line = [...failed].map(([why, ds]) => `not saved (${why}): ${ds.join('; ')}`).join(' | ')
   await update($, note, () => line)
   await update($, rev, n => n + 1)
+  return failed.size === 0
 }
 
 async function askHaiku($: EngineInterface, instruction: string) {
@@ -167,8 +177,14 @@ export const register: Register = on => {
     const quiet = quietIntentions(v, today, matches, { ...opts, skip: new Set([...hid, ...rhythm.map(s => s.habitId)]) })
     const sugId = (kind: string, s: Suggestion) => `sug:${kind}:${s.habitId}`
     const sugs = new Map([...rhythm.map(s => [sugId('rhythm', s), s] as const), ...quiet.map(s => [sugId('season', s), s] as const)])
+    // A grab holds while its moment is drawn here (or a write for it is landing), else it drops.
+    const heldRaw = await read($, held)
+    const inFlight = await read($, busy)
+    const heldId = heldRaw !== null && (inFlight || rowIds(here).includes(heldRaw)) ? heldRaw : null
+    if (heldRaw !== null && heldId === null) await update($, held, () => null)
+    const rowLabel = (id: string) => here.flatMap(g => g.rows).find(r => r.id === id)?.label ?? ''
     const ids = [...rowIds(here), ...sugs.keys()]
-    const sel = cursorAt(ids, await read($, cursor))
+    const sel = heldId ?? cursorAt(ids, await read($, cursor))
     const p = await read($, proposal)
     const q = await read($, ask)
     const n = await read($, note)
@@ -182,8 +198,34 @@ export const register: Register = on => {
       await update($, view, () => next)
       await $.ui.open({ id: PANE, title: `${phaseEmoji(v, phase)} ${phaseLabel(v, phase)}`.trim(), closeOnEscape: true })
     }
-    const step = (delta: number) => goTo(stepView(shown, delta))
     const disarm = () => update($, armed, () => null)
+    // While held, a key acts on the moment; a second keypress during a write is ignored.
+    // ponytail: ignored, not queued; a fast typist loses the second press. Queue them if that bites.
+    const whileBusy = async (write: () => Promise<void>) => {
+      if (await read($, busy)) return
+      await update($, busy, () => true)
+      try {
+        await write()
+      } finally {
+        await update($, busy, () => false)
+      }
+    }
+    // h l: write the move, then follow the moment so the view keeps it under the cursor.
+    const carry = (id: string, delta: number) =>
+      whileBusy(async () => {
+        const to = stepView(shown, delta)
+        if (await run($, [{ op: 'move', id, ...to }])) await goTo(to)
+      })
+    // j k: swap with the neighbouring row, from a fresh read of the vault.
+    const shift = (id: string, delta: number) =>
+      whileBusy(async () => {
+        const fresh = await loadVault($)
+        const ops = orderOps(fresh, rowIds(boardOf(fresh, shown).here), id, delta)
+        if (ops.length) await run($, ops)
+      })
+    const step = (delta: number) => (heldId ? carry(heldId, delta) : goTo(stepView(shown, delta)))
+    const walkOrShift = (delta: number) => (heldId ? shift(heldId, delta) : focus(c => walk(ids, cursorAt(ids, c), delta)))
+    const grab = (id: string | null) => update($, held, () => id)
     const focus = async (f: (c: string | null) => string | null) => {
       await disarm()
       await update($, cursor, f)
@@ -200,19 +242,26 @@ export const register: Register = on => {
     const row = (r: Row) => {
       const m = v.moments[r.id]
       const focused = r.id === sel
+      const holding = r.id === heldId
+      const text = `${r.label}${r.isActive ? ' ●' : ''}`
       return (
         <Box key={`r-${r.id}`} flexDirection="column">
-          <Button
-            key={`row-${r.id}`}
-            plain
-            label={`${focused ? '›' : ' '} ${r.label}${r.isActive ? ' ●' : ''}`}
-            onPress={() => focus(() => r.id)}
-          />
+          <Button key={`row-${r.id}`} plain label={holding ? `› [${text}]` : `${focused ? '›' : ' '} ${text}`} onPress={() => focus(() => r.id)} />
           {focused && m && (
             <Box gap={2} paddingLeft={4}>
-              {actionsFor(v, m, shown, today).map(a => (
-                <Button key={`act-${a.key}`} plain hotkey={a.hotkey} label={a.key === 'delete' && armedId === r.id ? 'd again to delete' : a.label} onPress={() => act(r.id, a.op)} />
-              ))}
+              {holding ? (
+                <Button key="act-move" plain hotkey="m" label="drop" onPress={() => grab(null)} />
+              ) : (
+                actionsFor(v, m, shown, today).map(a => (
+                  <Button
+                    key={`act-${a.key}`}
+                    plain
+                    hotkey={a.hotkey}
+                    label={a.key === 'delete' && armedId === r.id ? 'd again to delete' : a.label}
+                    onPress={() => (a.op ? act(r.id, a.op) : grab(r.id))}
+                  />
+                ))
+              )}
             </Box>
           )}
         </Box>
@@ -234,7 +283,7 @@ export const register: Register = on => {
       return (
         <Box key={`s-${id}`} flexDirection="column">
           <Button key={`row-${id}`} plain label={`${focused ? '›' : ' '} ${s.label}${s.note ? ` · ${s.note}` : ''}`} onPress={() => focus(() => id)} />
-          {focused && (
+          {focused && !heldId && (
             <Box gap={2} paddingLeft={4}>
               <Button key="sug-plant" plain hotkey="i" label={`into ${phaseLabel(v, shown.phase).toLowerCase()}`} onPress={() => plant(id, s)} />
               <Button key="sug-hide" plain hotkey="z" label="not now" onPress={() => hide(id, s)} />
@@ -254,10 +303,11 @@ export const register: Register = on => {
           <Box gap={2}>
             <Button key="view-prev" plain hotkey="h" label={`◂ ${phaseLabel(v, stepView(shown, -1).phase).toLowerCase()}`} onPress={() => step(-1)} />
             <Button key="view-next" plain hotkey="l" label={`${phaseLabel(v, stepView(shown, 1).phase).toLowerCase()} ▸`} onPress={() => step(1)} />
-            <Button key="down" plain hotkey="j" label="↓" onPress={() => focus(c => walk(ids, cursorAt(ids, c), 1))} />
-            <Button key="up" plain hotkey="k" label="↑" onPress={() => focus(c => walk(ids, cursorAt(ids, c), -1))} />
-            {!atNow && <Button key="view-now" plain hotkey="0" label="now" onPress={() => goTo(null)} />}
+            <Button key="down" plain hotkey="j" label="↓" onPress={() => walkOrShift(1)} />
+            <Button key="up" plain hotkey="k" label="↑" onPress={() => walkOrShift(-1)} />
+            {!atNow && <Button key="view-now" plain hotkey="0" label="now" onPress={async () => (await grab(null), goTo(null))} />}
           </Box>
+          {heldId && <Text dimColor>{`moving ${rowLabel(heldId)} · h l phase · j k order · m drop`}</Text>}
         </Box>
         <Box flexDirection="column">
           {here.length === 0 && <Text dimColor>nothing planted</Text>}
