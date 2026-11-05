@@ -6,9 +6,8 @@
  */
 import type { BoardView } from "../types";
 import { addDays } from "./board.ts";
-import { labelOf, type Cycle, type Habit, type Vault } from "./garden.ts";
+import { LOOKBACK_DAYS, labelOf, mostPlanted, offerable, type Cycle, type Habit, type Vault } from "./garden.ts";
 
-const LOOKBACK_DAYS = 56;
 const HALF_LIFE_DAYS = 21;
 const SAME_WEEKDAY = 4;
 const RHYTHM_ROWS = 3;
@@ -34,9 +33,6 @@ const epochDay = (day: string) => {
 };
 const weekdayOf = (day: string) => (epochDay(day) + 4) % 7; // 1970-01-01 was a Thursday
 const daysBetween = (from: string, to: string) => epochDay(to) - epochDay(from);
-
-/** Unarchived habits that are not being tapered: the only ones ever offered. */
-const offerable = (h: Habit | undefined): h is Habit => !!h && !h.isArchived && h.attitude !== "PRUNING";
 
 /** Days (YYYY-MM-DD) each habit was planted on, from moments set on a day. */
 function plantedDays(v: Vault): Map<string, string[]> {
@@ -105,15 +101,13 @@ export function quietIntentions(v: Vault, today: string, matches: Record<string,
   const from = addDays(today, -LOOKBACK_DAYS);
   const days = plantedDays(v);
   const inWindow = (id: string) => (days.get(id) ?? []).filter((d) => d >= from && d <= today);
-  const mostPlanted = (ids: string[]) =>
-    [...ids].sort((a, b) => inWindow(b).length - inWindow(a).length || a.localeCompare(b))[0];
   const here = plantedAt(v, opts.view);
   const label = labelOf(v.areas);
   const out: { s: Suggestion; since: number }[] = [];
   for (const areaId of Object.keys(cycle.areaIntentions ?? {})) {
     const own = Object.values(v.habits).filter((h) => h.areaId === areaId && offerable(h)).map((h) => h.id);
-    const ids = (matches[areaId] ?? (own.length ? [mostPlanted(own) as string] : [])).filter((id) => offerable(v.habits[id]));
-    const pick = mostPlanted(ids);
+    const ids = (matches[areaId] ?? (own.length ? [mostPlanted(v, own, today) as string] : [])).filter((id) => offerable(v.habits[id]));
+    const pick = mostPlanted(v, ids, today);
     if (pick === undefined || here.has(pick) || opts.skip?.has(pick)) continue;
     const planted = ids.flatMap((id) => (days.get(id) ?? []).filter((d) => d <= today));
     const last = planted.sort().at(-1);
@@ -168,4 +162,24 @@ export function parseMatches(v: Vault, cycle: Cycle, reply: string): Record<stri
       : [];
   }
   return out;
+}
+
+export const STUDY_SYSTEM = `You match what a gardener is studying to one of their habits. Reply with only a JSON object, no prose: {"habitId":"<id>"}, using only an id from the list, or {"habitId":null} when none fits.`;
+
+/** The prompt Haiku reads: the topic and every offerable habit. */
+export function studyPrompt(v: Vault, topic: string): string {
+  const habits = Object.values(v.habits).filter(offerable).map((h) => ({ id: h.id, name: h.name }));
+  return JSON.stringify({ topic, habits });
+}
+
+/** Haiku's reply read strictly against the vault: an offerable habit id, else null. */
+export function parseStudy(v: Vault, reply: string): string | null {
+  const start = reply.indexOf("{");
+  const end = reply.lastIndexOf("}");
+  try {
+    const id = start >= 0 && end > start ? JSON.parse(reply.slice(start, end + 1))?.habitId : undefined;
+    return typeof id === "string" && offerable(v.habits[id]) ? id : null;
+  } catch {
+    return null;
+  }
 }
