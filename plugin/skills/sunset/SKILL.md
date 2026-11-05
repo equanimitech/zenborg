@@ -52,9 +52,9 @@ the peers that stayed silent. Report which sends failed. A failed send usually
 means that session already exited; say so plainly, it is not an error. Keep the
 reply texts for §3 and §10.
 
-### 1. Materialize bedtime routine
+### 1. Offer the bedtime ritual
 
-Then, call `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` to plant any bedtime routine entries that haven't been planted yet today. Report what was created vs. already planted.
+Never plant a ritual on your own. Read it with `mcp__zenborg__list_routines`, name its entries, and plant only the ones the gardener picks. `mcp__zenborg__materialize_routine { boundary: "EVENING->NIGHT" }` plants every entry at once, so call it only when they ask for the whole ritual.
 
 ### 2. Read the day's record
 

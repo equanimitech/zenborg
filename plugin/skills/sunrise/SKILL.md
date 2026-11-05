@@ -30,9 +30,9 @@ Do NOT trigger for:
 
 Running this skill is the yes, so do this first, without asking. Find the habit with `mcp__zenborg__search { type: "habit", query: "sunrise" }`; if there is none, skip this step silently. If today's board has no moment from that habit, plant one with `mcp__zenborg__add_moment { habitId, day: today, phase }`, using the phase the clock is in (`mcp__zenborg__list_phase_configs`). Then point `mcp__zenborg__set_active_moment` at it. Never plant a second one on the same day.
 
-### 0. Materialize morning routine
+### 0. Offer the wakeup ritual
 
-Before reading the board, call `mcp__zenborg__materialize_routine { boundary: "NIGHT->MORNING" }` to plant any wakeup routine entries that haven't been planted yet today. Report what was created vs. already planted.
+Never plant a ritual on your own. Read it with `mcp__zenborg__list_routines`, name its entries in the day view, and plant only the ones the gardener picks. `mcp__zenborg__materialize_routine { boundary: "NIGHT->MORNING" }` plants every entry at once, so call it only when they ask for the whole ritual.
 
 ### 1. Read today's board
 
