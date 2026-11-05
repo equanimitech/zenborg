@@ -21,6 +21,7 @@
 //!   2. `KAIROS_HOME` env var (legacy) — used verbatim
 //!   3. `$HOME/.zenborg` (always release for a standalone binary)
 
+mod assertions;
 mod scheduler;
 mod sensors;
 mod state;
