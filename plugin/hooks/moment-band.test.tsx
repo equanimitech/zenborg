@@ -30,13 +30,13 @@ const base = () => ({
 
 // Stands for the engine: the vault on disk, the clock, the zenborg MCP tools.
 // A successful set_active_moment moves the pointer, as the app would.
-const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]; fail?: boolean } = {}) => {
+const garden = (on: On, files: Record<string, unknown>, opts: { tools?: string[]; fail?: boolean; cwd?: string } = {}) => {
   const calls: { tool: string; input: Record<string, unknown> }[] = []
   const statuses: (string | undefined)[] = []
   const toasts: string[] = []
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/g' : undefined }))
   on('clock.now', () => ({ value: NOW }))
-  on('session.cwd', () => ({ value: '/home/g/work' }))
+  on('session.cwd', () => ({ value: opts.cwd ?? '/home/g/work' }))
   on('fs.read', (_, e) => {
     const name = e.path.replace(ROOT, '')
     if (!(name in files)) throw new Error(`ENOENT ${e.path}`)
@@ -186,6 +186,43 @@ test('a fresh moment: no band', async ($, on) => {
   await $.turn.start({ text: 'hi', turnId: 't1' })
   const ui = await $.ui.mount(BAND)
   expect((await ui.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
+  await ui.unmount()
+})
+
+test('a fresh moment in another area proposes; its Later holds only until the pointer changes, and never hides the no-intention band', async ($, on) => {
+  const files: Record<string, unknown> = {
+    ...base(),
+    'areas.json': { fun: { id: 'fun', name: 'Leisure' }, th: { id: 'th', name: 'Themia' } },
+    'habits.json': { h: { id: 'h', name: 'api', areaId: 'th' } },
+    'moments.json': {
+      n: { id: 'n', name: 'film', day: TODAY, phase: 'MORNING', areaId: 'fun' },
+      o: { id: 'o', name: 'tv', day: TODAY, phase: 'MORNING', areaId: 'fun' },
+    },
+    'activeMoment.json': { momentId: 'n', at: new Date(NOW - 60_000).toISOString() },
+  }
+  garden(on, files, { cwd: '/home/g/themia/minerva' })
+  await $.turn.start({ text: 'hi', turnId: 't1' })
+  const ui = await $.ui.mount(BAND)
+  expect(await ui.find({ type: 'Text', text: '≋ In Themia · the intention is film' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('+ api')
+
+  await ui.press({ key: 'later' })
+  expect(await ui.find({ key: 'tap-0' })).toBeUndefined()
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  expect(await ui.find({ key: 'tap-0' })).toBeUndefined() // still silenced
+
+  // Another session moves the pointer: the proposal is raised again.
+  files['activeMoment.json'] = { momentId: 'o', at: new Date(NOW - 60_000).toISOString() }
+  await $.turn.start({ text: 'hop', turnId: 't3' })
+  expect(await ui.find({ type: 'Text', text: '≋ In Themia · the intention is tv' })).toBeDefined()
+
+  // Later there, then no intention at all: that band is not hidden by the proposal's Later.
+  await ui.press({ key: 'later' })
+  files['activeMoment.json'] = {}
+  await $.turn.start({ text: 'cleared', turnId: 't4' })
+  expect(await ui.find({ type: 'Text', text: '≋ No intention this morning' })).toBeDefined()
+  expect((await ui.find({ key: 'tap-0' }))?.props.label).toBe('+ api') // the proposal's tap leads
+  expect((await ui.find({ key: 'tap-1' }))?.props.label).toBe('film')
   await ui.unmount()
 })
 

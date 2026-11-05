@@ -34,7 +34,7 @@ import { MATCH_SYSTEM, matchPrompt, parseMatches, quietIntentions, rhythmRow, ru
 import { call, loadVault } from './vault-io.ts'
 
 const PANE = 'zenborg-phase'
-const HAIKU = 'claude-haiku-5-5'
+export const HAIKU = 'claude-haiku-5-5'
 
 const view = atom({ plugin: 'zenborg', key: 'view' } as const, null)
 const cursor = atom({ plugin: 'zenborg', key: 'cursor' } as const, null)

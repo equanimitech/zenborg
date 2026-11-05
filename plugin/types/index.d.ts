@@ -3,7 +3,7 @@ export type Tap =
   | { kind: 'plant'; habitId: string; label: string }
 
 /** The band's one line and its taps, for one (day, phase). */
-export type Band = { day: string; phase: string; line: string; taps: Tap[] }
+export type Band = { day: string; phase: string; line: string; taps: Tap[]; /** Later's key for a proposal band; absent means `${day} ${phase}`. */ laterKey?: string }
 
 /** One change the phase pane can make; a hotkey and Haiku's proposal both end as these. */
 export type BoardOp =
@@ -24,6 +24,10 @@ declare module 'claude-code' {
     zenborg: {
       band: Band | null
       later: string | null
+      /** The study signal: oliba's topic read into one habit, held for its (day, phase). */
+      study: { day: string; phase: string; topic: string; habitId: string } | null
+      /** `${day} ${phase} ${topic}` already sent to Haiku this session. */
+      studyAsked: string[]
       query: string
       /** The reading's status text, drawn as the prompt hint's tail; null when there is none. */
       status: string | null

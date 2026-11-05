@@ -15,8 +15,21 @@ async function readJson<T>($: EngineInterface, path: string, empty: T): Promise<
   }
 }
 
+async function vaultRoot($: EngineInterface): Promise<string> {
+  return (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
+}
+
+// The pointer file's raw text, for a cheap change check; '' when missing.
+export async function pointerText($: EngineInterface): Promise<string> {
+  try {
+    return await $.fs.read(`${await vaultRoot($)}/activeMoment.json`)
+  } catch {
+    return ''
+  }
+}
+
 export async function loadVault($: EngineInterface): Promise<Vault> {
-  const root = (await $.env.get('ZENBORG_HOME')) ?? `${await $.env.get('HOME')}/.zenborg`
+  const root = await vaultRoot($)
   const [active, moments, habits, areas, phases, cycles] = await Promise.all([
     readJson($, `${root}/activeMoment.json`, {}),
     readJson($, `${root}/moments.json`, {}),

@@ -4,6 +4,7 @@
  */
 import type { Band, Tap } from "../types";
 import { staleReason, wakingDayKey } from "../domain/attention/ActiveMoment.ts";
+import { addDays } from "./board.ts";
 
 export interface PhaseConfig {
   phase: string;
@@ -59,6 +60,13 @@ export interface Vault {
   phases: Record<string, PhaseConfig>;
   cycles: Record<string, Cycle>;
 }
+/** The topic the gardener is studying (an oliba run), read by Haiku into one habit; holds for its (day, phase). */
+export interface Study {
+  day: string;
+  phase: string;
+  topic: string;
+  habitId: string;
+}
 export interface Reading {
   status: string;
   band: Band | null;
@@ -67,6 +75,20 @@ export interface Reading {
 /** A moment set longer ago than this reads as stale, as in moment-awareness. */
 export const STALE_AFTER_MIN = 120;
 const MAX_TAPS = 3;
+export const LOOKBACK_DAYS = 56;
+
+/** Unarchived habits that are not being tapered: the only ones ever offered. */
+export const offerable = (h: Habit | undefined): h is Habit => !!h && !h.isArchived && h.attitude !== "PRUNING";
+
+/** Of `ids`, the habit planted on most days in the 56 days up to `today`; ties by id. */
+export function mostPlanted(v: Vault, ids: string[], today: string): string | undefined {
+  const from = addDays(today, -LOOKBACK_DAYS);
+  const n = new Map<string, number>();
+  for (const m of Object.values(v.moments)) {
+    if (m.habitId && m.day && m.day >= from && m.day <= today) n.set(m.habitId, (n.get(m.habitId) ?? 0) + 1);
+  }
+  return [...ids].sort((a, b) => (n.get(b) ?? 0) - (n.get(a) ?? 0) || a.localeCompare(b))[0];
+}
 
 export function currentPhase(phases: PhaseConfig[], now: Date): PhaseConfig | null {
   const hour = now.getHours();
@@ -138,7 +160,56 @@ const relevance = (areas: Record<string, Area>, cwd: string | undefined) => {
 // A moment or habit whose emoji is the glyph already carries it.
 const glyphed = (label: string) => (label.startsWith("≋") ? label : `≋ ${label}`);
 
-export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
+interface Proposal {
+  /** The Later key: includes the signal and the active moment, so a hop raises it again. */
+  key: string;
+  line: string;
+  taps: Tap[];
+}
+
+/**
+ * A proposal to switch when what the session is doing diverges from the active
+ * moment. A held study signal beats the working directory and, while held,
+ * silences it. Only ever proposes: the gardener taps. Pure.
+ */
+export function proposalOf(v: Vault, today: string, phase: string, active: Moment | null, cwd?: string, study?: Study | null): Proposal | null {
+  const label = labelOf(v.areas);
+  const byOrder = (a: Named, b: Named) => (a.order ?? 0) - (b.order ?? 0);
+  const areaOf = (m: Moment) => m.areaId ?? (m.habitId ? v.habits[m.habitId]?.areaId : undefined) ?? undefined;
+  const activeArea = active ? areaOf(active) : undefined;
+  const board = Object.values(v.moments).filter((m) => m.day === today).sort(byOrder);
+  const key = (signal: string) => `${today} ${phase} ${signal} ${active?.id ?? ""}`;
+  const tend = (m: Moment): Tap => ({ kind: "tend", momentId: m.id, label: label(m) });
+  const plant = (h: Habit): Tap => ({ kind: "plant", habitId: h.id, label: `+ ${label(h)}` });
+  const intention = active ? ` · the intention is ${active.name}` : "";
+
+  const habit = study && study.day === today && study.phase === phase ? v.habits[study.habitId] : undefined;
+  if (study && offerable(habit)) {
+    if (active?.habitId === habit.id) return null;
+    // Only this phase's moment is tended: an active moment of another phase reads as stale.
+    const own = board.find((m) => m.habitId === habit.id && m.phase === phase);
+    return { key: key(`habit:${habit.id}`), line: `≋ Studying ${study.topic}${intention}`, taps: [own ? tend(own) : plant(habit)] };
+  }
+
+  const areaId = areaOfCwd(v.areas, cwd);
+  if (!areaId || (active && (!activeArea || activeArea === areaId))) return null;
+  const inArea = board.filter((m) => m.id !== active?.id && areaOf(m) === areaId);
+  const here = inArea.filter((m) => m.phase === phase);
+  // Another phase's moment is planted afresh into this one, once per habit; one with no offerable habit is dropped.
+  const elsewhere = [...new Set(inArea.filter((m) => m.phase !== phase).map((m) => m.habitId))]
+    .map((id) => v.habits[id ?? ""])
+    .filter((h): h is Habit => offerable(h) && !here.some((m) => m.habitId === h.id));
+  const segments = new Set((cwd ?? "").split("/").map(squash).filter(Boolean));
+  const own = Object.values(v.habits).filter((h) => offerable(h) && h.areaId === areaId);
+  const named = own.filter((h) => segments.has(squash(h.name)) && !here.some((m) => m.habitId === h.id) && !elsewhere.includes(h));
+  const picks = [...here.map(tend), ...elsewhere.map(plant), ...named.map(plant)];
+  const fallback = picks.length === 0 ? mostPlanted(v, own.map((h) => h.id), today) : undefined;
+  const taps = [...picks, ...(fallback ? [plant(v.habits[fallback] as Habit)] : [])].slice(0, MAX_TAPS);
+  if (taps.length === 0) return null;
+  return { key: key(`area:${areaId}`), line: `≋ In ${v.areas[areaId]?.name}${intention}`, taps };
+}
+
+export function reading(v: Vault, now: Date, cwd?: string, study?: Study | null): Reading | null {
   const phase = currentPhase(Object.values(v.phases), now);
   if (!phase) return null;
   const today = wakingDayKey(now);
@@ -156,6 +227,7 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
   const ageMin = active && v.active.at ? (now.getTime() - Date.parse(v.active.at)) / 60_000 : 0;
   const why = fromPhase !== null ? `from the ${fromPhase}` : `set ${Math.floor(ageMin / 60)}h ago`;
 
+  const proposal = proposalOf(v, today, phase.phase, active, cwd, study);
   if (active && fromPhase === null && ageMin <= STALE_AFTER_MIN) {
     const dur = active.durationMin;
     // A timed switch counts down to its `until`; at the end the pointer has
@@ -170,14 +242,15 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
           ? ` · ${Math.ceil(dur - ageMin)}m left`
           : ""
         : ` · ${Math.floor(Math.max(ageMin, 0))}m`;
-    return { status: `${glyphed(label(active))}${time}`, band: null };
+    const band = proposal && { day: today, phase: phase.phase, line: proposal.line, taps: proposal.taps, laterKey: proposal.key };
+    return { status: `${glyphed(label(active))}${time}`, band: band ?? null };
   }
   const status = active ? `${glyphed(label(active))} · ${why}` : `≋ ${phase.label}`;
 
   const planted = Object.values(v.moments)
     .filter((m) => m.day === today && m.phase === phase.phase && m.id !== active?.id)
     .sort(byOrder);
-  const taps: Tap[] =
+  const defaults: Tap[] =
     planted.length > 0
       ? planted
           .slice(0, MAX_TAPS)
@@ -188,6 +261,14 @@ export function reading(v: Vault, now: Date, cwd?: string): Reading | null {
           .sort(relevance(v.areas, cwd))
           .slice(0, MAX_TAPS)
           .map((h) => ({ kind: "plant" as const, habitId: h.id, label: `+ ${label(h)}` }));
+  // The proposal's taps lead, deduped, then the usual ones.
+  const seen = new Set<string>();
+  const taps = [...(proposal?.taps ?? []), ...defaults]
+    .filter((t) => {
+      const id = t.kind === "tend" ? `m${t.momentId}` : `h${t.habitId}`;
+      return !seen.has(id) && !!seen.add(id);
+    })
+    .slice(0, MAX_TAPS);
   // No taps still keeps the band, and its search, while there are habits to find.
   if (taps.length === 0 && !Object.values(v.habits).some((h) => !h.isArchived)) return { status, band: null };
 
