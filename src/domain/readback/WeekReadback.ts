@@ -73,8 +73,9 @@ export const READBACK_LOG_SURFACES: readonly ActivitySurface[] = [
 
 /**
  * Dwell caps per sensor surface. A desktop span closes at the next event,
- * including `idle_start` (120 s without input), so a film watched without
- * input ends at idle until the daemon credits it (pitch slice 4).
+ * including `idle_start` (120 s without input). Idle minutes an app held the
+ * Mac awake through are credited separately, capped at `IDLE_CREDIT_CAP_MS`
+ * (3 h), not at these.
  */
 const CAP_MS: Readonly<Partial<Record<ActivitySurface, number>>> = {
   desktop: 30 * MINUTE,
@@ -122,7 +123,7 @@ export interface Coverage {
    * reported beside it.
    */
   readonly seenHours: number;
-  /** Minutes credited through idle (a player holding the display awake). 0 until the daemon reports it. */
+  /** Minutes credited through idle: an app held the Mac awake (a player, say) while no input came. Already inside the minutes beside it. */
   readonly idleCreditedMin: number;
   /** Minutes the surface saw that resolve to no area. */
   readonly unmappedMin: number;
@@ -343,10 +344,12 @@ interface Reading {
   readonly rows: readonly Located[];
   readonly observed: readonly Interval[];
   readonly counts?: readonly CountReading[];
+  /** The observed spans credited through idle. */
+  readonly idleCredited?: readonly Interval[];
 }
 
 function footprintOf(
-  { rows, observed, counts }: Reading,
+  { rows, observed, counts, idleCredited = [] }: Reading,
   areaName: (id: string) => string,
   areaOrder: (id: string) => number,
 ): Footprint {
@@ -374,7 +377,7 @@ function footprintOf(
       .slice(0, UNMAPPED_SHOWN),
     coverage: {
       seenHours: Math.round((unionMs(observed) / HOUR) * 10) / 10,
-      idleCreditedMin: 0,
+      idleCreditedMin: toMin(unionMs(idleCredited)),
       unmappedMin: toMin(
         [...unmapped.values()].reduce((sum, ms) => sum + ms, 0),
       ),
@@ -401,7 +404,11 @@ function spansOf(
 ): DwellSpans[] {
   return dwellSpans(events, surface, resolve, {
     capMs: CAP_MS[surface] ?? 30 * MINUTE,
-  }).map((r) => ({ ...r, spans: clip(r.spans, from, to) }));
+  }).map((r) => ({
+    ...r,
+    spans: clip(r.spans, from, to),
+    idleCredited: clip(r.idleCredited, from, to),
+  }));
 }
 
 /**
@@ -438,6 +445,7 @@ function readScreen(ctx: ReadContext): Reading {
   return {
     rows,
     observed: [...desktop, ...browser].flatMap((r) => r.spans),
+    idleCredited: desktop.flatMap((r) => r.idleCredited),
   };
 }
 

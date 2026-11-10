@@ -101,7 +101,9 @@ their own surface; the MCP server reads footprints locally and never calls a spr
 `/new-spring` replaces `/oracle-wizard`.
 
 **Built:** the one reader. `get_footprints` (2026-10-09) replaced `get_attention` and
-`get_day_trace`. It is a thin adapter over `weekReadback` in `src/domain/readback/`, which
+`get_day_trace`. It and Harvest's week scale are thin adapters over `weekReadback` in
+`src/domain/readback/` (the app reads `log/` raw through the `activity_read` Tauri command
+and parses with the same domain function), which
 groups the log's sensor surfaces into reading surfaces (body, screen, work, journal, comms)
 and puts coverage on every total.
 
@@ -163,6 +165,14 @@ means "try everything, probe at runtime" — the pre-oracle behaviour.
 interval or file-watch triggers, read once at daemon start. The daemon is the only reader;
 the gardener edits it by hand. See
 [`docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md`](docs/2026-10-05-zenborg-jobs-run-in-the-daemon.md).
+
+The daemon is also the desktop sensor (`log/<day>.desktop.jsonl`). Besides focus and idle, it
+logs which app holds the Mac awake (`wake_held_start`/`_end { app_name, assertion }`, `assertion` being the type from a fixed
+allow-list, never the app-supplied name, which can carry a title; from the
+per-process list of `pmset -g assertions`, never the system-wide counters) and the screen lock
+(`idle_start { state: "locked" }`). The readback credits idle minutes to the holding app, not
+the frontmost one, until the lock, capped at 3 h per stretch (`heldIdleSpans` in
+`src/domain/attention/AttentionSummary.ts`).
 
 ## Area sidecar folders
 
