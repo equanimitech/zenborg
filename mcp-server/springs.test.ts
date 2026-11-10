@@ -171,11 +171,37 @@ describe("git spring", () => {
       false,
     );
 
-    // A day that loses its commits while another repo is still counted loses its line.
+    // A run that cannot see alpha and beta (an unmounted drive) keeps their lines.
     const gone = path.join(tmp("other-plot"), "gamma");
     initRepo(gone);
     drawGit(vault, [{ surfaces: { paths: [path.dirname(gone)] } }], days);
-    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.readFileSync(file, "utf8")).toBe(first);
+  });
+
+  it("a rerun keeps the day line of a repo it did not discover", () => {
+    const vault = tmp("undiscovered");
+    const plotA = tmp("plot-a");
+    const plotB = tmp("plot-b");
+    const alpha = initRepo(path.join(plotA, "alpha"));
+    const beta = initRepo(path.join(plotB, "beta"));
+    commit(alpha, at("2026-10-05", 10), "a");
+    commit(beta, at("2026-10-05", 12), "b");
+    const days = ["2026-10-05"];
+    drawGit(
+      vault,
+      [{ surfaces: { paths: [plotA] } }, { surfaces: { paths: [plotB] } }],
+      days,
+    );
+    // plot B's drive is gone this run.
+    drawGit(vault, [{ surfaces: { paths: [plotA] } }], days);
+    const text = fs.readFileSync(
+      path.join(vault, "log", "2026-10-05.git.jsonl"),
+      "utf8",
+    );
+    expect(parseActivityLines(text, "git").map((e) => e.payload.repo)).toEqual([
+      "alpha",
+      "beta",
+    ]);
   });
 
   describe("never erases history on a partial run", () => {
@@ -381,6 +407,39 @@ describe("linear spring", () => {
     );
     expect(lines.map((e) => e.payload.to)).not.toContain("Done");
     expect(first).not.toMatch(/never reach|test-key/);
+  });
+
+  it("keeps an earlier move after its issue is reassigned away", async () => {
+    const vault = tmp("linear-reassigned");
+    const now = new Date("2026-10-09T12:00:00.000Z");
+    const run = (page: LinearPage) =>
+      runSpring(
+        vault,
+        ["linear", "--days", "3"],
+        { LINEAR_API_KEY: "k" },
+        now,
+        fakeFetch([page]).impl,
+      );
+    await run(LINEAR_FIXTURE);
+    const file = path.join(
+      vault,
+      "log",
+      `${localDate(Date.parse("2026-10-08T09:15:00.000Z"))}.linear.jsonl`,
+    );
+    const first = fs.readFileSync(file, "utf8");
+    // Next run the viewer no longer has any issue assigned.
+    await run({
+      data: {
+        viewer: {
+          id: "user-me",
+          assignedIssues: {
+            pageInfo: { hasNextPage: false },
+            nodes: [],
+          },
+        },
+      },
+    });
+    expect(fs.readFileSync(file, "utf8")).toBe(first);
   });
 
   it("exits 1 quietly, writing nothing, when LINEAR_API_KEY is absent", async () => {

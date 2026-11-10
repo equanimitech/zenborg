@@ -39,30 +39,46 @@ export function recentDays(now: Date, n: number): string[] {
 }
 
 /**
- * Rewrite `log/<day>.<surface>.jsonl` for every day in `days` from `events`.
- * A day with no events loses its file, so a rerun is a replacement, not an
- * append. Events outside `days` are ignored. Pass it only the result of a
- * complete run: after a partial one, "no events" means "unknown".
+ * Merge `events` into `log/<day>.<surface>.jsonl` for every day in `days`.
+ * Existing lines stay unless `replaces` says this run owns them; a new event
+ * whose id is already on file is not added again, so a rerun never
+ * duplicates. A day file is never deleted: what a run cannot see is not proof
+ * it is gone. Events outside `days` are ignored.
  */
 export function writeDays(
   dir: string,
   surface: "git" | "linear",
   days: readonly string[],
   events: readonly ActivityEvent[],
+  replaces: (existing: ActivityEvent) => boolean = () => false,
 ): void {
   fs.mkdirSync(dir, { recursive: true });
   for (const day of days) {
     const file = path.join(dir, `${day}.${surface}.jsonl`);
-    const lines = events
-      .filter((e) => localDate(e.ts) === day)
+    const exists = fs.existsSync(file);
+    const kept: ActivityEvent[] = [];
+    if (exists) {
+      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const e = JSON.parse(line) as ActivityEvent;
+          if (!replaces(e)) kept.push(e);
+        } catch {
+          // an unreadable line is dropped, as the readers drop it
+        }
+      }
+    }
+    const seen = new Set(kept.map((e) => e.id));
+    const merged = [
+      ...kept,
+      ...events.filter((e) => localDate(e.ts) === day && !seen.has(e.id)),
+    ];
+    if (merged.length === 0 && !exists) continue;
+    const lines = merged
       .sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id))
       .map((e) => JSON.stringify(e));
-    if (lines.length === 0) {
-      fs.rmSync(file, { force: true });
-      continue;
-    }
     const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, `${lines.join("\n")}\n`);
+    fs.writeFileSync(tmp, lines.length ? `${lines.join("\n")}\n` : "");
     fs.renameSync(tmp, file);
   }
 }
@@ -200,7 +216,10 @@ export function drawGit(
   const events = repos.flatMap((repo) =>
     gitDayEvents(repo, commitTimes(repo, from, to)),
   );
-  writeDays(logDir(vaultRoot), "git", days, events);
+  const mine = new Set(repos);
+  writeDays(logDir(vaultRoot), "git", days, events, (e) =>
+    mine.has(String((e.payload as { cwd?: unknown })?.cwd)),
+  );
   return repos.length;
 }
 
