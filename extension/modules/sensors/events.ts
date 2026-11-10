@@ -173,6 +173,15 @@ export function isPlaybackProbe(msg: unknown): boolean {
   );
 }
 
+/** A hung frame must not hold a close: on timeout or error, answer null (plain close). */
+export function probeWithTimeout(probe: Promise<unknown>, ms = 200): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([probe.catch(() => null), timeout]).finally(() => clearTimeout(timer));
+}
+
 export function isVideoClose(kind: SensorKind): boolean {
   return kind === "video_paused" || kind === "video_ended";
 }

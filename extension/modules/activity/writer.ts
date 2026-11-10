@@ -32,6 +32,7 @@ import { tabUuid, type TabMap } from "./tabs";
 import { appendEvent, countEvents, deleteOldestEvents } from "./log";
 import {
   PLAYBACK_PROBE,
+  probeWithTimeout,
   clickGateQuery,
   closeWrites,
   isArmQuery,
@@ -524,11 +525,9 @@ export function startActivityWriter(): WriteFn {
           // A close speaks for the tab only if nothing else in it still plays,
           // so ask the frames rather than remember them: a frame that died
           // cannot answer, and so cannot hold the tab.
-          // ponytail: no timeout. A frame hung but alive loses this one close and
-          // the span runs to the next idle; race the probe if that ever shows up.
           const reply: unknown =
             tabId !== undefined && isVideoClose(validated.kind)
-              ? await browser.tabs.sendMessage(tabId, PLAYBACK_PROBE).catch(() => null)
+              ? await probeWithTimeout(browser.tabs.sendMessage(tabId, PLAYBACK_PROBE))
               : null;
           for (const { kind, payload } of closeWrites(validated, validateSensorMessage(reply))) {
             write(kind, { ...payload, domain, ...(tab ? { tab } : {}) });

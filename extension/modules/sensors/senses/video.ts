@@ -92,10 +92,19 @@ export function armVideoSense(): void {
     // An embedded player usually autoplays before the arm handshake returns,
     // so its `playing` has already fired by the time it is wired. Without
     // this it would emit pauses and ends with no start.
-    if (!video.paused && !video.ended) {
+    // Only an audible one counts: muted autoplay (ads, hero loops) is not
+    // watched. A muted player the gardener later unmutes starts on volumechange.
+    const audible = (): boolean => !video.muted && video.volume > 0;
+    const isPlaying = (): boolean => !video.paused && !video.ended;
+    if (isPlaying() && audible()) {
       started();
     } else {
       video.addEventListener("playing", started, { once: true });
+      video.addEventListener("volumechange", () => {
+        if (isPlaying() && audible() && !open.has(video)) {
+          started();
+        }
+      });
     }
 
     // Completion grammar: platform players rarely let native `ended` fire
@@ -165,7 +174,9 @@ export function armVideoSense(): void {
   // nothing playing stays silent, so the others can answer.
   browser.runtime.onMessage.addListener((message: unknown) => {
     const playing = isPlaybackProbe(message)
-      ? [...open].find((video) => !settled.has(video))
+      ? [...open].find(
+          (video) => !settled.has(video) && !video.paused && !video.ended && video.isConnected
+        )
       : undefined;
     if (playing === undefined) {
       return undefined;
