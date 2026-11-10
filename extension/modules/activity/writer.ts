@@ -31,13 +31,19 @@ import {
 import { tabUuid, type TabMap } from "./tabs";
 import { appendEvent, countEvents, deleteOldestEvents } from "./log";
 import {
+  PLAYBACK_PROBE,
+  probeWithTimeout,
   clickGateQuery,
+  closeWrites,
   isArmQuery,
   isGateQuery,
+  isVideoClose,
+  senderDomain,
   sensorAllowed,
+  sensorPermitted,
   validateSensorMessage,
 } from "../sensors/events";
-import { derivedObserveDomains } from "../watchlist/store";
+import { derivedObserveDomains, observeTiers } from "../watchlist/store";
 import {
   evaluateClickGate,
   evaluateGates,
@@ -310,26 +316,28 @@ export function startActivityWriter(): WriteFn {
   // capped scalars, domain taken from the browser-attested sender tab,
   // and nothing persists unless the domain is on the observe tier.
   browser.runtime.onMessage.addListener((message: unknown, sender: Runtime.MessageSender) => {
-    const url = sender.tab?.url;
-    const domain = url === undefined ? null : domainFromUrl(url);
+    // The tab's domain, never the frame's: an embedded player is credited to
+    // the site it is embedded in.
+    const domain = senderDomain(sender);
 
     // Arm handshake: a content script asks whether to observe at all.
     if (isArmQuery(message)) {
-      return derivedObserveDomains()
-        .then(async (observe) => {
+      return observeTiers()
+        .then(async (tiers) => {
           // The fence cache is consulted here as well as in the poll, or a
           // fence would never gate its page in the first place. One store since
           // migration step 5: the policy mirror's gate list came from
           // `~/.zenborg/keel/rules/*.json`, which is retired.
           const gates = domain === null ? [] : fenceGatesFor(await liveFences(), domain);
           return {
-            observed: sensorAllowed(domain, observe),
+            observed: sensorAllowed(domain, tiers.video),
+            deep: sensorAllowed(domain, tiers.deep),
             gate: gates[0] ?? null,
             // Selectors only: the page learns which controls to hold, never a verdict.
             clickGates: clickGatesOf(gates),
           };
         })
-        .catch(() => ({ observed: false, gate: null, clickGates: [] }));
+        .catch(() => ({ observed: false, deep: false, gate: null, clickGates: [] }));
     }
 
     // "Close the tab" from a gate. The page cannot close a tab it did not
@@ -507,14 +515,23 @@ export function startActivityWriter(): WriteFn {
     if (validated === null) {
       return;
     }
-    void derivedObserveDomains()
-      .then(async (observe) => {
-        if (sensorAllowed(domain, observe)) {
+    void observeTiers()
+      .then(async (tiers) => {
+        if (sensorPermitted(validated.kind, domain, tiers)) {
           // The tab uuid lets the read side tell two playing tabs on one domain
           // apart. Browser-attested fields go last so the page cannot override them.
           const tabId = sender.tab?.id;
           const tab = tabId === undefined ? undefined : (await tabMapItem.getValue())[tabId];
-          write(validated.kind, { ...validated.payload, domain, ...(tab ? { tab } : {}) });
+          // A close speaks for the tab only if nothing else in it still plays,
+          // so ask the frames rather than remember them: a frame that died
+          // cannot answer, and so cannot hold the tab.
+          const reply: unknown =
+            tabId !== undefined && isVideoClose(validated.kind)
+              ? await probeWithTimeout(browser.tabs.sendMessage(tabId, PLAYBACK_PROBE))
+              : null;
+          for (const { kind, payload } of closeWrites(validated, validateSensorMessage(reply))) {
+            write(kind, { ...payload, domain, ...(tab ? { tab } : {}) });
+          }
           flashSensorBadge(sender.tab?.id);
         }
       })

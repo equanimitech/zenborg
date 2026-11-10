@@ -7,6 +7,16 @@
  * generic senses (video, feed, shopping — they self-select by what the
  * page exhibits) plus the game sense where a site adapter exists.
  *
+ * It runs in every frame, because embedded players live in iframes. The
+ * background credits a subframe's events to the TAB's domain (the browser
+ * attests `sender.tab.url`), never the iframe's host, and reads players in
+ * several frames as one (`closeWrites`). Subframes arm the video sense only:
+ * the feed, shopping and game senses and the gates read the page itself, so
+ * they stay in the top frame, as before.
+ *
+ * The reply says how far to arm: `observed` arms the video sense, `deep` the
+ * rest. A host mapped to an area is observed but not deep.
+ *
  * No company names here: domains are user-authored watchlist entries;
  * site-specific probes are data in modules/sensors/adapters.ts.
  */
@@ -35,8 +45,12 @@ function readClickGates(raw: unknown): readonly ClickGate[] {
 
 export default defineContentScript({
   matches: ["http://*/*", "https://*/*"],
+  allFrames: true,
+  matchAboutBlank: true,
   async main() {
+    const top = window === window.top;
     let observed = false;
+    let deep = false;
     let gated = false;
     let clickGates: readonly ClickGate[] = [];
     try {
@@ -45,6 +59,7 @@ export default defineContentScript({
       });
       const reply = (answer ?? {}) as Record<string, unknown>;
       observed = reply.observed === true;
+      deep = reply.deep === true;
       gated = reply.gate !== null && reply.gate !== undefined;
       clickGates = readClickGates(reply.clickGates);
     } catch {
@@ -54,16 +69,21 @@ export default defineContentScript({
     // The gate is independent of the observe tier: a domain can be gated
     // without being deep-sensed, and the dwell it reads comes from the coarse
     // writer events every domain produces.
-    if (gated) {
-      armDwellGate();
+    if (top) {
+      if (gated) {
+        armDwellGate();
+      }
+      armClickGate(clickGates);
     }
-    armClickGate(clickGates);
 
     if (!observed) {
       return;
     }
 
     armVideoSense();
+    if (!top || !deep) {
+      return;
+    }
     armFeedSense();
     armShoppingSense();
 

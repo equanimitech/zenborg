@@ -41,7 +41,19 @@ extension/
 **The observe tier is derived, not maintained.** Since 2026-08-26, a domain is
 auto-observed when it appears in any fence or area map assignment. The manual
 watchlist is retired. `derivedObserveDomains()` in `modules/watchlist/store.ts`
-reads `fenceCache ∪ areaMap` fresh on every call.
+reads `fenceCache ∪ areaMap` fresh on every call. `observeTiers()` adds a wider
+tier for the video sense alone: `observeDomains`, the native host's `observe`
+push of every host the vault maps to an area (`map_area` kind=host). Mapping a
+site gets its players sensed, and nothing else: feed, shopping and game senses
+stay on fence and browser-map hosts.
+
+**The sensor runs in every frame** (`allFrames`, `matchAboutBlank`), so embedded
+players are sensed. Events are credited to the tab's domain (`senderDomain`),
+never the iframe host. Every frame's start is written and the read side dedupes
+by tab; a close asks the tab's frames whether anything still plays and, if so,
+hands the span over (`closeWrites`), so players in several frames never read as
+two and a short ad never ends a film. Subframes arm the video sense only; the
+gates stay in the top frame.
 
 **Sensors are type-based, never company-based.** Generic senses (video, feed,
 shopping, game) self-select by DOM shape on any observed domain. Site adapters in

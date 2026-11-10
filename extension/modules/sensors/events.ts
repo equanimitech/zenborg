@@ -13,6 +13,8 @@
  *     observe tier (`sensorAllowed`).
  */
 
+import { domainFromUrl } from "../activity/events";
+
 /** The key-action completions sensors may report. Open set per the
  * taxonomy, but each addition lands here deliberately. */
 export const SENSOR_KINDS = [
@@ -34,6 +36,12 @@ export interface SensorMessage {
   readonly payload?: Readonly<Record<string, unknown>>;
 }
 
+/** A sensor event past validation: what the writer may record. */
+export interface ValidatedSensorEvent {
+  readonly kind: SensorKind;
+  readonly payload: Readonly<Record<string, string | number | boolean>>;
+}
+
 const MAX_PAYLOAD_KEYS = 8;
 const MAX_STRING_LENGTH = 64;
 
@@ -43,9 +51,7 @@ const MAX_STRING_LENGTH = 64;
  * payload values are reduced to capped scalars (strings ≤64 chars,
  * finite numbers, booleans) and at most 8 keys.
  */
-export function validateSensorMessage(
-  msg: unknown
-): { kind: SensorKind; payload: Record<string, string | number | boolean> } | null {
+export function validateSensorMessage(msg: unknown): ValidatedSensorEvent | null {
   if (typeof msg !== "object" || msg === null) {
     return null;
   }
@@ -146,6 +152,66 @@ export function isSponsoredLabel(text: string): boolean {
 }
 
 /**
+ * The domain a sensor message is credited to: the TAB's, from the
+ * browser-attested `sender.tab.url`. A player in an iframe reports through
+ * its own frame (`sender.url` is the iframe host), but the attention belongs
+ * to the site the gardener opened, so the frame's own URL is never read.
+ */
+export function senderDomain(sender: { readonly tab?: { readonly url?: string } }): string | null {
+  const url = sender.tab?.url;
+  return url === undefined ? null : domainFromUrl(url);
+}
+
+/** The probe a video close sends to every frame of its tab. */
+export const PLAYBACK_PROBE = { type: "kairos-sensor-playing" } as const;
+
+export function isPlaybackProbe(msg: unknown): boolean {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    (msg as Record<string, unknown>).type === PLAYBACK_PROBE.type
+  );
+}
+
+/** A hung frame must not hold a close: on timeout or error, answer null (plain close). */
+export function probeWithTimeout(probe: Promise<unknown>, ms = 200): Promise<unknown> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([probe.catch(() => null), timeout]).finally(() => clearTimeout(timer));
+}
+
+export function isVideoClose(kind: SensorKind): boolean {
+  return kind === "video_paused" || kind === "video_ended";
+}
+
+/**
+ * What a sensor event writes, given a frame's answer to `PLAYBACK_PROBE`.
+ *
+ * Every frame's start is written and the read side's tab key dedupes it
+ * (`playingSpans` ignores a second open), but the first close on that key ends
+ * the span, whichever frame it came from. So a close with another player still
+ * going hands the span over: it closes, and the frame that answered reopens at
+ * its own position. Dropping the close instead would pair a later close with an
+ * opener from another frame, and a position only means something inside one
+ * frame: a 30-second ad closing a film's span would cap the film at 30 seconds.
+ * For the same reason the close gives up its `seconds` here.
+ *
+ * No answer means nothing else plays, including when a frame has died.
+ */
+export function closeWrites(
+  event: ValidatedSensorEvent,
+  stillPlaying: ValidatedSensorEvent | null
+): readonly ValidatedSensorEvent[] {
+  if (!isVideoClose(event.kind) || stillPlaying?.kind !== "video_resumed") {
+    return [event];
+  }
+  const { seconds: _otherFrames, ...payload } = event.payload;
+  return [{ kind: event.kind, payload }, stillPlaying];
+}
+
+/**
  * The observe-tier gate: sensor events are written only for watchlist
  * domains (exact match or subdomain). `domain` is derived by the
  * background from the sender tab's URL — null means a non-web sender.
@@ -160,6 +226,26 @@ export function sensorAllowed(
   return observe.some(
     (entry) => domain === entry || domain.endsWith("." + entry)
   );
+}
+
+/**
+ * The observe tier, in two widths. `deep` is every fence and browser-map host,
+ * and arms every sense. `video` adds the hosts the vault maps to an area, which
+ * arm the video sense alone: an area mapping says whose attention a host is,
+ * not that its feed or shopping pages may be read.
+ */
+export interface ObserveTiers {
+  readonly deep: readonly string[];
+  readonly video: readonly string[];
+}
+
+/** The observe-tier gate per sense: a video event may ride the wider tier. */
+export function sensorPermitted(
+  kind: SensorKind,
+  domain: string | null,
+  tiers: ObserveTiers
+): boolean {
+  return sensorAllowed(domain, kind.startsWith("video_") ? tiers.video : tiers.deep);
 }
 
 /**

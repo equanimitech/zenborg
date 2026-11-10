@@ -6,6 +6,8 @@ import {
   coverage,
   dwellRows,
 } from "../AttentionSummary";
+// Test only: the writer's close decision, run against the read side it serves.
+import { closeWrites } from "../../../../extension/modules/sensors/events";
 
 function ev(overrides: Partial<ActivityEvent> & { ts: number }): ActivityEvent {
   return {
@@ -219,6 +221,46 @@ describe("dwellRows — browser video playback", () => {
     expect(row.ms).toBe(428 * SEC);
     expect(row.areaId).toBe("area-entertainment");
     expect(row.visits).toBe(2);
+  });
+
+  describe("players in two frames of one tab", () => {
+    // What the writer logs for a close, through the writer's own decision.
+    const closed = (
+      ts: number,
+      kind: "video_paused" | "video_ended",
+      seconds: number,
+      stillPlayingAt?: number,
+    ) =>
+      closeWrites(
+        { kind, payload: { seconds } },
+        stillPlayingAt === undefined
+          ? null
+          : { kind: "video_resumed", payload: { seconds: stillPlayingAt } },
+      ).map((e, i) => b(ts, e.kind, { domain: "youtube.com", ...e.payload }, `${kind}-${ts}-${i}`));
+
+    it("an ad iframe starts and ends; the main player keeps playing and is still counted", () => {
+      const events = [
+        b(0, "video_started", yt(0), "ad"), // the ad's frame
+        b(2, "video_started", yt(0), "main"), // the main player, deduped by the tab key
+        ...closed(30, "video_ended", 30, 28), // the ad ends; main answers the probe
+        // The film runs out. An orphan video_ended credits nothing, so this is
+        // only counted if the ad's end left a span open for it.
+        ...closed(3600, "video_ended", 3598),
+      ];
+      expect(ytRow(events)?.ms).toBe(3600 * SEC);
+    });
+
+    it("a mid-roll ad's position does not cap the film it interrupted", () => {
+      const events = [
+        b(0, "video_started", yt(0), "main"),
+        b(3600, "video_started", yt(0), "ad"),
+        ...closed(3602, "video_paused", 3600, 2), // main settles paused; the ad answers
+        ...closed(3630, "video_ended", 30), // the ad ends with main paused: no answer
+        b(3630, "video_resumed", yt(3600), "back"),
+        ...closed(7200, "video_ended", 7170),
+      ];
+      expect(ytRow(events)?.ms).toBe(7200 * SEC);
+    });
   });
 
   it("does not double count a focused tab that is also playing", () => {

@@ -7,10 +7,13 @@
  * (`./derived.ts`). Domains on that set get DEEP sensors (key-action
  * completions); everything else gets coarse activity-writer logging only.
  *
- * `observeDomains` itself stays as a raw mirror the host still pushes to
- * (`replaceObserveDomains`, called from the relay) for backwards compat, but
- * nothing in the sensor arm flow reads it anymore — read `derivedObserveDomains()`
- * instead.
+ * `observeDomains` is the mirror the host pushes on every flush
+ * (`replaceObserveDomains`, called from the relay): the vault's mapped hosts
+ * (`areas[].surfaces.hosts`, written by `map_area`) plus browser fence domains.
+ * It widens the tier for the video sense only (`observeTiers`), so a player on
+ * a host mapped to an area is sensed without touching the extension, and the
+ * mapping turns on nothing else. Read through those two functions, never this
+ * directly.
  *
  * Self-authored like the voice: zenborg never ships entries. The one standing
  * exception is explicitly-consented and now lives in `~/.zenborg/keel/rules/*.json`,
@@ -21,6 +24,7 @@ import { storage } from "wxt/storage";
 import { normalizeDomain } from "../domains";
 import { fenceCache } from "../fence/store";
 import { areaMap } from "../friction/policy/store";
+import type { ObserveTiers } from "../sensors/events";
 import { deriveObserveSet } from "./derived";
 
 /** Observe-tier domains (normalized registrable hosts). */
@@ -38,6 +42,12 @@ export const observeDomains = storage.defineItem<string[]>(
 export async function derivedObserveDomains(): Promise<readonly string[]> {
   const [fences, map] = await Promise.all([fenceCache.getValue(), areaMap.getValue()]);
   return deriveObserveSet(fences, map);
+}
+
+/** The derived tier, and the same plus the vault's mapped hosts for video. */
+export async function observeTiers(): Promise<ObserveTiers> {
+  const [deep, vaultHosts] = await Promise.all([derivedObserveDomains(), observeDomains.getValue()]);
+  return { deep, video: [...new Set([...deep, ...vaultHosts])] };
 }
 
 /** Replace the whole observe list from the relay (config.json is source of

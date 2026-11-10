@@ -9,10 +9,12 @@ import {
   INITIAL_PLAYBACK,
   PAUSE_SETTLE_MS,
   finiteSeconds,
+  isPlaybackProbe,
   playbackTransition,
   videoCompleted,
   type PlaybackInput,
   type PlaybackState,
+  type SensorMessage,
 } from "../events";
 import { sendSensorEvent } from "../send";
 
@@ -34,6 +36,11 @@ export function armVideoSense(): void {
   // dropped it, so its span can be closed. Entries leave on `ended`, on the
   // detach sweep, or when the page goes away — never accumulating.
   const open = new Set<HTMLVideoElement>();
+
+  // Open elements whose pause has settled into a video_paused. A pause still
+  // inside the settle window counts as playing: it may be a transient, and a
+  // transient resumes without emitting anything.
+  const settled = new WeakSet<HTMLVideoElement>();
 
   // Completion fires at most once per element — from whichever trigger
   // (the ≥90% heuristic, the native `ended`, detach, or page teardown)
@@ -76,16 +83,29 @@ export function armVideoSense(): void {
     // play/seek/ad-transition storm to a single emission per element.
     // `seconds` is the start position (≈0 fresh, >0 on resume), not the
     // total length — duration is often NaN at this moment.
-    video.addEventListener(
-      "playing",
-      () => {
-        open.add(video);
-        sendSensorEvent("video_started", {
-          seconds: finiteSeconds(video.currentTime),
-        });
-      },
-      { once: true }
-    );
+    const started = (): void => {
+      open.add(video);
+      sendSensorEvent("video_started", {
+        seconds: finiteSeconds(video.currentTime),
+      });
+    };
+    // An embedded player usually autoplays before the arm handshake returns,
+    // so its `playing` has already fired by the time it is wired. Without
+    // this it would emit pauses and ends with no start.
+    // Only an audible one counts: muted autoplay (ads, hero loops) is not
+    // watched. A muted player the gardener later unmutes starts on volumechange.
+    const audible = (): boolean => !video.muted && video.volume > 0;
+    const isPlaying = (): boolean => !video.paused && !video.ended;
+    if (isPlaying() && audible()) {
+      started();
+    } else {
+      video.addEventListener("playing", started, { once: true });
+      video.addEventListener("volumechange", () => {
+        if (isPlaying() && audible() && !open.has(video)) {
+          started();
+        }
+      });
+    }
 
     // Completion grammar: platform players rarely let native `ended` fire
     // (autoplay swaps the element; Shorts loop by resetting currentTime),
@@ -110,6 +130,11 @@ export function armVideoSense(): void {
     const feedPlayback = (input: PlaybackInput): void => {
       const result = playbackTransition(playback, input);
       playback = result.state;
+      if (playback.phase === "settled_paused") {
+        settled.add(video);
+      } else {
+        settled.delete(video);
+      }
       if (result.emit !== null) {
         sendSensorEvent(result.emit, { seconds: finiteSeconds(video.currentTime) });
       }
@@ -142,6 +167,26 @@ export function armVideoSense(): void {
   }).observe(document.body, {
     childList: true,
     subtree: true,
+  });
+
+  // A close from any frame of this tab asks whether anything else still plays
+  // (`closeWrites`). The first frame to answer takes the span over; a frame with
+  // nothing playing stays silent, so the others can answer.
+  browser.runtime.onMessage.addListener((message: unknown) => {
+    const playing = isPlaybackProbe(message)
+      ? [...open].find(
+          (video) => !settled.has(video) && !video.paused && !video.ended && video.isConnected
+        )
+      : undefined;
+    if (playing === undefined) {
+      return undefined;
+    }
+    const reply: SensorMessage = {
+      type: "kairos-sensor",
+      kind: "video_resumed",
+      payload: { seconds: finiteSeconds(playing.currentTime) },
+    };
+    return Promise.resolve(reply);
   });
 
   // Tab close and cross-document navigation produce no removal mutation, so
