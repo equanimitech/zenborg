@@ -67,6 +67,7 @@ import { checkIntentions, keyPeople, resolveIntentions } from "./intentions.js";
 import { resolveAddMoment } from "./moments.js";
 import { type RegistryPerson, selectPeopleToReach } from "./people.js";
 import { searchHabits, searchPeople, searchPlaces } from "./search.js";
+import { runSpring } from "./springs.js";
 import { buildTagIndex, buildTagProfile } from "./tags.js";
 import {
   areaHasMoments,
@@ -136,6 +137,10 @@ import {
 // ────────────────────────────────────────────────────────────────────────
 
 const vault = resolveVault();
+// `zenborg-mcp spring <name>`: a spring run by the daemon via jobs.json, not the server.
+if (process.argv[2] === "spring") {
+  process.exit(await runSpring(vault.root, process.argv.slice(3)));
+}
 logVaultBanner(vault);
 const VAULT_ROOT = vault.root;
 
@@ -4742,6 +4747,7 @@ defineTool(server, {
     "and `unplanted`, attention by phase and area in phases that planted nothing for that area. " +
     "Trace minutes are spans of activity, footprint minutes are dwell, so the two need not add up. " +
     'Every footprint carries coverage { seenHours, idleCreditedMin, unmappedMin }. A surface with no spring reads "not drawn", not zero. ' +
+    'Work also carries counts: commits (git) and issues moved (Linear), never minutes; a counted spring with no line in the week reads "not drawn". ' +
     "Moments with traceable=false could not be seen by any surface: untraceable, not missed. " +
     "No score, no ratio, no direction: compare the two numbers yourself, and say what coverage could not see.",
   schema: {

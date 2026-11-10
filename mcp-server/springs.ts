@@ -1,0 +1,409 @@
+/**
+ * Springs that draw into the activity log, run by the daemon via `jobs.json`.
+ *
+ *   zenborg-mcp spring git    [--days N]   → log/<day>.git.jsonl
+ *   zenborg-mcp spring linear [--days N]   → log/<day>.linear.jsonl
+ *
+ * Each run rewrites every day file it covers (the last N calendar days, today
+ * included, default 7), so a rerun replaces a day and never appends a
+ * duplicate. The MCP server only ever reads these files; it never calls a
+ * spring live.
+ *
+ * Privacy tier, settled with the gardener: git records repo + commit count,
+ * Linear records issue id + state change + time. No commit messages, diffs,
+ * titles, bodies or descriptions are ever requested, let alone written.
+ */
+import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import type { ActivityEvent } from "../src/domain/attention/ActivityEvent.ts";
+import {
+  localDate,
+  wakingDay,
+  wakingDayWindow,
+} from "../src/domain/attention/GardenClock.ts";
+import { logDir } from "./activity-log.ts";
+import { readCollection } from "./vault.ts";
+
+const DEFAULT_DAYS = 7;
+
+/** The last `n` calendar days ending at `now`'s date, oldest first. */
+export function recentDays(now: Date, n: number): string[] {
+  const days: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    days.push(localDate(d.getTime()));
+  }
+  return days;
+}
+
+/**
+ * Merge `events` into `log/<day>.<surface>.jsonl` for every day in `days`.
+ * Existing lines stay unless `replaces` says this run owns them; a new event
+ * whose id is already on file is not added again, so a rerun never
+ * duplicates. A day file is never deleted: what a run cannot see is not proof
+ * it is gone. Events outside `days` are ignored.
+ */
+export function writeDays(
+  dir: string,
+  surface: "git" | "linear",
+  days: readonly string[],
+  events: readonly ActivityEvent[],
+  replaces: (existing: ActivityEvent) => boolean = () => false,
+): void {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const day of days) {
+    const file = path.join(dir, `${day}.${surface}.jsonl`);
+    const exists = fs.existsSync(file);
+    const kept: ActivityEvent[] = [];
+    if (exists) {
+      for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const e = JSON.parse(line) as ActivityEvent;
+          if (!replaces(e)) kept.push(e);
+        } catch {
+          // an unreadable line is dropped, as the readers drop it
+        }
+      }
+    }
+    const seen = new Set(kept.map((e) => e.id));
+    const merged = [
+      ...kept,
+      ...events.filter((e) => localDate(e.ts) === day && !seen.has(e.id)),
+    ];
+    if (merged.length === 0 && !exists) continue;
+    const lines = merged
+      .sort((a, b) => a.ts - b.ts || a.id.localeCompare(b.id))
+      .map((e) => JSON.stringify(e));
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, lines.length ? `${lines.join("\n")}\n` : "");
+    fs.renameSync(tmp, file);
+  }
+}
+
+// ── git ────────────────────────────────────────────────────────────────────
+
+const SKIP_DIRS = new Set(["node_modules"]);
+
+/**
+ * Repos at or beneath `roots`, at most `depth` levels down. A directory with a
+ * `.git` directory is a repo and is not descended into. A `.git` file marks a
+ * linked worktree or submodule: skipped, since its commits are its main
+ * repo's. Hidden directories and unreadable ones are skipped.
+ */
+// ponytail: fixed depth 2 covers "area path = folder of repos"; raise it if a plot nests deeper.
+export function discoverRepos(roots: readonly string[], depth = 2): string[] {
+  const found = new Set<string>();
+  const walk = (dir: string, left: number) => {
+    const dotGit = path.join(dir, ".git");
+    let stat: fs.Stats | undefined;
+    try {
+      stat = fs.statSync(dotGit);
+    } catch {
+      stat = undefined;
+    }
+    if (stat?.isDirectory()) {
+      found.add(dir);
+      return;
+    }
+    if (stat || left === 0) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+      walk(path.join(dir, entry.name), left - 1);
+    }
+  };
+  for (const root of roots) walk(path.resolve(root), depth);
+  return [...found].sort();
+}
+
+/**
+ * The environment minus every `GIT_*` variable. Run from inside a git hook,
+ * an inherited `GIT_DIR` / `GIT_INDEX_FILE` would override `-C` and point
+ * every command at the hook's repo instead of the one being counted.
+ */
+export function gitFreeEnv(env: NodeJS.ProcessEnv = process.env) {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !k.startsWith("GIT_")),
+  );
+}
+
+/** Throws when git fails, so a failed count is never mistaken for "no commits". */
+function git(repo: string, args: readonly string[]): string {
+  return execFileSync("git", ["-C", repo, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    env: gitFreeEnv(),
+  });
+}
+
+/**
+ * Author times (epoch-ms) of the repo's own non-merge commits on any ref,
+ * authored in `[from, to)`. Throws if the log fails. "Own" is the repo's `user.email`; a repo without
+ * one counts every author. Only `%at` is asked for: no message, no diff.
+ */
+export function commitTimes(repo: string, from: number, to: number): number[] {
+  let email = "";
+  try {
+    email = git(repo, ["config", "user.email"]).trim();
+  } catch {
+    // config exits 1 when the key is unset: count every author.
+  }
+  const out = git(repo, [
+    "log",
+    "--all",
+    "--no-merges",
+    // --since filters on committer date, which is never before author date.
+    `--since=@${Math.floor(from / 1000)}`,
+    ...(email ? ["--fixed-strings", `--author=${email}`] : []),
+    "--format=%at",
+  ]);
+  return out
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .map((l) => Number(l) * 1000)
+    .filter((t) => t >= from && t < to);
+}
+
+/**
+ * One event per (repo, waking day) with commits. `ts` is the waking day's
+ * 04:00 start, so the line lands in that day's file and in that day's window.
+ */
+export function gitDayEvents(
+  repo: string,
+  times: readonly number[],
+): ActivityEvent[] {
+  const perDay = new Map<string, number>();
+  for (const t of times) {
+    const day = wakingDay(new Date(t));
+    perDay.set(day, (perDay.get(day) ?? 0) + 1);
+  }
+  return [...perDay.entries()].sort().map(([day, commits]) => ({
+    id: `git:${day}:${repo}`,
+    surface: "git",
+    kind: "commits_counted",
+    ts: wakingDayWindow(day).from,
+    sessionId: "",
+    // cwd stays: the area map resolves by path prefix, a bare name cannot.
+    payload: { repo: path.basename(repo), cwd: repo, commits },
+  }));
+}
+
+/**
+ * Count commits per repo per day over the areas' paths and rewrite the days.
+ * Writes nothing, and so deletes nothing, unless every repo was counted: no
+ * repos found (areas missing, paths gone) or any log failing is a partial
+ * run, and a partial run must not erase history. Returns the repos counted;
+ * throws on a failed repo.
+ */
+export function drawGit(
+  vaultRoot: string,
+  areas: readonly { surfaces?: { paths?: readonly string[] } }[],
+  days: readonly string[],
+): number {
+  const repos = discoverRepos(areas.flatMap((a) => a.surfaces?.paths ?? []));
+  if (repos.length === 0) return 0;
+  const from = wakingDayWindow(days[0]).from;
+  const to = wakingDayWindow(days[days.length - 1]).to;
+  const events = repos.flatMap((repo) =>
+    gitDayEvents(repo, commitTimes(repo, from, to)),
+  );
+  const mine = new Set(repos);
+  writeDays(logDir(vaultRoot), "git", days, events, (e) =>
+    mine.has(String((e.payload as { cwd?: unknown })?.cwd)),
+  );
+  return repos.length;
+}
+
+// ── Linear ─────────────────────────────────────────────────────────────────
+
+const LINEAR_URL = "https://api.linear.app/graphql";
+
+/**
+ * The viewer's assigned issues touched since `$since`, with their state
+ * history and who made each move. Asks for the identifier, state names and
+ * actor id only: never a title, a description, a comment or a body.
+ */
+export const LINEAR_QUERY = `query Moves($since: DateTimeOrDuration!, $after: String) {
+  viewer {
+    id
+    assignedIssues(first: 50, after: $after, filter: { updatedAt: { gte: $since } }) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        identifier
+        history(first: 100) {
+          nodes { createdAt actor { id } fromState { name } toState { name } }
+        }
+      }
+    }
+  }
+}`;
+
+interface LinearIssueNode {
+  readonly identifier?: unknown;
+  readonly history?: {
+    readonly nodes?: readonly {
+      readonly createdAt?: unknown;
+      readonly actor?: { readonly id?: unknown } | null;
+      readonly fromState?: { readonly name?: unknown } | null;
+      readonly toState?: { readonly name?: unknown } | null;
+    }[];
+  };
+}
+
+export interface LinearPage {
+  readonly data?: {
+    readonly viewer?: {
+      readonly id?: unknown;
+      readonly assignedIssues?: {
+        readonly pageInfo?: {
+          readonly hasNextPage?: boolean;
+          readonly endCursor?: string | null;
+        };
+        readonly nodes?: readonly LinearIssueNode[];
+      };
+    };
+  };
+  readonly errors?: readonly unknown[];
+}
+
+const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+
+/**
+ * Map Linear issues to `issue_moved` events: one per state change the viewer
+ * made. A teammate's or a bot's move, or one with no actor, is not theirs.
+ * Fields are picked one by one, never spread, so nothing the API adds can
+ * ride along.
+ */
+export function linearEvents(
+  issues: readonly LinearIssueNode[],
+  viewerId: string,
+): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+  for (const issue of issues) {
+    const id = str(issue.identifier);
+    if (!id) continue;
+    for (const h of issue.history?.nodes ?? []) {
+      if (str(h.actor?.id) !== viewerId) continue;
+      const to = str(h.toState?.name);
+      const at = str(h.createdAt);
+      const ts = at ? Date.parse(at) : Number.NaN;
+      if (!to || Number.isNaN(ts)) continue;
+      events.push({
+        id: `linear:${id}:${ts}`,
+        surface: "linear",
+        kind: "issue_moved",
+        ts,
+        sessionId: "",
+        payload: { issue: id, from: str(h.fromState?.name) ?? null, to },
+      });
+    }
+  }
+  return events;
+}
+
+/** The viewer's id and every page of their issues touched since `since`. Throws on any API error. */
+export async function fetchLinearIssues(
+  key: string,
+  since: Date,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ viewerId: string; issues: LinearIssueNode[] }> {
+  const issues: LinearIssueNode[] = [];
+  let viewerId: string | undefined;
+  let after: string | null = null;
+  do {
+    const res = await fetchImpl(LINEAR_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: key },
+      body: JSON.stringify({
+        query: LINEAR_QUERY,
+        variables: { since: since.toISOString(), after },
+      }),
+    });
+    if (!res.ok) throw new Error(`linear: HTTP ${res.status}`);
+    const page = (await res.json()) as LinearPage;
+    if (page.errors?.length) throw new Error("linear: GraphQL error");
+    viewerId ??= str(page.data?.viewer?.id);
+    const conn = page.data?.viewer?.assignedIssues;
+    issues.push(...(conn?.nodes ?? []));
+    after = conn?.pageInfo?.hasNextPage
+      ? (conn.pageInfo.endCursor ?? null)
+      : null;
+  } while (after);
+  if (!viewerId) throw new Error("linear: no viewer id");
+  return { viewerId, issues };
+}
+
+// ── CLI ────────────────────────────────────────────────────────────────────
+
+function daysArg(args: readonly string[]): number {
+  const i = args.indexOf("--days");
+  const n = i >= 0 ? Number(args[i + 1]) : DEFAULT_DAYS;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_DAYS;
+}
+
+/**
+ * `zenborg-mcp spring <name> [--days N]`. Returns the exit code. Non-zero
+ * means "didn't draw this time" (no key, vault unreadable, API down); the
+ * daemon logs it as info. A missing key exits 1 without a word.
+ */
+export async function runSpring(
+  vaultRoot: string,
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<number> {
+  const days = recentDays(now, daysArg(args));
+  switch (args[0]) {
+    case "git": {
+      let areas: { surfaces?: { paths?: readonly string[] } }[];
+      try {
+        areas = Object.values(readCollection(vaultRoot, "areas"));
+      } catch {
+        return 1; // unreadable areas.json: keep yesterday's files, try next run
+      }
+      try {
+        return drawGit(vaultRoot, areas, days) > 0 ? 0 : 1;
+      } catch (error) {
+        process.stderr.write(`[spring git] ${(error as Error).message}\n`);
+        return 1; // a repo's log failed: keep the files, try next run
+      }
+    }
+    case "linear": {
+      const key = env.LINEAR_API_KEY;
+      if (!key) return 1;
+      const [y, m, d] = days[0].split("-").map(Number);
+      try {
+        const { viewerId, issues } = await fetchLinearIssues(
+          key,
+          new Date(y, m - 1, d),
+          fetchImpl,
+        );
+        writeDays(
+          logDir(vaultRoot),
+          "linear",
+          days,
+          linearEvents(issues, viewerId),
+        );
+        return 0;
+      } catch (error) {
+        process.stderr.write(`[spring linear] ${(error as Error).message}\n`);
+        return 1;
+      }
+    }
+    default:
+      process.stderr.write(
+        "usage: zenborg-mcp spring <git|linear> [--days N]\n",
+      );
+      return 2;
+  }
+}
