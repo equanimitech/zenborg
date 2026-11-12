@@ -5,14 +5,14 @@
  */
 
 import { fencesFor } from "./parse";
-import { localDay, type RationSpent } from "./ration";
+import { rationDay, type RationSpent } from "./ration";
 import type { Fences } from "./types";
 
 /** The closing line, static. The renderer sets it in sans: a sentence is never mono. */
 export const CLOSING = "worth staying?";
 
 export function chipLines(fences: Fences, spent: RationSpent | null, host: string, now: number): string[] {
-  const minutes = spent && spent.day === localDay(now) ? spent.minutes : {};
+  const minutes = spent && spent.day === rationDay(now) ? spent.minutes : {};
   const seen = new Set<string>();
   const lines: string[] = [];
   for (const f of fencesFor(fences, host)) {

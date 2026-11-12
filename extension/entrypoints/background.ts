@@ -2,7 +2,7 @@ import { browser } from "wxt/browser";
 import { startActivityWriter } from "@/modules/activity/writer";
 import { syncFenceRules } from "@/modules/fence/project";
 import { allLifts, fenceCache, liveFences, openingsCache, passLifts, rationSpent } from "@/modules/fence/store";
-import { hasOpenRation, localDay, poolMinutes } from "@/modules/fence/ration";
+import { hasOpenRation, poolMinutes, rationDay } from "@/modules/fence/ration";
 import { mergeById } from "@/modules/fence/deliveries";
 import { readEventsSince } from "@/modules/activity/log";
 import { nextScheduleBoundary } from "@/modules/fence/parse";
@@ -37,7 +37,7 @@ async function recountRations(): Promise<void> {
     const [host, outbox] = await Promise.all([queryEvents(since), readEventsSince(since)]);
     const minutes = poolMinutes(mergeById(host, outbox), fences, now);
     const prev = await rationSpent.getValue();
-    const next = { day: localDay(now), minutes };
+    const next = { day: rationDay(now), minutes };
     if (JSON.stringify(prev) !== JSON.stringify(next)) await rationSpent.setValue(next);
   } catch (err) {
     // Fail open: the last count stands (or none), so nothing new walls on a failed read.

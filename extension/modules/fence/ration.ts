@@ -3,7 +3,8 @@
  * decide whether its budget is spent.
  *
  * The count is `bouts()`, the one dwell methodology, so it agrees with
- * `get_site_minutes`. A bout's minutes land on the local day it started.
+ * `get_site_minutes`. A bout's minutes land on the ration day it started, and
+ * on the pool whose fence window is active at that moment.
  * An unspent pool drops its fences out of the live set, the way a lift does;
  * a missing or stale count reads as zero, so a budget that cannot count never walls.
  */
@@ -24,6 +25,11 @@ export function localDay(ts: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** The ration day turns over at 07h, not midnight: after-midnight watching belongs to the night before. */
+export const RATION_DAY_START_HOUR = 7;
+
+export const rationDay = (ts: number): string => localDay(ts - RATION_DAY_START_HOUR * 3_600_000);
+
 const covers = (domain: string, host: string) => host === domain || host.endsWith(`.${domain}`);
 
 function budgeted(fences: Fences): Fence[] {
@@ -31,14 +37,18 @@ function budgeted(fences: Fences): Fence[] {
 }
 
 export function poolMinutes(events: readonly ActivityEvent[], fences: Fences, now: number): Record<string, number> {
-  const today = localDay(now);
+  const today = rationDay(now);
   const pools = budgeted(fences);
   const out: Record<string, number> = {};
   for (const bout of bouts(events)) {
-    if (localDay(bout.startTs) !== today) continue;
+    if (rationDay(bout.startTs) !== today) continue;
+    const at = new Date(bout.startTs);
     for (const [domain, ms] of bout.byDomain) {
       const fence = pools.find(
-        (f) => f.domains.some((d) => covers(d, domain)) && !f.budget!.exclude.some((x) => covers(x, domain)),
+        (f) =>
+          f.domains.some((d) => covers(d, domain)) &&
+          !f.budget!.exclude.some((x) => covers(x, domain)) &&
+          (!f.schedule || isScheduleActive(f.schedule, at)),
       );
       if (fence) out[fence.budget!.pool] = (out[fence.budget!.pool] ?? 0) + ms / 60_000;
     }
@@ -47,7 +57,7 @@ export function poolMinutes(events: readonly ActivityEvent[], fences: Fences, no
 }
 
 export function withRations(fences: Fences, spent: RationSpent | null, now: number): Fences {
-  const minutes = spent && spent.day === localDay(now) ? spent.minutes : {};
+  const minutes = spent && spent.day === rationDay(now) ? spent.minutes : {};
   return Object.fromEntries(
     Object.entries(fences).filter(([, f]) => !f.budget || (minutes[f.budget.pool] ?? 0) >= f.budget.minutes),
   );

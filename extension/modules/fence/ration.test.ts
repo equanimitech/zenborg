@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createActivityEvent, type ActivityEvent } from "../domain/activity";
 import { parseFences } from "./parse";
-import { hasOpenRation, localDay, poolMinutes, rationBlocks, withRations } from "./ration";
+import { hasOpenRation, localDay, poolMinutes, rationBlocks, rationDay, withRations } from "./ration";
 
 const MIN = 60_000;
 // Saturday 2026-10-24, local.
@@ -10,17 +10,21 @@ let seq = 0;
 const ev = (ts: number, kind: string, domain?: string): ActivityEvent =>
   createActivityEvent({ id: `e${++seq}`, surface: "browser", kind, ts, payload: domain ? { domain } : {} });
 
-function rationed(host: string) {
+function rationed(
+  host: string,
+  pool = "youtube-weekend",
+  window: { fromHour: number; toHour: number; weekdays: string[] } = { fromHour: 0, toHour: 0, weekdays: ["SAT", "SUN"] },
+) {
   return {
-    id: `watering:youtube-weekend:browser:${host}`,
-    name: `youtube-weekend (${host})`,
+    id: `watering:${pool}:browser:${host}`,
+    name: `${pool} (${host})`,
     scope: { surface: "browser", domain: host },
     primitives: [
       {
         kind: "schedule",
-        window: { fromHour: 0, toHour: 0, weekdays: ["SAT", "SUN"] },
+        window,
         outsideWindow: "inactive",
-        budget: { minutes: 60, pool: "youtube-weekend", exclude: ["music.youtube.com"] },
+        budget: { minutes: 60, pool, exclude: ["music.youtube.com"] },
         wraps: {
           kind: "cooldown",
           duration: { type: "standing" },
@@ -62,6 +66,60 @@ describe("poolMinutes", () => {
   });
 });
 
+// Monday 2026-10-26, local. The 07h day boundary and the pool window are tested apart:
+// `open` is a weekday pool open all day, so only the boundary decides; `split` has the
+// real shape, a 12-17 weekday pool and a weekend pool on the same host (weekday first).
+const MON = (h: number, m = 0) => new Date(2026, 9, 26, h, m).getTime();
+const watch = (start: number, mins: number): ActivityEvent[] => [
+  ev(start, "navigation_committed", "youtube.com"),
+  ev(start + mins * MIN, "tab_closed", "youtube.com"),
+];
+const allDay = { fromHour: 0, toHour: 0, weekdays: ["MON", "TUE", "WED", "THU", "FRI"] };
+const open = parseFences({ a: rationed("youtube.com", "youtube-ration", allDay) }, MON(12))!.fences;
+const split = parseFences(
+  {
+    a: rationed("youtube.com", "youtube-ration", { fromHour: 12, toHour: 17, weekdays: allDay.weekdays }),
+    b: rationed("youtube.com"),
+  },
+  MON(12),
+)!.fences;
+
+describe("rationDay", () => {
+  it("turns over at 07h, not midnight", () => {
+    expect(rationDay(MON(0, 30))).toBe("2026-10-25");
+    expect(rationDay(MON(6, 59))).toBe("2026-10-25");
+    expect(rationDay(MON(7))).toBe("2026-10-26");
+  });
+});
+
+describe("poolMinutes ration day", () => {
+  it("does not spend today's pool with after-midnight watching", () => {
+    expect(poolMinutes(watch(MON(0, 30), 60), open, MON(13))["youtube-ration"] ?? 0).toBe(0);
+  });
+  it("counts watching from 08h toward that day", () => {
+    expect(Math.round(poolMinutes(watch(MON(8), 20), open, MON(13))["youtube-ration"])).toBe(20);
+  });
+  it("still counts the after-midnight bout on the day it belongs to, until 07h", () => {
+    expect(Math.round(poolMinutes(watch(MON(0, 30), 20), open, MON(6, 30))["youtube-ration"])).toBe(20);
+  });
+});
+
+describe("poolMinutes window", () => {
+  it("credits a weekday 13h bout to the weekday pool, not the weekend one", () => {
+    const m = poolMinutes(watch(MON(13), 20), split, MON(14));
+    expect(Math.round(m["youtube-ration"])).toBe(20);
+    expect(m["youtube-weekend"] ?? 0).toBe(0);
+  });
+  it("credits a Saturday 14h bout to the weekend pool", () => {
+    const m = poolMinutes(watch(SAT, 20), split, SAT + 30 * MIN);
+    expect(Math.round(m["youtube-weekend"])).toBe(20);
+    expect(m["youtube-ration"] ?? 0).toBe(0);
+  });
+  it("spends nothing when no pool's window is active", () => {
+    expect(poolMinutes(watch(MON(9), 20), split, MON(14))).toEqual({});
+  });
+});
+
 describe("withRations", () => {
   const day = localDay(SAT);
   it("drops a budgeted fence whose pool is under budget", () => {
@@ -74,6 +132,11 @@ describe("withRations", () => {
     expect(Object.keys(withRations(fences, { day: "2026-10-23", minutes: { "youtube-weekend": 99 } }, SAT))).toEqual(
       [],
     );
+  });
+  it("reads the count from before 07h as stale after 07h", () => {
+    const night = { day: rationDay(MON(0, 30)), minutes: { "youtube-ration": 99 } };
+    expect(Object.keys(withRations(open, night, MON(6, 30)))).toHaveLength(1);
+    expect(Object.keys(withRations(open, night, MON(8)))).toEqual([]);
   });
   it("fails open on no count", () => {
     expect(Object.keys(withRations(fences, null, SAT))).toEqual([]);
