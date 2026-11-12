@@ -4172,6 +4172,14 @@ const GateTriggerSchema = z.discriminatedUnion("type", [
       ),
   }),
   z
+    .object({
+      type: z.literal("video_start"),
+      afterMinutes: z.number().positive(),
+    })
+    .describe(
+      "When a video starts playing, once today's attended minutes on the host reach afterMinutes",
+    ),
+  z
     .object({ type: z.literal("entry") })
     .describe("Once per arrival on the host"),
   z

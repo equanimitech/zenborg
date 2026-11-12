@@ -111,6 +111,14 @@ export function clickGateQuery(msg: unknown): string | null {
   return typeof m.ruleId === "string" && m.ruleId !== "" && m.ruleId.length <= 128 ? m.ruleId : null;
 }
 
+/** A video-start gate asking for its verdict; same trust story as `clickGateQuery`. */
+export function videoStartGateQuery(msg: unknown): string | null {
+  if (typeof msg !== "object" || msg === null) return null;
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "kairos-gate-video-start") return null;
+  return typeof m.ruleId === "string" && m.ruleId !== "" && m.ruleId.length <= 128 ? m.ruleId : null;
+}
+
 /**
  * Reduce a media time (seconds — possibly NaN before metadata loads, or
  * negative/Infinity on a detached element) to a finite, non-negative

@@ -102,6 +102,13 @@ export interface TransformSpec {
 export type GateTrigger =
   | { readonly type: "entry" }
   | { readonly type: "dwell"; readonly everyMinutes: number }
+  /**
+   * A video starting to play on the host, once today's attended dwell there has
+   * reached `afterMinutes`. The next video is the decision ("one more?"); a dwell
+   * cue lands mid-video and is clicked through. Below the threshold nothing asks.
+   * The browser surface is the only one that arms it.
+   */
+  | { readonly type: "video_start"; readonly afterMinutes: number }
   | {
       readonly type: "click";
       readonly selectors: {

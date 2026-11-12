@@ -821,6 +821,8 @@ function triggerWords(t: GateRung["trigger"]): string {
       return `every ${t.everyMinutes} attended minutes`;
     case "entry":
       return "on arrival";
+    case "video_start":
+      return `when a video starts after ${t.afterMinutes} attended minutes`;
     case "click":
       return `before a click on ${t.selectors.primary}`;
   }

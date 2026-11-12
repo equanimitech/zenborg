@@ -205,6 +205,10 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
     const everyMinutes = trigger?.type === "dwell"
       ? Number(trigger.everyMinutes)
       : 0;
+    const afterMinutes = trigger?.type === "video_start" ? Number(trigger.afterMinutes) : 0;
+    // A video_start gate with no usable threshold would ask at every video: refused
+    // rather than read as one, like a click gate with no selector.
+    if (trigger?.type === "video_start" && !(afterMinutes > 0)) return null;
     const frictionType = isRecord(p.frictionType) ? p.frictionType : null;
     const friction = frictionType ? readFriction(frictionType) : null;
     if (friction === null) return null;
@@ -220,6 +224,7 @@ function enforcementFromPrimitive(p: Record<string, unknown>): FenceEnforcement 
       everyMinutes: Number.isFinite(everyMinutes) && everyMinutes > 0 ? Math.round(everyMinutes) : 1,
       friction,
       ...(click ? { click } : {}),
+      ...(afterMinutes > 0 ? { videoStart: afterMinutes } : {}),
       // Entry asks once per arrival (`isArrival`); `everyMinutes` is then inert filler.
       ...(trigger?.type === "entry" ? { entry: true as const } : {}),
     };
@@ -405,6 +410,7 @@ export function parseFences(raw: unknown, now: number = Date.now()): ParsedFence
           friction: e.friction,
           ...(e.click ? { click: e.click } : {}),
           ...(e.entry ? { entry: e.entry } : {}),
+          ...(e.videoStart ? { videoStart: e.videoStart } : {}),
           proceed: pr,
           ...(label === "" ? {} : { abort: { label } }),
         });
@@ -610,14 +616,16 @@ export function gatesFrom(fences: Fences): readonly DwellGate[] {
       friction: r.friction,
       click: r.click,
       entry: r.entry,
+      videoStart: r.videoStart,
       proceed: { label: r.proceed.label, action: gateAction(r.proceed) },
       abort: r.abort ?? { label: "Close the tab" },
     }));
-    const { click, entry: onEntry } = entry.enforcement;
+    const { click, entry: onEntry, videoStart } = entry.enforcement;
     out.push({
       ...(rungs ? { rungs } : {}),
       ...(click ? { click } : {}),
       ...(onEntry ? { entry: onEntry } : {}),
+      ...(videoStart ? { videoStart } : {}),
       ...(entry.deliveryProbability < 1 ? { deliveryProbability: entry.deliveryProbability } : {}),
       ...(entry.windowMs === undefined ? {} : { windowMs: entry.windowMs }),
       ...(entry.servesAreaId === undefined ? {} : { servesAreaId: entry.servesAreaId }),

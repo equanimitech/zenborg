@@ -49,6 +49,9 @@ export type FenceEnforcement =
       readonly click?: readonly string[];
       /** An entry trigger: the gate asks once on arrival at the host, never on dwell. */
       readonly entry?: true;
+      /** A video_start trigger's `afterMinutes`: the gate asks when a video starts once
+       * today's dwell has reached it, never on dwell. */
+      readonly videoStart?: number;
     };
 
 /**
@@ -84,6 +87,7 @@ export interface GateRungSpec {
   readonly friction: GateFriction;
   readonly click?: readonly string[];
   readonly entry?: true;
+  readonly videoStart?: number;
   readonly proceed: ProceedAffordance;
   readonly abort?: { readonly label: string };
 }
