@@ -63,7 +63,7 @@ export function interventionEvent(input: InterventionEventInput): ActivityEvent 
  */
 export interface DecisionPoint {
   readonly ruleId: string;
-  readonly trigger: "dwell" | "entry" | "click";
+  readonly trigger: "dwell" | "entry" | "click" | "video_start";
   /** True = the overlay was shown. */
   readonly delivered: boolean;
   /** The rule's deliveryProbability (1 if absent). */

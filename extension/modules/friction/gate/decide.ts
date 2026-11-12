@@ -40,6 +40,8 @@ export interface DwellRung {
   readonly click?: readonly string[];
   /** Entry-trigger rung; absent means dwell (or click). */
   readonly entry?: true;
+  /** Video-start trigger rung (afterMinutes); absent means another trigger. */
+  readonly videoStart?: number;
   readonly proceed: DwellGate["proceed"];
   readonly abort: DwellGate["abort"];
 }
@@ -69,6 +71,11 @@ export interface DwellGate {
    * and never on dwell. Absent, it is a dwell gate (or a click gate).
    */
   readonly entry?: true;
+  /**
+   * Video-start trigger: afterMinutes of today's attended dwell. Present, the gate
+   * fires when a video starts (`evaluateVideoStartGate`) and never on dwell.
+   */
+  readonly videoStart?: number;
   /** `RuleSpec.deliveryProbability`, when below 1. Drawn per click and per entry firing. */
   readonly deliveryProbability?: number;
   /** Outcome window from the vault record, for `decision_point`. */
@@ -234,7 +241,8 @@ export async function evaluateGate(
     crossingsOf(await gateCrossings.getValue(), today, base.ruleId)
   );
   // A click rung never fires on dwell: that is the mid-game interruption it exists to end.
-  if (g.click !== undefined) {
+  // Nor does a video-start rung: it asks between videos, not during one.
+  if (g.click !== undefined || g.videoStart !== undefined) {
     return { fire: false, dwellMs: 0 };
   }
   if (g.entry) {
@@ -323,6 +331,48 @@ export async function evaluateClickGate(
     points: [point],
     fire: true,
     dwellMs: await dwellTodayFor(g.domains, now),
+    ruleId: g.ruleId,
+    friction: g.friction,
+    proceed: g.proceed,
+    abort: g.abort,
+    rung,
+    everyMinutes: g.everyMinutes,
+  };
+}
+
+/**
+ * The verdict for a video starting on `gate`'s host.
+ *
+ * Like a click, the start is the decision point, so the rung is today's crossings
+ * and the delivery draw is the only other gate. Unlike a click, there is a
+ * threshold: below `videoStart` attended minutes today nothing is asked and no
+ * point is recorded, since the rule could not have asked there.
+ */
+export async function evaluateVideoStartGate(
+  gate: DwellGate,
+  now: number = Date.now(),
+  draw: number = Math.random()
+): Promise<GateVerdict> {
+  const base = normalizeGate(gate);
+  const { gate: g, rung } = gateAtRung(
+    base,
+    crossingsOf(await gateCrossings.getValue(), dayKey(now), base.ruleId)
+  );
+  if (g.videoStart === undefined) {
+    return { fire: false, dwellMs: 0 };
+  }
+  const dwellMs = await dwellTodayFor(g.domains, now);
+  if (dwellMs < g.videoStart * 60_000) {
+    return { fire: false, dwellMs };
+  }
+  const point = decisionPoint(g, "video_start", rung, draw);
+  if (!point.delivered) {
+    return { fire: false, dwellMs, points: [point] };
+  }
+  return {
+    points: [point],
+    fire: true,
+    dwellMs,
     ruleId: g.ruleId,
     friction: g.friction,
     proceed: g.proceed,

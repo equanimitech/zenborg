@@ -34,6 +34,7 @@ import {
   PLAYBACK_PROBE,
   probeWithTimeout,
   clickGateQuery,
+  videoStartGateQuery,
   closeWrites,
   isArmQuery,
   isGateQuery,
@@ -46,11 +47,12 @@ import {
 import { derivedObserveDomains, observeTiers } from "../watchlist/store";
 import {
   evaluateClickGate,
+  evaluateVideoStartGate,
   evaluateGates,
   recordProceed,
   type GateVerdict,
 } from "../friction/gate/decide";
-import { clickGatesOf } from "../friction/gate/click";
+import { clickGatesOf, videoStartGatesOf } from "../friction/gate/click";
 import { evaluateMomentGate } from "../friction/gate/moment";
 import {
   gateMomentFor,
@@ -335,6 +337,7 @@ export function startActivityWriter(): WriteFn {
             gate: gates[0] ?? null,
             // Selectors only: the page learns which controls to hold, never a verdict.
             clickGates: clickGatesOf(gates),
+            videoStartGates: videoStartGatesOf(gates),
           };
         })
         .catch(() => ({ observed: false, deep: false, gate: null, clickGates: [] }));
@@ -451,15 +454,19 @@ export function startActivityWriter(): WriteFn {
     // A click on a gated control. Decided and recorded here for the same reason
     // the dwell poll is; the page names a rule, the domain is the attested one,
     // and a rule not in force on that domain answers "no".
+    // A video starting is the same shape of question with a different evaluator.
     const clickRule = clickGateQuery(message);
-    if (clickRule !== null) {
+    const videoRule = videoStartGateQuery(message);
+    const gateRule = clickRule ?? videoRule;
+    const evaluate = clickRule !== null ? evaluateClickGate : evaluateVideoStartGate;
+    if (gateRule !== null) {
       if (domain === null) {
         return Promise.resolve({ fire: false });
       }
       return liveFences()
         .then((fences): Promise<GateVerdict> | GateVerdict => {
-          const gate = fenceGatesFor(fences, domain).find((g) => g.ruleId === clickRule);
-          return gate ? evaluateClickGate(gate) : { fire: false, dwellMs: 0 };
+          const gate = fenceGatesFor(fences, domain).find((g) => g.ruleId === gateRule);
+          return gate ? evaluate(gate) : { fire: false, dwellMs: 0 };
         })
         .then((verdict) => {
           writePoints(verdict, domain);

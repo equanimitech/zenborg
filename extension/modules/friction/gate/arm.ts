@@ -15,6 +15,7 @@
 
 import { clickGateHit, createReplay, type ClickGate } from "./click";
 import { safeRedirect, type GateFriction } from "./decide";
+import { isAdPlaying, videoKey } from "./videoKey";
 import type { StartOffer } from "./intention";
 import { showGate, showReflection, type StartChoice } from "./overlay";
 
@@ -216,6 +217,69 @@ export function armClickGate(gates: readonly ClickGate[]): void {
       void ask(hit.ruleId, hit.element).finally(() => {
         pending = false;
       });
+    },
+    true
+  );
+}
+
+/**
+ * Arm the video-start gates in a page: the gate between one video and the next.
+ *
+ * `playing` does not bubble, but a capture listener on `document` still hears it,
+ * so one listener covers every <video> the page ever creates, SPA swaps included.
+ * Each VIDEO is asked about once, keyed by `videoKey`, not each element: YouTube
+ * reuses one <video> across navigations, ads and Shorts swipes, so the element
+ * is not a video. A resume is the same key and does not ask again. While an ad
+ * plays (`isAdPlaying`, read at event time) nothing is asked and the key is not
+ * consumed, so the content's own later `playing` still asks.
+ *
+ * The page only reports "a video started"; the background decides threshold, rung,
+ * draw. When a verdict fires, `showGate` pauses all media itself, so there is no
+ * replay: proceed resumes what it paused, abort leaves it paused and the tab goes.
+ */
+export function armVideoStartGate(ruleIds: readonly string[]): void {
+  if (ruleIds.length === 0) return;
+  const asked = new Set<string>();
+  let showing = false;
+
+  const ask = async (ruleId: string): Promise<void> => {
+    let verdict: GateVerdictMessage;
+    try {
+      verdict = ((await browser.runtime.sendMessage({ type: "kairos-gate-video-start", ruleId })) ??
+        {}) as GateVerdictMessage;
+    } catch {
+      return; // Background asleep or reloading: fail open, the video plays.
+    }
+    if (verdict.fire !== true || verdict.friction === undefined || showing) return;
+    showing = true;
+    const proceeded = await showGate({
+      friction: verdict.friction,
+      dwellMinutes: Math.floor((verdict.dwellMs ?? 0) / 60_000),
+      proceedLabel: verdict.proceed?.label ?? "Continue",
+      abortLabel: verdict.abort?.label ?? "Close the tab",
+      start: startOption(verdict.start),
+    });
+    showing = false;
+    // Settled exactly as a dwell gate is, so the crossing counts and the ladder climbs.
+    if (verdict.ruleId !== undefined) {
+      void browser.runtime
+        .sendMessage({ type: "kairos-intervention-settled", ruleId: verdict.ruleId, proceeded })
+        .catch(() => {});
+    }
+    if (!proceeded) {
+      void browser.runtime.sendMessage({ type: "kairos-gate-leave" }).catch(() => {});
+    }
+  };
+
+  document.addEventListener(
+    "playing",
+    (event) => {
+      const video = event.target;
+      if (!(video instanceof HTMLVideoElement) || isAdPlaying(document)) return;
+      const key = videoKey(window.location, video);
+      if (asked.has(key)) return;
+      asked.add(key);
+      for (const ruleId of ruleIds) void ask(ruleId);
     },
     true
   );

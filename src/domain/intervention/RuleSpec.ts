@@ -109,6 +109,12 @@ function triggerProblems(primitives: readonly Primitive[]): readonly string[] {
       }
       continue;
     }
+    if (primitive.trigger.type === "video_start") {
+      if (!Number.isFinite(primitive.trigger.afterMinutes) || primitive.trigger.afterMinutes <= 0) {
+        problems.push("gate.trigger.afterMinutes must be positive");
+      }
+      continue;
+    }
     if (primitive.trigger.type !== "dwell") continue;
     const every = primitive.trigger.everyMinutes;
     if (!Number.isFinite(every) || every <= 0) {

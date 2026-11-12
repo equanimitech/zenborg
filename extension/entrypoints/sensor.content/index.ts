@@ -26,7 +26,7 @@ import { armFeedSense } from "@/modules/sensors/senses/feed";
 import { armGameSense } from "@/modules/sensors/senses/game";
 import { armShoppingSense } from "@/modules/sensors/senses/shopping";
 import { armVideoSense } from "@/modules/sensors/senses/video";
-import { armClickGate, armDwellGate } from "@/modules/friction/gate/arm";
+import { armClickGate, armDwellGate, armVideoStartGate } from "@/modules/friction/gate/arm";
 import type { ClickGate } from "@/modules/friction/gate/click";
 
 /** The arm reply's click gates, reduced to well-formed entries. */
@@ -53,6 +53,7 @@ export default defineContentScript({
     let deep = false;
     let gated = false;
     let clickGates: readonly ClickGate[] = [];
+    let videoStartGates: readonly string[] = [];
     try {
       const answer: unknown = await browser.runtime.sendMessage({
         type: "kairos-sensor-arm",
@@ -62,6 +63,9 @@ export default defineContentScript({
       deep = reply.deep === true;
       gated = reply.gate !== null && reply.gate !== undefined;
       clickGates = readClickGates(reply.clickGates);
+      videoStartGates = Array.isArray(reply.videoStartGates)
+        ? reply.videoStartGates.filter((id): id is string => typeof id === "string")
+        : [];
     } catch {
       return; // Background unavailable — stay dormant, fail-open.
     }
@@ -74,6 +78,7 @@ export default defineContentScript({
         armDwellGate();
       }
       armClickGate(clickGates);
+      armVideoStartGate(videoStartGates);
     }
 
     if (!observed) {

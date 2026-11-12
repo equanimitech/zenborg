@@ -39,6 +39,14 @@ export function clickGatesOf(gates: readonly DwellGate[]): readonly ClickGate[] 
   return out;
 }
 
+/** Rule ids of every gate with a video-start trigger, on any rung. The page only
+ * learns which rules to ask about; the background owns threshold, rung and draw. */
+export function videoStartGatesOf(gates: readonly DwellGate[]): readonly string[] {
+  return gates
+    .filter((g) => g.videoStart !== undefined || (g.rungs ?? []).some((r) => r.videoStart !== undefined))
+    .map((g) => g.ruleId);
+}
+
 function safeMatches(el: Matchable, selector: string): boolean {
   try {
     return el.matches(selector);

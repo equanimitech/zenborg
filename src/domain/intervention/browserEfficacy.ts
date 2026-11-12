@@ -19,7 +19,7 @@ import { BOUT_GAP_MS, bouts, runs } from "../attention/browser/bouts";
 import { createDomain } from "../attention/browser/value-objects";
 import { hostOf, localDay, mean, round1 } from "../attention/siteMinutes";
 
-export type Trigger = "dwell" | "entry" | "click";
+export type Trigger = "dwell" | "entry" | "click" | "video_start";
 
 /** The `decision_point` payload, plus the event's id and ts. */
 export interface DecisionPoint {
