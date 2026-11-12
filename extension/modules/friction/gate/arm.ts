@@ -15,6 +15,7 @@
 
 import { clickGateHit, createReplay, type ClickGate } from "./click";
 import { safeRedirect, type GateFriction } from "./decide";
+import { isAdPlaying, videoKey } from "./videoKey";
 import type { StartOffer } from "./intention";
 import { showGate, showReflection, type StartChoice } from "./overlay";
 
@@ -226,9 +227,11 @@ export function armClickGate(gates: readonly ClickGate[]): void {
  *
  * `playing` does not bubble, but a capture listener on `document` still hears it,
  * so one listener covers every <video> the page ever creates, SPA swaps included.
- * Each element is asked about once (a WeakSet, as `senses/video.ts` keys its
- * dedupe): platforms swap the element per video, so an element is a video. A
- * resume after pause is the same element and does not ask again.
+ * Each VIDEO is asked about once, keyed by `videoKey`, not each element: YouTube
+ * reuses one <video> across navigations, ads and Shorts swipes, so the element
+ * is not a video. A resume is the same key and does not ask again. While an ad
+ * plays (`isAdPlaying`, read at event time) nothing is asked and the key is not
+ * consumed, so the content's own later `playing` still asks.
  *
  * The page only reports "a video started"; the background decides threshold, rung,
  * draw. When a verdict fires, `showGate` pauses all media itself, so there is no
@@ -236,7 +239,7 @@ export function armClickGate(gates: readonly ClickGate[]): void {
  */
 export function armVideoStartGate(ruleIds: readonly string[]): void {
   if (ruleIds.length === 0) return;
-  const asked = new WeakSet<EventTarget>();
+  const asked = new Set<string>();
   let showing = false;
 
   const ask = async (ruleId: string): Promise<void> => {
@@ -272,8 +275,10 @@ export function armVideoStartGate(ruleIds: readonly string[]): void {
     "playing",
     (event) => {
       const video = event.target;
-      if (!(video instanceof HTMLVideoElement) || asked.has(video)) return;
-      asked.add(video);
+      if (!(video instanceof HTMLVideoElement) || isAdPlaying(document)) return;
+      const key = videoKey(window.location, video);
+      if (asked.has(key)) return;
+      asked.add(key);
       for (const ruleId of ruleIds) void ask(ruleId);
     },
     true
