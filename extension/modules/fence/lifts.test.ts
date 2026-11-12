@@ -10,7 +10,8 @@ import {
   withLifts,
   type Lift,
 } from "./lifts";
-import { gatesFrom, parseFences, standingBlockHosts } from "./parse";
+import { blockingFences, gatesFrom, parseFences, standingBlockHosts } from "./parse";
+import { localDay, rationBlocks, withRations, type RationSpent } from "./ration";
 
 const H = 3_600_000;
 // Local wall-clock instants, so every assertion holds in any time zone.
@@ -198,5 +199,76 @@ describe("block_hit payload", () => {
     const payload = blockHitPayload("x.com", fences);
     expect(payload).toEqual({ domain: "x.com", fenceIds: ["f1", "f2"] });
     expect(JSON.stringify(payload)).not.toMatch(/https?:|secret/);
+  });
+});
+
+describe("a pass lifts every block on its host (#275)", () => {
+  // Thursday 2026-11-12, local. The real shape: youtube-afternoon walls 17h to 12h
+  // on weekdays, youtube-ration walls 12h to 17h once its 30 minutes are spent.
+  const thu = (h: number, min = 0) => at(2026, 11, 12, h, min);
+  const WEEKDAYS = ["MON", "TUE", "WED", "THU", "FRI"];
+  const block = (policy: string, host: string, window: object, budget?: object) => ({
+    id: `watering:${policy}:browser:${host}`,
+    scope: { surface: "browser", domain: host },
+    primitives: [
+      {
+        kind: "schedule",
+        window,
+        outsideWindow: "inactive",
+        ...(budget ? { budget } : {}),
+        wraps: {
+          kind: "cooldown",
+          duration: { type: "standing" },
+          unlockPath: { type: "out_of_band", note: "Tomorrow." },
+          enforcement: { at: "browser", reach: "navigation" },
+        },
+      },
+    ],
+  });
+  const fences = parseFences(
+    {
+      a: block("youtube-afternoon", "youtube.com", { fromHour: 17, toHour: 12, weekdays: WEEKDAYS }),
+      r: block("youtube-ration", "youtube.com", { fromHour: 12, toHour: 17, weekdays: WEEKDAYS }, { minutes: 30, pool: "youtube-ration" }),
+      c: block("chess-afternoon", "chess.com", { fromHour: 17, toHour: 12 }),
+      cr: block("chess-ration", "chess.com", { fromHour: 12, toHour: 17 }, { minutes: 30, pool: "chess-ration" }),
+    },
+    thu(16, 50)
+  )!.fences;
+  const spent: RationSpent = { day: localDay(thu(16, 50)), minutes: { "youtube-ration": 45, "chess-ration": 45 } };
+  const pass: Lift = { hosts: ["youtube.com"], from: thu(16, 50), until: thu(19, 50) };
+
+  /** Every way a host is held at `now`: DNR (standing and ration rules) and the block page. */
+  function held(host: string, now: number, lifts: readonly Lift[] = [pass]): boolean {
+    vi.setSystemTime(now);
+    const live = withLifts(withRations(fences, spent, now), lifts, now);
+    const dnr = [...standingBlockHosts(live, "navigation"), ...rationBlocks(live).flatMap((r) => r.domains)];
+    return dnr.includes(host) || blockingFences(live, host).length > 0;
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it("lifts a schedule block and a spent budget block on the same host", () => {
+    vi.useFakeTimers();
+    expect(held("youtube.com", thu(16, 55), [])).toBe(true); // the spent ration holds
+    expect(held("youtube.com", thu(16, 55))).toBe(false);
+    expect(held("youtube.com", thu(18), [])).toBe(true); // the afternoon block holds
+    expect(held("youtube.com", thu(18))).toBe(false);
+  });
+
+  it("a pass taken at 16:50 still holds at 17:05, when a different window opens", () => {
+    vi.useFakeTimers();
+    expect(held("youtube.com", thu(17, 5))).toBe(false);
+  });
+
+  it("does not lift another host", () => {
+    vi.useFakeTimers();
+    expect(held("chess.com", thu(16, 55))).toBe(true);
+    expect(held("chess.com", thu(17, 5))).toBe(true);
+  });
+
+  it("ends at until and not before", () => {
+    vi.useFakeTimers();
+    expect(held("youtube.com", pass.until - 1)).toBe(false);
+    expect(held("youtube.com", pass.until)).toBe(true);
   });
 });

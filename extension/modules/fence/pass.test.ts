@@ -11,6 +11,8 @@ const state = {
   passes: [] as Lift[],
   hostEvents: [] as { id: string; kind: string; ts: number; payload?: Record<string, unknown> }[],
   synced: 0,
+  /** What writing the announced openings waits on, so a test can hold settling mid-flight. */
+  announcing: Promise.resolve(),
 };
 const item = <K extends "openings" | "passes">(k: K) => ({
   getValue: async () => state[k],
@@ -24,7 +26,7 @@ vi.mock("./store", () => ({
   passAllowance: { getValue: async () => null },
   passLifts: item("passes"),
   openingsCache: item("openings"),
-  openingsAnnounced: { getValue: async () => [], setValue: async () => {} },
+  openingsAnnounced: { getValue: async () => [], setValue: () => state.announcing },
 }));
 vi.mock("../relay/client", () => ({ queryEvents: async () => state.hostEvents }));
 vi.mock("../activity/log", () => ({ readEventsSince: async () => [] }));
@@ -34,7 +36,7 @@ vi.mock("./project", () => ({
   },
 }));
 
-const { usePass, blockInfo } = await import("./pass");
+const { usePass, blockInfo, settleLifts } = await import("./pass");
 
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
 const NOW = at(2026, 10, 24, 17);
@@ -141,5 +143,32 @@ describe("usePass", () => {
     const write = vi.fn();
     await usePass("porn.com", "x", write);
     expect(write).toHaveBeenCalledWith("pass_used", expect.objectContaining({ policy: "no-porn", until: NOW + 1_800_000 }));
+  });
+
+  it("counts a policy's own pool per host: youtube.com spending it leaves chess.com's whole (#275)", async () => {
+    const own = (host: string) => ({ ...timeBlock(host), id: `watering:screens:browser:${host}`, passAllowance: { perMonth: 2, hours: 3 } });
+    state.fences = parseFences({ y: own("youtube.com"), c: own("chess.com") }, NOW)!.fences;
+    state.hostEvents = [spent("a", "youtube.com", undefined, "screens"), spent("b", "www.youtube.com", undefined, "screens")];
+
+    expect((await blockInfo("youtube.com")).pass).toMatchObject({ left: 0, perMonth: 2, policy: "screens" });
+    expect((await blockInfo("chess.com")).pass).toMatchObject({ left: 2, perMonth: 2, policy: "screens" });
+    expect(await usePass("youtube.com", "x", vi.fn())).toEqual({ ok: false, error: "none_left" });
+    expect(await usePass("chess.com", "x", vi.fn())).toMatchObject({ ok: true });
+  });
+
+  it("settling lifts never rewrites passes, so a pass just spent survives it (#275)", async () => {
+    const stale: Lift = { hosts: ["chess.com"], from: NOW - 4 * 3_600_000, until: NOW - 3_600_000 };
+    state.passes = [stale];
+    // An opening elsewhere to announce holds settling between its read and its writes.
+    state.openings = [{ id: "o", hosts: ["news.example"], from: NOW - 1, until: NOW + 3_600_000, reason: "x" }];
+    let release = () => {};
+    state.announcing = new Promise<void>((r) => (release = r));
+    const settling = settleLifts(vi.fn(), NOW);
+    await usePass("youtube.com", "film", vi.fn());
+    release();
+    await settling;
+    state.announcing = Promise.resolve();
+    expect(state.passes.map((l) => l.hosts)).toEqual([["youtube.com"]]);
+    expect((await blockInfo("youtube.com")).open).toBe(true);
   });
 });
