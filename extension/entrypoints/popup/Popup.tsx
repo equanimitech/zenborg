@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { pageTransforms, type PageTransform } from "@/modules/friction/policy/store";
 import { exitLine, fencesFor } from "@/modules/fence/parse";
 import { fenceCache, rationSpent } from "@/modules/fence/store";
-import { localDay, type RationSpent } from "@/modules/fence/ration";
+import { rationDay, type RationSpent } from "@/modules/fence/ration";
 import type { Fence, Fences } from "@/modules/fence/types";
 import { normalizeDomain } from "@/modules/domains";
 
@@ -96,7 +96,7 @@ export function Popup() {
   }, []);
 
   const spentFor = (pool: string): number =>
-    spent && spent.day === localDay(Date.now()) ? (spent.minutes[pool] ?? 0) : 0;
+    spent && spent.day === rationDay(Date.now()) ? (spent.minutes[pool] ?? 0) : 0;
   const hereFences = domain ? fencesFor(allFences, domain) : [];
   const hereTransforms = domain ? transformsFor(transforms, domain) : [];
   const totalFences = Object.keys(allFences).length;
