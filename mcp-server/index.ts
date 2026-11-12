@@ -4475,7 +4475,7 @@ defineTool(server, {
       })
       .optional()
       .describe(
-        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each, counted apart from the per-domain allowance. Omitted on a re-declaration, the stored one is kept.",
+        "The policy's own monthly pass allowance (browser rules): perMonth passes of `hours` each PER HOST (each host counts its own), counted apart from the shared allowance. Omitted on a re-declaration, the stored one is kept.",
       ),
     reach: ReachSchema.describe(
       'dry or rationed mode, browser rules only. "all" (default on first declaration) stops every request; "navigation" stops page loads but keeps an open page alive. Omitted on a re-declaration, the stored reach is kept.',

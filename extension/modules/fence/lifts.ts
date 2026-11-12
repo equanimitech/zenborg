@@ -173,8 +173,9 @@ export function passDomainKey(host: string): string {
 
 /**
  * Passes spent this local month, from `pass_used` events. Counted, never scored.
- * A policy's own pool counts that policy's events; with no policy, each domain
- * has its own count: only events for `domain` (by key) and with no policy.
+ * Always per domain (by key): a pass on youtube.com never spends chess.com's.
+ * A policy's own pool counts that policy's events on the domain; with no
+ * policy, the domain's events with no policy.
  */
 export function passesUsedThisMonth(
   events: readonly { readonly kind: string; readonly ts: number; readonly payload?: Readonly<Record<string, unknown>> }[],
@@ -186,7 +187,7 @@ export function passesUsedThisMonth(
   const key = domain === undefined ? undefined : passDomainKey(domain);
   return events.filter((e) => {
     if (e.kind !== PASS_USED_KIND || e.ts < since || e.ts > now || e.payload?.policy !== policy) return false;
-    if (policy !== undefined || key === undefined) return true;
+    if (key === undefined) return true;
     const spent = e.payload?.domain;
     return typeof spent === "string" && passDomainKey(spent) === key;
   }).length;

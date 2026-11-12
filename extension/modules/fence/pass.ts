@@ -64,7 +64,7 @@ export async function blockInfo(host: string, now: number = Date.now()): Promise
   if (blocking.length === 0 || !blocking.every((f) => f.schedule !== undefined)) {
     return { host, open: blocking.length === 0, notes, pass: null };
   }
-  // One policy's own pool when every blocker is that policy's; otherwise this domain's own count.
+  // One policy's own pool when every blocker is that policy's, else the shared allowance; counted per domain either way.
   const pool = blocking[0].pool;
   const own = pool && blocking.every((f) => f.pool?.policy === pool.policy) ? pool : undefined;
   const { perMonth, hours } = own ?? (await passAllowance.getValue()) ?? DEFAULT_ALLOWANCE;
@@ -96,13 +96,16 @@ export function usePass(host: string, reason: string, write: Write): Promise<Pas
   return result;
 }
 
-/** Write `opening_active` once for each opening that has taken effect; drop spent passes. */
+/**
+ * Write `opening_active` once for each opening that has taken effect.
+ *
+ * Never writes `passLifts`: `usePass` is its one writer, serialized, and drops
+ * spent passes itself. A second read-modify-write here raced it and could wipe
+ * a pass spent a moment before, walling the host long before its `until` (#275).
+ * A spent pass left in storage lifts nothing (`isLiftActive`).
+ */
 export async function settleLifts(write: Write, now: number = Date.now()): Promise<void> {
-  const [openings, announced, passes] = await Promise.all([
-    openingsCache.getValue(),
-    openingsAnnounced.getValue(),
-    passLifts.getValue(),
-  ]);
+  const [openings, announced] = await Promise.all([openingsCache.getValue(), openingsAnnounced.getValue()]);
   const seen = new Set(announced);
   for (const o of openings) {
     if (isLiftActive(o, now) && !seen.has(o.id)) {
@@ -114,6 +117,4 @@ export async function settleLifts(write: Write, now: number = Date.now()): Promi
   if (kept.length !== announced.length || kept.some((id, i) => id !== announced[i])) {
     await openingsAnnounced.setValue(kept);
   }
-  const live = passes.filter((l) => l.until > now);
-  if (live.length !== passes.length) await passLifts.setValue(live);
 }
