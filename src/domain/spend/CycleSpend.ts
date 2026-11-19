@@ -289,6 +289,37 @@ export function attribute(
   return pitches.length === 1 ? pitches[0].a.id : null;
 }
 
+/**
+ * What the Linear join lacks for these sessions: PR urls with no head branch,
+ * and DEV ids `attribute` would read (branch, PR head branches, user turns)
+ * that have no issue entry. Same sources and regexes as `attribute`.
+ */
+export function joinGaps(
+  sessions: readonly SessionFacts[],
+  join: LinearJoin,
+): { issues: string[]; prs: string[] } {
+  const prs = new Set<string>();
+  const issues = new Set<string>();
+  const need = (n: string) => {
+    const key = `DEV-${n}`;
+    if (!join.issues[key]) issues.add(key);
+  };
+  for (const s of sessions) {
+    const b = s.branch && BRANCH.exec(s.branch);
+    if (b) need(b[1]);
+    for (const url of new Set(s.prUrls)) {
+      const head = join.prs[url];
+      if (!head) prs.add(url);
+      else {
+        const h = BRANCH.exec(head);
+        if (h) need(h[1]);
+      }
+    }
+    for (const t of s.turns) for (const m of t.text.matchAll(ISSUE)) need(m[1]);
+  }
+  return { issues: [...issues].sort(), prs: [...prs].sort() };
+}
+
 // ── Aggregation ─────────────────────────────────────────────────────────────
 
 export function computeSpend(

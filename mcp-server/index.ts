@@ -51,6 +51,8 @@ import { setAllocations } from "../src/domain/entities/Cycle.ts";
 import { appetiteCheck } from "../src/domain/spend/AppetiteCheck.ts";
 import {
   getCycleSpend,
+  linearJoinGaps,
+  mergeLinearJoin,
   refreshSpend,
   today,
   writeSpendCache,
@@ -2623,13 +2625,33 @@ defineTool(server, {
   },
 });
 
+/** Window shared by the spend tools: the cycle's dates, or the Paris-day overrides. */
+function spendWindow(
+  cycle: string | undefined,
+  from: string | undefined,
+  to: string | undefined,
+) {
+  const found = cycleOrActive(cycle);
+  const override = from !== undefined || to !== undefined;
+  if (typeof found === "string" && !(override && !cycle))
+    return { error: found };
+  const c = typeof found === "string" ? null : found;
+  const window = {
+    from: from ?? c?.startDate ?? today(),
+    to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
+  };
+  if (window.from > window.to)
+    return { error: `from (${window.from}) is after to (${window.to})` };
+  return { c, override, window };
+}
+
 defineTool(server, {
   name: "get_cycle_spend",
   description:
     "Where a cycle's days went: merged hours per allocation (union of main-loop timestamps across ALL sessions, gaps capped at 5 min, so parallel sessions never double-count; 6 h = 1 day), " +
     "`check` (the weekly appetite check: per-allocation table with area, Bugs & ops vs 1/4 of capacity, days left to bet, and `themiaExtract`, the Themia-only subset safe to publish), the unattributed share (matches no allocation; never counted as Bugs & ops), agent hours (apart, not charged) and turns. " +
     "Attribution: PR branch dev-NNNN / issue id typed in a user turn / pr-link head branch -> Linear issue -> an allocation whose aim names the issue id (wins over labels) -> Bug, Backfill and Run: issues -> Bugs & ops -> project -> allocation link; " +
-    "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (refreshed by the season skill); its status is reported. " +
+    "otherwise the session cwd against repo or pitch links. The Linear join is read from <vault>/cache/linear-join.json (built by get_linear_join_gaps + merge_linear_join, which the season and appetite-check skills call); its status is reported. " +
     "Defaults to the active cycle's dates and caches the result for hooks; `from`/`to` (Paris days, 03:00 turnover) override the window and skip the cache. Concise omits the daily rows and the session map.",
   schema: {
     cycle: z
@@ -2658,16 +2680,9 @@ defineTool(server, {
     return rest;
   },
   handler: async ({ cycle, from, to }) => {
-    const found = cycleOrActive(cycle);
-    const override = from !== undefined || to !== undefined;
-    if (typeof found === "string" && !(override && !cycle)) return err(found);
-    const c = typeof found === "string" ? null : found;
-    const window = {
-      from: from ?? c?.startDate ?? today(),
-      to: to ?? (c?.endDate && c.endDate < today() ? c.endDate : today()),
-    };
-    if (window.from > window.to)
-      return err(`from (${window.from}) is after to (${window.to})`);
+    const w = spendWindow(cycle, from, to);
+    if (w.error !== undefined) return err(w.error);
+    const { c, override, window } = w;
     const result = getCycleSpend(VAULT_ROOT, c?.allocations ?? [], window);
     if (c && !override) writeSpendCache(VAULT_ROOT, c.id, result);
     if (!c) return ok(result);
@@ -2684,6 +2699,60 @@ defineTool(server, {
       ),
     });
   },
+});
+
+defineTool(server, {
+  name: "get_linear_join_gaps",
+  description:
+    "What the Linear join (<vault>/cache/linear-join.json) lacks for the window's sessions: DEV ids the meter reads (branch, PR head branches, user turns) with no issue entry. " +
+    "Resolves missing PRs' head branches with `gh` and merges them into the join (a PR that fails is listed in prsFailed); the join file is written when any PR was added. " +
+    "Then fetch each missingIssues id from Linear (title, labels, project) and pass them to merge_linear_join. Same window defaults as get_cycle_spend.",
+  schema: {
+    cycle: z
+      .string()
+      .optional()
+      .describe("Cycle id or exact name. Default: the active cycle."),
+    from: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive start day; overrides the cycle window."),
+    to: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .describe("Inclusive end day; default today."),
+  },
+  annotations: { idempotentHint: true },
+  handler: async ({ cycle, from, to }) => {
+    const w = spendWindow(cycle, from, to);
+    if (w.error !== undefined) return err(w.error);
+    return ok(linearJoinGaps(VAULT_ROOT, w.window));
+  },
+});
+
+defineTool(server, {
+  name: "merge_linear_join",
+  description:
+    "Merge Linear issues into <vault>/cache/linear-join.json (created if absent; existing entries kept, same keys replaced), stamp generatedAt, then refresh the spend cache. " +
+    "Keys are `DEV-NNNN`; values `{title?, labels?, project?: {name?, url?} | null}` as read from Linear. Returns counts and the refreshed unattributed share (%).",
+  schema: {
+    issues: z
+      .record(
+        z.string().regex(/^DEV-\d+$/),
+        z.object({
+          title: z.string().optional(),
+          labels: z.array(z.string()).optional(),
+          project: z
+            .object({ name: z.string().optional(), url: z.string().optional() })
+            .nullable()
+            .optional(),
+        }),
+      )
+      .describe("DEV-NNNN -> Linear issue facts."),
+  },
+  annotations: { idempotentHint: true },
+  handler: async ({ issues }) => ok(mergeLinearJoin(VAULT_ROOT, issues)),
 });
 
 defineTool(server, {

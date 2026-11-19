@@ -7,6 +7,7 @@ description: >-
   "how's the garden", "cycle review", "cycle planning", or invokes "/season".
   Do NOT trigger for moment capture (use tend), day rituals (use sunrise/sunset),
   or week-level review (use weather).
+allowed-tools: [mcp__zenborg__get_cycle_spend, mcp__zenborg__get_linear_join_gaps, mcp__zenborg__merge_linear_join, mcp__plugin_linear_linear__get_issue]
 ---
 
 # Season
@@ -88,6 +89,10 @@ Call `mcp__zenborg__get_rule_efficacy` with the cycle's `from`/`to`. If `rules` 
 Browser rules this season:
   chess-ladder: −2.1 min on chess.com in 10 min after a cue, n = 14 / 6 over 5 days.
 ```
+
+#### 4c. Fill the Linear join
+
+Call `mcp__zenborg__get_linear_join_gaps`. For each id in `missingIssues`, call `mcp__plugin_linear_linear__get_issue` with `fields: ["title","labels","project"]` (project as `{name, url}`), then pass them all to `mcp__zenborg__merge_linear_join` as `issues: { "DEV-NNNN": {title, labels, project} }`. Skip when `missingIssues` is empty.
 
 ### Plan half (look ahead)
 

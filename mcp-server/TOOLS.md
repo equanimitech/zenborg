@@ -105,6 +105,8 @@ When `truncated` is true, pass `nextCursor` back with the same filters.
 | `set_cycle_allocations` | `cycle?, capacityDays?, allocations[]` | The betting table. Replaces all allocations `{id?, kind: bet\|lane, name, area, link, appetiteDays, aim?}`. Refuses: appetites + ½ d cool-down > capacity (default 12), "Bugs & ops" lane > ¼ capacity, lane without `aim`. |
 | `list_cycle_allocations` | `cycle?` | Capacity, allocations, planned days, days left to bet. |
 | `get_cycle_spend` | `cycle?, from?, to?` | Merged hours per allocation (union across sessions, 5 min gap cap, 6 h = 1 day), unattributed, agent hours, turns. Linear join read from `<vault>/cache/linear-join.json`. Caches to `<vault>/cache/cycle-spend.json` for the SessionStart line. |
+| `get_linear_join_gaps` | `cycle?, from?, to?` | DEV ids the meter reads with no entry in `linear-join.json`; resolves missing PRs' head branches via `gh` and merges them. Returns `missingIssues, prsAdded, prsFailed, joinPath`. |
+| `merge_linear_join` | `issues` | Merges `DEV-NNNN -> {title?, labels?, project?}` into `linear-join.json` (keeps existing entries), stamps `generatedAt`, refreshes the spend cache. Returns counts and `unattributedPct`. |
 | `delete_cycle` | `id` | Cascades: deletes all moments + plans. `destructiveHint`. |
 
 ### People

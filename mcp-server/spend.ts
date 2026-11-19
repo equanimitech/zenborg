@@ -3,13 +3,15 @@
  * them with the cached Linear join, and hands both to the pure `computeSpend`.
  *
  * Linear join: this process has no Linear API access, so the join is a JSON
- * file the `season` skill refreshes: `<vault>/cache/linear-join.json`
+ * file the `season` and `appetite-check` skills fill via
+ * `get_linear_join_gaps` / `merge_linear_join`: `<vault>/cache/linear-join.json`
  * (shape: `LinearJoin`). Without it, issue-based attribution finds nothing
  * and the unattributed share says so.
  *
  * The result is cached at `<vault>/cache/cycle-spend.json` so hooks read it
  * without recomputing.
  */
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,6 +21,7 @@ import {
   dayOf,
   dayStartMs,
   HOURS_PER_DAY,
+  joinGaps,
   type LinearJoin,
   type SessionFacts,
   type Spend,
@@ -157,7 +160,7 @@ export function readJoin(vault: string): { join: LinearJoin; status: string } {
   } catch {
     return {
       join: { issues: {}, prs: {} },
-      status: `missing: ${joinPath(vault)} (the season skill refreshes it); issue-based attribution found nothing`,
+      status: `missing: ${joinPath(vault)} (get_linear_join_gaps + merge_linear_join build it); issue-based attribution found nothing`,
     };
   }
 }
@@ -305,4 +308,90 @@ export function refreshSpend(vault: string): string {
   } finally {
     fs.rmSync(lock, { force: true });
   }
+}
+
+const writeJoin = (vault: string, join: LinearJoin) => {
+  const file = joinPath(vault);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(join, null, 2));
+};
+
+/** Head branch of a PR via `gh`; null on any failure. */
+export function ghHeadBranch(url: string): string | null {
+  try {
+    return (
+      execFileSync(
+        "gh",
+        ["pr", "view", url, "--json", "headRefName", "-q", ".headRefName"],
+        {
+          encoding: "utf8",
+          timeout: 20_000,
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      ).trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Join gaps for a window. Missing PRs are resolved with `gh` (fail soft per
+ * PR), merged into the join file, then the issue gaps are recomputed so ids
+ * from the new head branches count.
+ */
+export function linearJoinGaps(
+  vault: string,
+  params: SpendParams,
+  opts: {
+    projectsDir?: string;
+    home?: string;
+    headBranch?: (url: string) => string | null;
+  } = {},
+) {
+  const home = opts.home ?? os.homedir();
+  const sessions = readSessions(
+    opts.projectsDir ?? path.join(home, ".claude", "projects"),
+    dayStartMs(params.from),
+  );
+  const { join } = readJoin(vault);
+  const resolve = opts.headBranch ?? ghHeadBranch;
+  const prsAdded: Record<string, string> = {};
+  const prsFailed: string[] = [];
+  for (const url of joinGaps(sessions, join).prs) {
+    const head = resolve(url);
+    if (head) prsAdded[url] = head;
+    else prsFailed.push(url);
+  }
+  if (Object.keys(prsAdded).length > 0) {
+    join.prs = { ...join.prs, ...prsAdded };
+    writeJoin(vault, join);
+  }
+  return {
+    missingIssues: joinGaps(sessions, join).issues,
+    prsAdded: Object.keys(prsAdded).length,
+    prsFailed,
+    joinPath: joinPath(vault),
+  };
+}
+
+/** Merge issues into the join file (never dropping entries), then refresh the spend cache. */
+export function mergeLinearJoin(vault: string, issues: LinearJoin["issues"]) {
+  const { join } = readJoin(vault);
+  join.issues = { ...join.issues, ...issues };
+  join.generatedAt = today();
+  writeJoin(vault, join);
+  const refresh = refreshSpend(vault);
+  let unattributedPct: number | null = null;
+  try {
+    unattributedPct = JSON.parse(fs.readFileSync(spendCachePath(vault), "utf8"))
+      .unattributed.pct;
+  } catch {}
+  return {
+    merged: Object.keys(issues).length,
+    totalIssues: Object.keys(join.issues).length,
+    totalPrs: Object.keys(join.prs).length,
+    refresh,
+    unattributedPct,
+  };
 }
